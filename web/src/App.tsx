@@ -1464,6 +1464,8 @@ function AuthModal({
   error,
   verificationToken,
   onStartVerification,
+  isStartingVerification,
+  verificationStartStatus,
 }: {
   mode: "login" | "register";
   setMode: (mode: "login" | "register") => void;
@@ -1478,6 +1480,8 @@ function AuthModal({
   error: string | null;
   verificationToken: string | null;
   onStartVerification: () => void;
+  isStartingVerification: boolean;
+  verificationStartStatus: string | null;
 }) {
   const actionLabel =
     mode === "login" ? "Login" : isAnonymous ? "Upgrade Profile" : "Register";
@@ -1574,18 +1578,28 @@ function AuthModal({
               <button
                 type="button"
                 onClick={onStartVerification}
+                disabled={isStartingVerification}
                 className={cn(
-                  "inline-flex h-10 w-full items-center justify-center border text-[10px] font-semibold uppercase tracking-[0.14em] transition-colors",
+                  "inline-flex h-10 w-full items-center justify-center border text-[10px] font-semibold uppercase tracking-[0.14em] transition-colors disabled:cursor-not-allowed disabled:opacity-50",
                   verificationToken
                     ? "border-emerald-500/60 bg-emerald-950/35 text-emerald-200 hover:border-emerald-400"
                     : "border-zinc-700 bg-zinc-900/55 text-zinc-300 hover:border-purple-500/60 hover:text-zinc-100",
                 )}
               >
-                {verificationToken ? "Verification Passed" : "Start Webcam Verification"}
+                {verificationToken
+                  ? "Verification Passed"
+                  : isStartingVerification
+                    ? "Starting Verification..."
+                    : "Start Webcam Verification"}
               </button>
               <div className="text-[10px] uppercase tracking-[0.12em] text-zinc-600">
                 Registration requires completed verification.
               </div>
+              {verificationStartStatus && (
+                <div className="border border-zinc-800 bg-black/60 px-3 py-2 text-[10px] font-semibold uppercase tracking-[0.12em] text-zinc-400">
+                  {verificationStartStatus}
+                </div>
+              )}
             </div>
           )}
         </div>
@@ -3405,10 +3419,14 @@ function EntryChoiceModal({
   onAnonymous,
   onLogin,
   onRegister,
+  isStartingVerification,
+  verificationStartStatus,
 }: {
   onAnonymous: () => void;
   onLogin: () => void;
   onRegister: () => void;
+  isStartingVerification: boolean;
+  verificationStartStatus: string | null;
 }) {
   return (
     <div
@@ -3433,10 +3451,11 @@ function EntryChoiceModal({
           <button
             type="button"
             onClick={onAnonymous}
-            className="min-h-40 border border-zinc-900 bg-black/60 p-4 text-left transition-colors hover:border-purple-400 hover:bg-purple-950/24"
+            disabled={isStartingVerification}
+            className="min-h-40 border border-zinc-900 bg-black/60 p-4 text-left transition-colors hover:border-purple-400 hover:bg-purple-950/24 disabled:cursor-not-allowed disabled:opacity-60"
           >
             <div className="text-sm font-black uppercase tracking-[0.14em] text-zinc-100">
-              Anonymous
+              {isStartingVerification ? "Starting..." : "Anonymous"}
             </div>
             <p className="mt-3 text-xs leading-5 text-zinc-500">
               Continue without registration. Progress will not be saved.
@@ -3467,6 +3486,13 @@ function EntryChoiceModal({
             </p>
           </button>
         </div>
+        {verificationStartStatus && (
+          <div className="px-5 pb-5">
+            <div className="border border-zinc-800 bg-black/60 px-3 py-2 text-[10px] font-semibold uppercase tracking-[0.12em] text-zinc-400">
+              {verificationStartStatus}
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );
@@ -3534,6 +3560,8 @@ export default function App() {
   >(null);
   const [verificationError, setVerificationError] = useState<string | null>(null);
   const [verificationSubmitting, setVerificationSubmitting] = useState(false);
+  const [verificationStarting, setVerificationStarting] = useState(false);
+  const [verificationStartStatus, setVerificationStartStatus] = useState<string | null>(null);
   const [verificationSuccessOpen, setVerificationSuccessOpen] = useState(false);
   const [verifiedToken, setVerifiedToken] = useState<string | null>(null);
   const [verifiedPurpose, setVerifiedPurpose] = useState<
@@ -3668,11 +3696,14 @@ export default function App() {
 
   const handleStartVerification = async (purpose: "register" | "anonymous") => {
     setVerificationError(null);
+    setVerificationStarting(true);
+    setVerificationStartStatus("Contacting verification service...");
     setVerifiedToken(null);
     setVerificationToken(null);
     setVerifiedPurpose(null);
     try {
       const session = await verificationStart();
+      setVerificationStartStatus("Verification session created. Opening camera...");
       setVerificationPurpose(purpose);
       setVerificationDetected({ blink: 0, left: 0, right: 0 });
       setVerificationSession(session);
@@ -3680,6 +3711,9 @@ export default function App() {
       setAuthError(
         error instanceof Error ? error.message : "Verification start failed",
       );
+      setVerificationStartStatus(null);
+    } finally {
+      setVerificationStarting(false);
     }
   };
 
@@ -3699,6 +3733,7 @@ export default function App() {
       setVerifiedPurpose(verificationPurpose);
       setVerificationSession(null);
       setVerificationPurpose(null);
+      setVerificationStartStatus(null);
       setVerificationSuccessOpen(true);
     } catch (error) {
       setVerificationError(
@@ -4001,6 +4036,8 @@ export default function App() {
           onStartVerification={() => {
             void handleStartVerification("register");
           }}
+          isStartingVerification={verificationStarting}
+          verificationStartStatus={verificationStartStatus}
         />
       )}
       {verificationSession && (
@@ -4015,6 +4052,7 @@ export default function App() {
             }
             setVerificationSession(null);
             setVerificationPurpose(null);
+            setVerificationStartStatus(null);
           }}
           isSubmitting={verificationSubmitting}
           error={verificationError}
@@ -4041,6 +4079,8 @@ export default function App() {
             setVerificationToken(null);
             setIsAuthOpen(true);
           }}
+          isStartingVerification={verificationStarting}
+          verificationStartStatus={verificationStartStatus}
         />
       )}
     </main>
