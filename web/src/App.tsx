@@ -1463,6 +1463,8 @@ function AuthModal({
   isSubmitting,
   error,
   verificationToken,
+  consentAccepted,
+  onConsentChange,
 }: {
   mode: "login" | "register";
   setMode: (mode: "login" | "register") => void;
@@ -1476,6 +1478,8 @@ function AuthModal({
   isSubmitting: boolean;
   error: string | null;
   verificationToken: string | null;
+  consentAccepted: boolean;
+  onConsentChange: (checked: boolean) => void;
 }) {
   const actionLabel =
     mode === "login" ? "Login" : isAnonymous ? "Upgrade Profile" : "Register";
@@ -1559,31 +1563,45 @@ function AuthModal({
               {error}
             </div>
           )}
+          <label className="grid cursor-pointer grid-cols-[16px_1fr] items-start gap-3 border border-zinc-800 bg-black/60 px-3 py-3">
+            <input
+              type="checkbox"
+              checked={consentAccepted}
+              onChange={(event) => onConsentChange(event.target.checked)}
+              className="mt-0.5 h-4 w-4 rounded-none border border-zinc-600 bg-black accent-purple-400"
+            />
+            <span className="text-[10px] leading-5 text-zinc-400">
+              I agree to the rules and privacy policy, confirm that I am 18+, and consent to the
+              processing of my personal data.
+            </span>
+          </label>
           <button
             type="button"
             onClick={onSubmit}
-            disabled={isSubmitting}
+            disabled={isSubmitting || !consentAccepted}
             className="inline-flex h-10 w-full items-center justify-center border border-purple-500/50 bg-purple-950/35 text-[10px] font-semibold uppercase tracking-[0.14em] text-purple-100 transition-colors hover:border-purple-300 hover:text-white disabled:cursor-not-allowed disabled:opacity-50"
           >
             {isSubmitting ? "Please Wait..." : actionLabel}
           </button>
           {mode === "register" && (
             <div className="space-y-2">
-              <div
-                className={cn(
-                  "border px-3 py-2 text-[10px] font-semibold uppercase tracking-[0.12em]",
-                  verificationToken
-                    ? "border-emerald-500/45 bg-emerald-950/35 text-emerald-200"
-                    : "border-zinc-800 bg-black/60 text-zinc-500",
-                )}
-              >
-                {verificationToken
-                  ? "Verification passed. Registration will continue."
-                  : "Verification starts automatically after submit."}
-              </div>
               {isAnonymous && (
-                <div className="text-[10px] uppercase tracking-[0.12em] text-zinc-600">
-                  Your anonymous profile will be upgraded after verification.
+                <div className="border border-zinc-800 bg-black/60 px-3 py-2 text-[10px] font-semibold uppercase tracking-[0.12em] text-zinc-500">
+                  Your anonymous profile will be upgraded without repeating verification.
+                </div>
+              )}
+              {!isAnonymous && (
+                <div
+                  className={cn(
+                    "border px-3 py-2 text-[10px] font-semibold uppercase tracking-[0.12em]",
+                    verificationToken
+                      ? "border-emerald-500/45 bg-emerald-950/35 text-emerald-200"
+                      : "border-zinc-800 bg-black/60 text-zinc-500",
+                  )}
+                >
+                  {verificationToken
+                    ? "Verification passed. Registration will continue."
+                    : "Verification starts automatically after submit."}
                 </div>
               )}
             </div>
@@ -3536,12 +3554,16 @@ function EntryChoiceModal({
   onRegister,
   isStartingVerification,
   verificationStartStatus,
+  consentAccepted,
+  onConsentChange,
 }: {
   onAnonymous: () => void;
   onLogin: () => void;
   onRegister: () => void;
   isStartingVerification: boolean;
   verificationStartStatus: string | null;
+  consentAccepted: boolean;
+  onConsentChange: (checked: boolean) => void;
 }) {
   return (
     <div
@@ -3566,7 +3588,7 @@ function EntryChoiceModal({
           <button
             type="button"
             onClick={onAnonymous}
-            disabled={isStartingVerification}
+            disabled={isStartingVerification || !consentAccepted}
             className="min-h-40 border border-zinc-900 bg-black/60 p-4 text-left transition-colors hover:border-purple-400 hover:bg-purple-950/24 disabled:cursor-not-allowed disabled:opacity-60"
           >
             <div className="text-sm font-black uppercase tracking-[0.14em] text-zinc-100">
@@ -3600,6 +3622,20 @@ function EntryChoiceModal({
               Create account to keep rating, settings, and progression.
             </p>
           </button>
+        </div>
+        <div className="px-5 pb-5">
+          <label className="grid cursor-pointer grid-cols-[16px_1fr] items-start gap-3 border border-zinc-800 bg-black/60 px-3 py-3">
+            <input
+              type="checkbox"
+              checked={consentAccepted}
+              onChange={(event) => onConsentChange(event.target.checked)}
+              className="mt-0.5 h-4 w-4 rounded-none border border-zinc-600 bg-black accent-purple-400"
+            />
+            <span className="text-[10px] leading-5 text-zinc-400">
+              I agree to the rules and privacy policy, confirm that I am 18+, and consent to the
+              processing of my personal data.
+            </span>
+          </label>
         </div>
         {verificationStartStatus && (
           <div className="px-5 pb-5">
@@ -3649,6 +3685,7 @@ function VerificationSuccessModal({ onContinue }: { onContinue: () => void }) {
 
 export default function App() {
   const ENTRY_SEEN_KEY = "chadchat_entry_seen_v1";
+  const CONSENT_ACCEPTED_KEY = "chadchat_consent_accepted_v1";
   const startButtonRef = useRef<HTMLDivElement>(null);
   const bentoGridRef = useRef<HTMLDivElement>(null);
   const [isStatsOpen, setIsStatsOpen] = useState(false);
@@ -3684,6 +3721,7 @@ export default function App() {
   >(null);
   const [showEntryChoice, setShowEntryChoice] = useState(false);
   const [showAnonymousProgressPrompt, setShowAnonymousProgressPrompt] = useState(false);
+  const [consentAccepted, setConsentAccepted] = useState(false);
   const [tokens, setTokens] = useState<AuthTokens | null>(null);
   const [me, setMe] = useState<AuthUser | null>(null);
   const [auraPulse, setAuraPulse] = useState(false);
@@ -3699,6 +3737,16 @@ export default function App() {
   const currentNickname =
     (me?.nickname && String(me.nickname)) ||
     (isAnonymousUser ? "ANONYMOUS" : "GUEST");
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    setConsentAccepted(window.localStorage.getItem(CONSENT_ACCEPTED_KEY) === "1");
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    window.localStorage.setItem(CONSENT_ACCEPTED_KEY, consentAccepted ? "1" : "0");
+  }, [consentAccepted]);
 
   useEffect(() => {
     let cancelled = false;
@@ -3766,7 +3814,7 @@ export default function App() {
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [isStatsOpen, isCustomizeOpen, isStartModesOpen, isTestLabOpen, isDuelOpen, isAuthOpen]);
 
-  const completeRegisteredAuth = useCallback(async (verificationTokenValue: string) => {
+  const completeRegisteredAuth = useCallback(async (verificationTokenValue?: string) => {
     const nickname = authNickname.trim();
     const password = authPassword.trim();
     if (!nickname || !password) {
@@ -3777,6 +3825,9 @@ export default function App() {
     if (isAnonymousUser && tokens) {
       result = await authUpgrade(tokens.accessToken, nickname, password);
     } else {
+      if (!verificationTokenValue) {
+        throw new Error("Complete webcam verification first");
+      }
       result = await authRegister(nickname, password, verificationTokenValue);
     }
 
@@ -3796,6 +3847,11 @@ export default function App() {
   }, [authNickname, authPassword, isAnonymousUser, tokens]);
 
   const handleAuthSubmit = async () => {
+    if (!consentAccepted) {
+      setAuthError("Accept the rules, privacy policy, 18+ confirmation, and data processing terms");
+      return;
+    }
+
     const nickname = authNickname.trim();
     const password = authPassword.trim();
     if (!nickname || !password) {
@@ -3810,6 +3866,10 @@ export default function App() {
       if (authMode === "login") {
         result = await authLogin(nickname, password);
       } else {
+        if (isAnonymousUser && tokens) {
+          await completeRegisteredAuth();
+          return;
+        }
         if (!verifiedToken) {
           setAuthLoading(false);
           void handleStartVerification("register");
@@ -3951,6 +4011,7 @@ export default function App() {
   };
 
   const handleContinueAnonymous = () => {
+    if (!consentAccepted) return;
     setShowEntryChoice(false);
     void handleStartVerification("anonymous");
   };
@@ -4219,6 +4280,8 @@ export default function App() {
           isSubmitting={authLoading}
           error={authError}
           verificationToken={verificationToken}
+          consentAccepted={consentAccepted}
+          onConsentChange={setConsentAccepted}
         />
       )}
       {verificationSession && (
@@ -4265,6 +4328,8 @@ export default function App() {
           }}
           isStartingVerification={verificationStarting}
           verificationStartStatus={verificationStartStatus}
+          consentAccepted={consentAccepted}
+          onConsentChange={setConsentAccepted}
         />
       )}
       {showAnonymousProgressPrompt && (
