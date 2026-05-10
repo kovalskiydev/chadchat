@@ -1463,9 +1463,6 @@ function AuthModal({
   isSubmitting,
   error,
   verificationToken,
-  onStartVerification,
-  isStartingVerification,
-  verificationStartStatus,
 }: {
   mode: "login" | "register";
   setMode: (mode: "login" | "register") => void;
@@ -1479,9 +1476,6 @@ function AuthModal({
   isSubmitting: boolean;
   error: string | null;
   verificationToken: string | null;
-  onStartVerification: () => void;
-  isStartingVerification: boolean;
-  verificationStartStatus: string | null;
 }) {
   const actionLabel =
     mode === "login" ? "Login" : isAnonymous ? "Upgrade Profile" : "Register";
@@ -1575,29 +1569,21 @@ function AuthModal({
           </button>
           {mode === "register" && (
             <div className="space-y-2">
-              <button
-                type="button"
-                onClick={onStartVerification}
-                disabled={isStartingVerification}
+              <div
                 className={cn(
-                  "inline-flex h-10 w-full items-center justify-center border text-[10px] font-semibold uppercase tracking-[0.14em] transition-colors disabled:cursor-not-allowed disabled:opacity-50",
+                  "border px-3 py-2 text-[10px] font-semibold uppercase tracking-[0.12em]",
                   verificationToken
-                    ? "border-emerald-500/60 bg-emerald-950/35 text-emerald-200 hover:border-emerald-400"
-                    : "border-zinc-700 bg-zinc-900/55 text-zinc-300 hover:border-purple-500/60 hover:text-zinc-100",
+                    ? "border-emerald-500/45 bg-emerald-950/35 text-emerald-200"
+                    : "border-zinc-800 bg-black/60 text-zinc-500",
                 )}
               >
                 {verificationToken
-                  ? "Verification Passed"
-                  : isStartingVerification
-                    ? "Starting Verification..."
-                    : "Start Webcam Verification"}
-              </button>
-              <div className="text-[10px] uppercase tracking-[0.12em] text-zinc-600">
-                Registration requires completed verification.
+                  ? "Verification passed. Registration will continue."
+                  : "Verification starts automatically after submit."}
               </div>
-              {verificationStartStatus && (
-                <div className="border border-zinc-800 bg-black/60 px-3 py-2 text-[10px] font-semibold uppercase tracking-[0.12em] text-zinc-400">
-                  {verificationStartStatus}
+              {isAnonymous && (
+                <div className="text-[10px] uppercase tracking-[0.12em] text-zinc-600">
+                  Your anonymous profile will be upgraded after verification.
                 </div>
               )}
             </div>
@@ -3780,6 +3766,35 @@ export default function App() {
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [isStatsOpen, isCustomizeOpen, isStartModesOpen, isTestLabOpen, isDuelOpen, isAuthOpen]);
 
+  const completeRegisteredAuth = useCallback(async (verificationTokenValue: string) => {
+    const nickname = authNickname.trim();
+    const password = authPassword.trim();
+    if (!nickname || !password) {
+      throw new Error("Nickname and password are required");
+    }
+
+    let result: { tokens: AuthTokens; user: AuthUser | null };
+    if (isAnonymousUser && tokens) {
+      result = await authUpgrade(tokens.accessToken, nickname, password);
+    } else {
+      result = await authRegister(nickname, password, verificationTokenValue);
+    }
+
+    saveTokens(result.tokens);
+    setTokens(result.tokens);
+    const profile = result.user ?? (await getMe(result.tokens.accessToken));
+    setMe(profile);
+    setAuthPassword("");
+    setVerificationToken(null);
+    setVerifiedToken(null);
+    setVerifiedPurpose(null);
+    setIsAuthOpen(false);
+    setShowEntryChoice(false);
+    if (typeof window !== "undefined") {
+      window.localStorage.setItem(ENTRY_SEEN_KEY, "1");
+    }
+  }, [authNickname, authPassword, isAnonymousUser, tokens]);
+
   const handleAuthSubmit = async () => {
     const nickname = authNickname.trim();
     const password = authPassword.trim();
@@ -3794,15 +3809,14 @@ export default function App() {
       let result: { tokens: AuthTokens; user: AuthUser | null };
       if (authMode === "login") {
         result = await authLogin(nickname, password);
-      } else if (isAnonymousUser && tokens) {
-        result = await authUpgrade(tokens.accessToken, nickname, password);
       } else {
         if (!verifiedToken) {
-          setAuthError("Complete webcam verification first");
           setAuthLoading(false);
+          void handleStartVerification("register");
           return;
         }
-        result = await authRegister(nickname, password, verifiedToken);
+        await completeRegisteredAuth(verifiedToken);
+        return;
       }
 
       saveTokens(result.tokens);
@@ -3900,6 +3914,19 @@ export default function App() {
       } finally {
         setAuthLoading(false);
       }
+      return;
+    }
+
+    if (verifiedPurpose === "register") {
+      setAuthLoading(true);
+      setAuthError(null);
+      try {
+        await completeRegisteredAuth(verifiedToken);
+      } catch (error) {
+        setAuthError(error instanceof Error ? error.message : "Auth failed");
+      } finally {
+        setAuthLoading(false);
+      }
     }
   };
 
@@ -3938,6 +3965,14 @@ export default function App() {
     setShowEntryChoice(false);
     setAuthError(null);
     setAuthMode(mode);
+    setIsAuthOpen(true);
+  }, []);
+
+  const handleAnonymousNicknameClick = useCallback(() => {
+    setShowEntryChoice(false);
+    setShowAnonymousProgressPrompt(false);
+    setAuthError(null);
+    setAuthMode("register");
     setIsAuthOpen(true);
   }, []);
 
@@ -4015,7 +4050,11 @@ export default function App() {
             >
               <button
                 type="button"
-                onClick={() => {}}
+                onClick={() => {
+                  if (isAnonymousUser) {
+                    handleAnonymousNicknameClick();
+                  }
+                }}
                 className="inline-flex h-5 items-center gap-1 border border-zinc-700 bg-zinc-900/60 px-2 text-[10px] font-semibold uppercase tracking-[0.12em] text-zinc-300 transition-colors hover:border-purple-500/60 hover:text-zinc-100"
               >
                 <User className="h-3 w-3" aria-hidden="true" />
@@ -4180,11 +4219,6 @@ export default function App() {
           isSubmitting={authLoading}
           error={authError}
           verificationToken={verificationToken}
-          onStartVerification={() => {
-            void handleStartVerification("register");
-          }}
-          isStartingVerification={verificationStarting}
-          verificationStartStatus={verificationStartStatus}
         />
       )}
       {verificationSession && (
