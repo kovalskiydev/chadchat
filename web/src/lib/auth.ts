@@ -21,7 +21,7 @@ export type VerificationStartResponse = {
 };
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL ?? "";
-const STORAGE_KEY = "omoggle_auth_tokens_v1";
+const STORAGE_KEY = "chadchat_auth_tokens_v1";
 
 function getMessage(payload: unknown, fallback: string) {
   if (!payload || typeof payload !== "object") return fallback;

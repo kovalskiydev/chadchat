@@ -3507,7 +3507,7 @@ function VerificationSuccessModal({ onContinue }: { onContinue: () => void }) {
 }
 
 export default function App() {
-  const ENTRY_SEEN_KEY = "omoggle_entry_seen_v1";
+  const ENTRY_SEEN_KEY = "chadchat_entry_seen_v1";
   const startButtonRef = useRef<HTMLDivElement>(null);
   const bentoGridRef = useRef<HTMLDivElement>(null);
   const [isStatsOpen, setIsStatsOpen] = useState(false);
