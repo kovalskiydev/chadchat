@@ -6,6 +6,10 @@ on:
       - main
   workflow_dispatch:
 
+concurrency:
+  group: deploy-${{ github.ref }}
+  cancel-in-progress: true
+
 env:
   REGISTRY: ghcr.io
   API_DEPLOY_PATH: /opt/chadchat/api
@@ -71,8 +75,8 @@ jobs:
           file: ./web/Dockerfile
           push: true
           provenance: false
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          cache-from: type=gha,scope=web
+          cache-to: type=gha,scope=web,mode=max
           build-args: |
             VITE_API_BASE_URL=${{ vars.PROD_API_BASE_URL }}
           tags: |
@@ -149,8 +153,8 @@ jobs:
           file: ${{ matrix.dockerfile }}
           push: true
           provenance: false
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          cache-from: type=gha,scope=${{ matrix.image_name }}
+          cache-to: type=gha,scope=${{ matrix.image_name }},mode=max
           build-args: ${{ matrix.build_args }}
           tags: |
             ${{ env.REGISTRY }}/${{ steps.vars.outputs.owner_lc }}/chadchat-${{ matrix.image_name }}:main
