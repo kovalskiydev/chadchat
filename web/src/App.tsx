@@ -1465,6 +1465,8 @@ function AuthModal({
   verificationToken,
   consentAccepted,
   onConsentChange,
+  onOpenRules,
+  onOpenPrivacy,
 }: {
   mode: "login" | "register";
   setMode: (mode: "login" | "register") => void;
@@ -1480,9 +1482,12 @@ function AuthModal({
   verificationToken: string | null;
   consentAccepted: boolean;
   onConsentChange: (checked: boolean) => void;
+  onOpenRules: () => void;
+  onOpenPrivacy: () => void;
 }) {
   const actionLabel =
     mode === "login" ? "Login" : isAnonymous ? "Upgrade Profile" : "Register";
+  const requiresConsent = mode !== "login";
 
   return (
     <div
@@ -1563,33 +1568,53 @@ function AuthModal({
               {error}
             </div>
           )}
-          <label className="grid cursor-pointer grid-cols-[16px_1fr] items-start gap-3 border border-zinc-800 bg-black/60 px-3 py-3">
-            <input
-              type="checkbox"
-              checked={consentAccepted}
-              onChange={(event) => onConsentChange(event.target.checked)}
-              className="mt-0.5 h-4 w-4 rounded-none border border-zinc-600 bg-black accent-purple-400"
-            />
-            <span className="text-[10px] leading-5 text-zinc-400">
-              I agree to the rules and privacy policy, confirm that I am 18+, and consent to the
-              processing of my personal data.
-            </span>
-          </label>
+          {requiresConsent && (
+            <label className="grid cursor-pointer grid-cols-[16px_1fr] items-start gap-3 border border-zinc-800 bg-black/60 px-3 py-3">
+              <input
+                type="checkbox"
+                checked={consentAccepted}
+                onChange={(event) => onConsentChange(event.target.checked)}
+                className="mt-0.5 h-4 w-4 rounded-none border border-zinc-600 bg-black accent-purple-400"
+              />
+              <span className="text-[10px] leading-5 text-zinc-400">
+                I agree to the{" "}
+                <button
+                  type="button"
+                  onClick={(event) => {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    onOpenRules();
+                  }}
+                  className="text-zinc-200 underline underline-offset-2 hover:text-white"
+                >
+                  rules
+                </button>
+                {" "}and{" "}
+                <button
+                  type="button"
+                  onClick={(event) => {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    onOpenPrivacy();
+                  }}
+                  className="text-zinc-200 underline underline-offset-2 hover:text-white"
+                >
+                  privacy policy
+                </button>
+                , confirm that I am 18+, and consent to the processing of my personal data.
+              </span>
+            </label>
+          )}
           <button
             type="button"
             onClick={onSubmit}
-            disabled={isSubmitting || !consentAccepted}
+            disabled={isSubmitting || (requiresConsent && !consentAccepted)}
             className="inline-flex h-10 w-full items-center justify-center border border-purple-500/50 bg-purple-950/35 text-[10px] font-semibold uppercase tracking-[0.14em] text-purple-100 transition-colors hover:border-purple-300 hover:text-white disabled:cursor-not-allowed disabled:opacity-50"
           >
             {isSubmitting ? "Please Wait..." : actionLabel}
           </button>
           {mode === "register" && (
             <div className="space-y-2">
-              {isAnonymous && (
-                <div className="border border-zinc-800 bg-black/60 px-3 py-2 text-[10px] font-semibold uppercase tracking-[0.12em] text-zinc-500">
-                  Your anonymous profile will be upgraded without repeating verification.
-                </div>
-              )}
               {!isAnonymous && (
                 <div
                   className={cn(
@@ -3548,6 +3573,95 @@ function VerificationStartingModal({
   );
 }
 
+function LegalModal({
+  kind,
+  onClose,
+}: {
+  kind: "rules" | "privacy";
+  onClose: () => void;
+}) {
+  const isRules = kind === "rules";
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/78 p-4 backdrop-blur-sm"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="legal-modal-title"
+      onMouseDown={onClose}
+    >
+      <div
+        className="w-full max-w-2xl border border-purple-500/35 bg-zinc-950 shadow-[0_0_40px_rgba(132,0,255,0.22)]"
+        onMouseDown={(event) => event.stopPropagation()}
+      >
+        <div className="flex items-center justify-between border-b border-border px-5 py-4">
+          <div>
+            <div className="text-[10px] font-semibold uppercase tracking-[0.18em] text-zinc-600">
+              Legal
+            </div>
+            <h2
+              id="legal-modal-title"
+              className="mt-2 text-lg font-black uppercase tracking-[0.14em] text-zinc-100"
+            >
+              {isRules ? "Rules" : "Privacy Policy"}
+            </h2>
+          </div>
+          <button
+            className="inline-flex h-10 w-10 items-center justify-center border border-zinc-800 bg-black/80 text-zinc-400 transition-colors hover:border-purple-400 hover:text-white"
+            onClick={onClose}
+            type="button"
+            aria-label="Close legal modal"
+          >
+            <X className="h-4 w-4" aria-hidden="true" />
+          </button>
+        </div>
+        <div className="max-h-[70vh] space-y-4 overflow-y-auto p-5 text-sm leading-6 text-zinc-300">
+          {isRules ? (
+            <>
+              <div className="border border-zinc-800 bg-black/60 px-4 py-3">
+                Use the service lawfully, do not harass other users, and do not upload illegal,
+                exploitative, or non-consensual content.
+              </div>
+              <div className="border border-zinc-800 bg-black/60 px-4 py-3">
+                You must be at least 18 years old to use camera-based features, matchmaking, and
+                chat.
+              </div>
+              <div className="border border-zinc-800 bg-black/60 px-4 py-3">
+                Do not impersonate other people, attempt to bypass moderation, attack the service,
+                or interfere with other matches.
+              </div>
+              <div className="border border-zinc-800 bg-black/60 px-4 py-3">
+                Accounts, ratings, and access may be limited or removed for abuse, fraud, or
+                repeated policy violations.
+              </div>
+            </>
+          ) : (
+            <>
+              <div className="border border-zinc-800 bg-black/60 px-4 py-3">
+                The service may process your account data, nickname, authentication data, chat
+                messages, camera frames used for verification or scoring, and technical logs needed
+                for security and operation.
+              </div>
+              <div className="border border-zinc-800 bg-black/60 px-4 py-3">
+                Camera and audio access are used only for features you explicitly start, such as
+                verification, Test Lab, and live matches.
+              </div>
+              <div className="border border-zinc-800 bg-black/60 px-4 py-3">
+                Anonymous sessions may be temporary, while registered accounts may retain profile
+                and progression data needed to provide the service.
+              </div>
+              <div className="border border-zinc-800 bg-black/60 px-4 py-3">
+                By continuing with consent, you allow the service to process personal data required
+                to authenticate you, operate core features, prevent abuse, and improve reliability.
+              </div>
+            </>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function EntryChoiceModal({
   onAnonymous,
   onLogin,
@@ -3556,6 +3670,8 @@ function EntryChoiceModal({
   verificationStartStatus,
   consentAccepted,
   onConsentChange,
+  onOpenRules,
+  onOpenPrivacy,
 }: {
   onAnonymous: () => void;
   onLogin: () => void;
@@ -3564,6 +3680,8 @@ function EntryChoiceModal({
   verificationStartStatus: string | null;
   consentAccepted: boolean;
   onConsentChange: (checked: boolean) => void;
+  onOpenRules: () => void;
+  onOpenPrivacy: () => void;
 }) {
   return (
     <div
@@ -3632,8 +3750,31 @@ function EntryChoiceModal({
               className="mt-0.5 h-4 w-4 rounded-none border border-zinc-600 bg-black accent-purple-400"
             />
             <span className="text-[10px] leading-5 text-zinc-400">
-              I agree to the rules and privacy policy, confirm that I am 18+, and consent to the
-              processing of my personal data.
+              I agree to the{" "}
+              <button
+                type="button"
+                onClick={(event) => {
+                  event.preventDefault();
+                  event.stopPropagation();
+                  onOpenRules();
+                }}
+                className="text-zinc-200 underline underline-offset-2 hover:text-white"
+              >
+                rules
+              </button>
+              {" "}and{" "}
+              <button
+                type="button"
+                onClick={(event) => {
+                  event.preventDefault();
+                  event.stopPropagation();
+                  onOpenPrivacy();
+                }}
+                className="text-zinc-200 underline underline-offset-2 hover:text-white"
+              >
+                privacy policy
+              </button>
+              , confirm that I am 18+, and consent to the processing of my personal data.
             </span>
           </label>
         </div>
@@ -3719,6 +3860,7 @@ export default function App() {
   const [verifiedPurpose, setVerifiedPurpose] = useState<
     "register" | "anonymous" | null
   >(null);
+  const [legalModal, setLegalModal] = useState<"rules" | "privacy" | null>(null);
   const [showEntryChoice, setShowEntryChoice] = useState(false);
   const [showAnonymousProgressPrompt, setShowAnonymousProgressPrompt] = useState(false);
   const [consentAccepted, setConsentAccepted] = useState(false);
@@ -3847,7 +3989,7 @@ export default function App() {
   }, [authNickname, authPassword, isAnonymousUser, tokens]);
 
   const handleAuthSubmit = async () => {
-    if (!consentAccepted) {
+    if (authMode !== "login" && !consentAccepted) {
       setAuthError("Accept the rules, privacy policy, 18+ confirmation, and data processing terms");
       return;
     }
@@ -4282,6 +4424,8 @@ export default function App() {
           verificationToken={verificationToken}
           consentAccepted={consentAccepted}
           onConsentChange={setConsentAccepted}
+          onOpenRules={() => setLegalModal("rules")}
+          onOpenPrivacy={() => setLegalModal("privacy")}
         />
       )}
       {verificationSession && (
@@ -4330,6 +4474,14 @@ export default function App() {
           verificationStartStatus={verificationStartStatus}
           consentAccepted={consentAccepted}
           onConsentChange={setConsentAccepted}
+          onOpenRules={() => setLegalModal("rules")}
+          onOpenPrivacy={() => setLegalModal("privacy")}
+        />
+      )}
+      {legalModal && (
+        <LegalModal
+          kind={legalModal}
+          onClose={() => setLegalModal(null)}
         />
       )}
       {showAnonymousProgressPrompt && (
