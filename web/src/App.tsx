@@ -4179,6 +4179,13 @@ export default function App() {
     setIsAuthOpen(true);
   }, []);
 
+  const handleGuestNicknameClick = useCallback(() => {
+    setShowAnonymousProgressPrompt(false);
+    setAuthError(null);
+    setShowEntryChoice(true);
+    setIsAuthOpen(false);
+  }, []);
+
   return (
     <main className="relative min-h-screen overflow-hidden bg-background text-foreground">
       <div className="pointer-events-auto absolute inset-0 opacity-55">
@@ -4256,6 +4263,10 @@ export default function App() {
                 onClick={() => {
                   if (isAnonymousUser) {
                     handleAnonymousNicknameClick();
+                    return;
+                  }
+                  if (!tokens) {
+                    handleGuestNicknameClick();
                   }
                 }}
                 className="inline-flex h-5 items-center gap-1 border border-zinc-700 bg-zinc-900/60 px-2 text-[10px] font-semibold uppercase tracking-[0.12em] text-zinc-300 transition-colors hover:border-purple-500/60 hover:text-zinc-100"
