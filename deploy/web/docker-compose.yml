@@ -1,0 +1,11 @@
+services:
+  web:
+    image: ${WEB_IMAGE:-omoggle/web:latest}
+    build:
+      context: ../../web
+      dockerfile: Dockerfile
+      args:
+        VITE_API_BASE_URL: ${VITE_API_BASE_URL}
+    restart: unless-stopped
+    ports:
+      - "${WEB_PUBLIC_PORT:-80}:80"

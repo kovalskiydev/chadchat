@@ -1,0 +1,97 @@
+version: "3.9"
+services:
+  verification-service:
+    image: golang:1.22
+    working_dir: /app
+    volumes:
+      - .:/app
+    command: go run ./cmd/verification-service
+    ports:
+      - "8082:8082"
+
+  auth-service:
+    image: golang:1.22
+    working_dir: /app
+    volumes:
+      - .:/app
+    command: go run ./cmd/auth-service
+    environment:
+      - VERIFICATION_SERVICE_URL=http://verification-service:8082
+    depends_on:
+      - verification-service
+    ports:
+      - "8081:8081"
+
+  ml-service:
+    image: python:3.11-slim
+    working_dir: /app
+    volumes:
+      - .:/app
+    command: sh -c "pip install --no-cache-dir -r ml/requirements.txt && uvicorn ml.api:app --host 0.0.0.0 --port 8090"
+    ports:
+      - "8090:8090"
+
+  test-lab-service:
+    image: golang:1.22
+    working_dir: /app
+    volumes:
+      - .:/app
+    command: go run ./cmd/test-lab-service
+    environment:
+      - AUTH_SERVICE_URL=http://auth-service:8081
+      - ML_SERVICE_URL=http://ml-service:8090
+    depends_on:
+      - auth-service
+      - ml-service
+    ports:
+      - "8083:8083"
+
+  live-chat-service:
+    image: golang:1.22
+    working_dir: /app
+    volumes:
+      - .:/app
+    command: go run ./cmd/live-chat-service
+    environment:
+      - AUTH_SERVICE_URL=http://auth-service:8081
+    depends_on:
+      - auth-service
+    ports:
+      - "8084:8084"
+
+
+  duel-service:
+    image: golang:1.22
+    working_dir: /app
+    volumes:
+      - .:/app
+    command: go run ./cmd/duel-service
+    environment:
+      - AUTH_SERVICE_URL=http://auth-service:8081
+      - ML_SERVICE_URL=http://ml-service:8090
+    depends_on:
+      - auth-service
+      - ml-service
+    ports:
+      - "8085:8085"
+
+  api-gateway:
+    image: golang:1.22
+    working_dir: /app
+    volumes:
+      - .:/app
+    command: go run ./cmd/api-gateway
+    environment:
+      - AUTH_SERVICE_URL=http://auth-service:8081
+      - VERIFICATION_SERVICE_URL=http://verification-service:8082
+      - TEST_LAB_SERVICE_URL=http://test-lab-service:8083
+      - LIVE_CHAT_SERVICE_URL=http://live-chat-service:8084
+      - DUEL_SERVICE_URL=http://duel-service:8085
+    depends_on:
+      - auth-service
+      - verification-service
+      - test-lab-service
+      - live-chat-service
+      - duel-service
+    ports:
+      - "8080:8080"

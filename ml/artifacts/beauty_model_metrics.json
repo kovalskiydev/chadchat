@@ -1,0 +1,21 @@
+{
+  "samples_total": 11000,
+  "samples_train": 8800,
+  "samples_test": 2200,
+  "samples_scut": 5500,
+  "samples_hf": 5500,
+  "img_size": 48,
+  "alpha": 40.0,
+  "pca_components": 192,
+  "hf_dataset": "tranhuy/facial-beauty-rating",
+  "hf_split": "train",
+  "hf_weight": 1.0,
+  "train_mae": 0.42912542819976807,
+  "train_rmse": 0.5490085128878075,
+  "train_r2": 0.36330878734588623,
+  "test_mae": 0.4374919831752777,
+  "test_rmse": 0.5634593994065471,
+  "test_r2": 0.32930779457092285,
+  "test_mae_scut": 0.4410531520843506,
+  "test_mae_hf": 0.4338786005973816
+}

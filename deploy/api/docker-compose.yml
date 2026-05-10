@@ -1,0 +1,119 @@
+services:
+  verification-service:
+    image: ${VERIFICATION_SERVICE_IMAGE:-omoggle/verification-service:latest}
+    build:
+      context: ../../backend
+      dockerfile: Dockerfile
+      args:
+        SERVICE_PATH: ./cmd/verification-service
+    restart: unless-stopped
+    environment:
+      PORT: 8082
+    expose:
+      - "8082"
+
+  auth-service:
+    image: ${AUTH_SERVICE_IMAGE:-omoggle/auth-service:latest}
+    build:
+      context: ../../backend
+      dockerfile: Dockerfile
+      args:
+        SERVICE_PATH: ./cmd/auth-service
+    restart: unless-stopped
+    environment:
+      PORT: 8081
+      VERIFICATION_SERVICE_URL: http://verification-service:8082
+      AUTH_ACCESS_TOKEN_SECRET: ${AUTH_ACCESS_TOKEN_SECRET}
+      AUTH_REFRESH_TOKEN_SECRET: ${AUTH_REFRESH_TOKEN_SECRET}
+    depends_on:
+      - verification-service
+    expose:
+      - "8081"
+
+  ml-service:
+    image: ${ML_SERVICE_IMAGE:-omoggle/ml-service:latest}
+    build:
+      context: ../../ml
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    environment:
+      PORT: 8090
+    expose:
+      - "8090"
+
+  test-lab-service:
+    image: ${TEST_LAB_SERVICE_IMAGE:-omoggle/test-lab-service:latest}
+    build:
+      context: ../../backend
+      dockerfile: Dockerfile
+      args:
+        SERVICE_PATH: ./cmd/test-lab-service
+    restart: unless-stopped
+    environment:
+      PORT: 8083
+      AUTH_SERVICE_URL: http://auth-service:8081
+      ML_SERVICE_URL: http://ml-service:8090
+    depends_on:
+      - auth-service
+      - ml-service
+    expose:
+      - "8083"
+
+  live-chat-service:
+    image: ${LIVE_CHAT_SERVICE_IMAGE:-omoggle/live-chat-service:latest}
+    build:
+      context: ../../backend
+      dockerfile: Dockerfile
+      args:
+        SERVICE_PATH: ./cmd/live-chat-service
+    restart: unless-stopped
+    environment:
+      PORT: 8084
+      AUTH_SERVICE_URL: http://auth-service:8081
+    depends_on:
+      - auth-service
+    expose:
+      - "8084"
+
+  duel-service:
+    image: ${DUEL_SERVICE_IMAGE:-omoggle/duel-service:latest}
+    build:
+      context: ../../backend
+      dockerfile: Dockerfile
+      args:
+        SERVICE_PATH: ./cmd/duel-service
+    restart: unless-stopped
+    environment:
+      PORT: 8085
+      AUTH_SERVICE_URL: http://auth-service:8081
+      ML_SERVICE_URL: http://ml-service:8090
+    depends_on:
+      - auth-service
+      - ml-service
+    expose:
+      - "8085"
+
+  api-gateway:
+    image: ${API_GATEWAY_IMAGE:-omoggle/api-gateway:latest}
+    build:
+      context: ../../backend
+      dockerfile: Dockerfile
+      args:
+        SERVICE_PATH: ./cmd/api-gateway
+    restart: unless-stopped
+    environment:
+      PORT: 8080
+      CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS}
+      AUTH_SERVICE_URL: ${AUTH_SERVICE_URL:-http://auth-service:8081}
+      VERIFICATION_SERVICE_URL: ${VERIFICATION_SERVICE_URL:-http://verification-service:8082}
+      TEST_LAB_SERVICE_URL: ${TEST_LAB_SERVICE_URL:-http://test-lab-service:8083}
+      LIVE_CHAT_SERVICE_URL: ${LIVE_CHAT_SERVICE_URL:-http://live-chat-service:8084}
+      DUEL_SERVICE_URL: ${DUEL_SERVICE_URL:-http://duel-service:8085}
+    depends_on:
+      - auth-service
+      - verification-service
+      - test-lab-service
+      - live-chat-service
+      - duel-service
+    ports:
+      - "${API_PUBLIC_PORT:-8080}:8080"
