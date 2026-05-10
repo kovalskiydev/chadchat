@@ -2343,10 +2343,12 @@ function StartModesModal({
 function DuelModal({
   accessToken,
   myUserId,
+  onFinished,
   onClose,
 }: {
   accessToken: string | null;
   myUserId: string | null;
+  onFinished?: () => void;
   onClose: () => void;
 }) {
   const extractPhase = (payload: Record<string, unknown>) =>
@@ -2425,6 +2427,7 @@ function DuelModal({
   const [myScore, setMyScore] = useState<number | null>(null);
   const [oppScore, setOppScore] = useState<number | null>(null);
   const [debugLines, setDebugLines] = useState<string[]>([]);
+  const finishedRef = useRef(false);
 
   const pushDebug = useCallback((line: string) => {
     const stamp = new Date().toLocaleTimeString();
@@ -2674,6 +2677,10 @@ function DuelModal({
         if (msgType === "finished") {
           setPhase("finished");
           setStatus("Match finished");
+          if (!finishedRef.current) {
+            finishedRef.current = true;
+            onFinished?.();
+          }
         }
         const signalPayload =
           msgType === "webrtc_signal"
@@ -2778,7 +2785,7 @@ function DuelModal({
       if (poll) window.clearInterval(poll);
       controller.abort();
     };
-  }, [accessToken, matchID, pushDebug, pickSignalPayload, myUserId, extractUsersFromMatch]);
+  }, [accessToken, matchID, pushDebug, pickSignalPayload, myUserId, extractUsersFromMatch, onFinished]);
 
   useEffect(() => {
     if (!accessToken || !matchID) return;
@@ -2916,9 +2923,11 @@ function formatScoreOutOfTen(value: number | null) {
 
 function TestLabModal({
   accessToken,
+  onFinished,
   onClose,
 }: {
   accessToken: string | null;
+  onFinished?: () => void;
   onClose: () => void;
 }) {
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -2939,6 +2948,7 @@ function TestLabModal({
   const [bestScore, setBestScore] = useState<number | null>(null);
   const [averageScore, setAverageScore] = useState<number | null>(null); // final
   const [secondsLeft, setSecondsLeft] = useState<number>(0);
+  const finishedRef = useRef(false);
 
   useEffect(() => {
     let mounted = true;
@@ -3220,6 +3230,10 @@ function TestLabModal({
       }
       if (typeof finalState.seconds_left === "number") setSecondsLeft(finalState.seconds_left);
       setPhase("result");
+      if (!finishedRef.current) {
+        finishedRef.current = true;
+        onFinished?.();
+      }
       streamRef.current?.getTracks().forEach((t) => t.stop());
       streamRef.current = null;
       if (videoRef.current) videoRef.current.srcObject = null;
@@ -3229,7 +3243,7 @@ function TestLabModal({
     } finally {
       setScanning(false);
     }
-  }, [accessToken, room, captureAndScan]);
+  }, [accessToken, room, captureAndScan, onFinished]);
 
   const roomID = getRoomID(room);
   const canStart = Boolean(
@@ -3396,6 +3410,7 @@ function TestLabModal({
               <button
                 type="button"
                 onClick={() => {
+                  finishedRef.current = false;
                   setRunKey((current) => current + 1);
                   setSecondsLeft(0);
                   setPhase("waiting_camera");
@@ -3409,6 +3424,85 @@ function TestLabModal({
               </button>
             )}
           </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function AnonymousProgressModal({
+  onLogin,
+  onRegister,
+  onClose,
+}: {
+  onLogin: () => void;
+  onRegister: () => void;
+  onClose: () => void;
+}) {
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/72 p-4 backdrop-blur-sm"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="anonymous-progress-title"
+      onMouseDown={onClose}
+    >
+      <div
+        className="w-full max-w-md border border-purple-500/35 bg-zinc-950 shadow-[0_0_40px_rgba(132,0,255,0.22)]"
+        onMouseDown={(event) => event.stopPropagation()}
+      >
+        <div className="flex items-center justify-between border-b border-border px-5 py-4">
+          <div>
+            <div className="text-[10px] font-semibold uppercase tracking-[0.18em] text-zinc-600">
+              Anonymous Session
+            </div>
+            <h2
+              id="anonymous-progress-title"
+              className="mt-2 text-lg font-black uppercase tracking-[0.14em] text-zinc-100"
+            >
+              Progress Won't Save
+            </h2>
+          </div>
+          <button
+            className="inline-flex h-10 w-10 items-center justify-center border border-zinc-800 bg-black/80 text-zinc-400 transition-colors hover:border-purple-400 hover:text-white"
+            onClick={onClose}
+            type="button"
+            aria-label="Close anonymous progress prompt"
+          >
+            <X className="h-4 w-4" aria-hidden="true" />
+          </button>
+        </div>
+        <div className="space-y-4 p-5">
+          <div className="border border-zinc-800 bg-black/60 px-4 py-3 text-sm leading-6 text-zinc-300">
+            You are playing as an anonymous user. Match progress, stats, and rewards will not be
+            saved after you leave.
+          </div>
+          <div className="grid gap-2 sm:grid-cols-2">
+            <Button
+              type="button"
+              size="wireMedium"
+              className="h-11"
+              onClick={onRegister}
+            >
+              Register
+            </Button>
+            <Button
+              type="button"
+              size="wireMedium"
+              variant="outline"
+              className="h-11"
+              onClick={onLogin}
+            >
+              Login
+            </Button>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            className="w-full border border-zinc-800 bg-black/70 px-4 py-3 text-[10px] font-semibold uppercase tracking-[0.14em] text-zinc-500 transition-colors hover:border-zinc-600 hover:text-zinc-300"
+          >
+            Continue as Anonymous
+          </button>
         </div>
       </div>
     </div>
@@ -3568,6 +3662,7 @@ export default function App() {
     "register" | "anonymous" | null
   >(null);
   const [showEntryChoice, setShowEntryChoice] = useState(false);
+  const [showAnonymousProgressPrompt, setShowAnonymousProgressPrompt] = useState(false);
   const [tokens, setTokens] = useState<AuthTokens | null>(null);
   const [me, setMe] = useState<AuthUser | null>(null);
   const [auraPulse, setAuraPulse] = useState(false);
@@ -3798,6 +3893,19 @@ export default function App() {
     void handleStartVerification("anonymous");
   };
 
+  const handleAnonymousGameFinished = useCallback(() => {
+    if (!isAnonymousUser) return;
+    setShowAnonymousProgressPrompt(true);
+  }, [isAnonymousUser]);
+
+  const openAuthFromAnonymousPrompt = useCallback((mode: "login" | "register") => {
+    setShowAnonymousProgressPrompt(false);
+    setShowEntryChoice(false);
+    setAuthError(null);
+    setAuthMode(mode);
+    setIsAuthOpen(true);
+  }, []);
+
   return (
     <main className="relative min-h-screen overflow-hidden bg-background text-foreground">
       <div className="pointer-events-auto absolute inset-0 opacity-55">
@@ -4006,6 +4114,7 @@ export default function App() {
       {isTestLabOpen && (
         <TestLabModal
           accessToken={tokens?.accessToken ?? null}
+          onFinished={handleAnonymousGameFinished}
           onClose={() => setIsTestLabOpen(false)}
         />
       )}
@@ -4013,6 +4122,7 @@ export default function App() {
         <DuelModal
           accessToken={tokens?.accessToken ?? null}
           myUserId={me?.id ? String(me.id) : null}
+          onFinished={handleAnonymousGameFinished}
           onClose={() => setIsDuelOpen(false)}
         />
       )}
@@ -4081,6 +4191,13 @@ export default function App() {
           }}
           isStartingVerification={verificationStarting}
           verificationStartStatus={verificationStartStatus}
+        />
+      )}
+      {showAnonymousProgressPrompt && (
+        <AnonymousProgressModal
+          onLogin={() => openAuthFromAnonymousPrompt("login")}
+          onRegister={() => openAuthFromAnonymousPrompt("register")}
+          onClose={() => setShowAnonymousProgressPrompt(false)}
         />
       )}
     </main>
