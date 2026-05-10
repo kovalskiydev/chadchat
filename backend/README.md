@@ -18,6 +18,7 @@ docker compose up --build
 1. `POST /verification/start`
 2. `POST /verification/submit` -> получить `verification_token`
 3. `POST /auth/anonymous` или `POST /auth/register` c `verification_token`
+4. `POST /auth/upgrade` не требует повторной верификации, если пользователь уже был создан как `anonymous`.
 
 ## Test Lab API (через gateway :8080)
 

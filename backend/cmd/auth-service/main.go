@@ -197,14 +197,6 @@ func (s *Server) handleUpgrade(w http.ResponseWriter, r *http.Request, user *Use
 		writeErr(w, 400, err.Error())
 		return
 	}
-	if req.VerificationToken == "" {
-		writeErr(w, 400, "verification_required")
-		return
-	}
-	if err := s.consumeVerificationToken(req.VerificationToken); err != nil {
-		writeErr(w, 401, "invalid_verification_token")
-		return
-	}
 	salt, hash, _ := hashPassword(req.Password)
 
 	s.store.mu.Lock()
