@@ -1,6 +1,6 @@
 services:
   web:
-    image: ${WEB_IMAGE:-omoggle/web:latest}
+    image: ${WEB_IMAGE:-chadchat/web:latest}
     build:
       context: ../../web
       dockerfile: Dockerfile

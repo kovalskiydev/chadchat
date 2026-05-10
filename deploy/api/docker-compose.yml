@@ -1,6 +1,6 @@
 services:
   verification-service:
-    image: ${VERIFICATION_SERVICE_IMAGE:-omoggle/verification-service:latest}
+    image: ${VERIFICATION_SERVICE_IMAGE:-chadchat/verification-service:latest}
     build:
       context: ../../backend
       dockerfile: Dockerfile
@@ -13,7 +13,7 @@ services:
       - "8082"
 
   auth-service:
-    image: ${AUTH_SERVICE_IMAGE:-omoggle/auth-service:latest}
+    image: ${AUTH_SERVICE_IMAGE:-chadchat/auth-service:latest}
     build:
       context: ../../backend
       dockerfile: Dockerfile
@@ -31,7 +31,7 @@ services:
       - "8081"
 
   ml-service:
-    image: ${ML_SERVICE_IMAGE:-omoggle/ml-service:latest}
+    image: ${ML_SERVICE_IMAGE:-chadchat/ml-service:latest}
     build:
       context: ../../ml
       dockerfile: Dockerfile
@@ -42,7 +42,7 @@ services:
       - "8090"
 
   test-lab-service:
-    image: ${TEST_LAB_SERVICE_IMAGE:-omoggle/test-lab-service:latest}
+    image: ${TEST_LAB_SERVICE_IMAGE:-chadchat/test-lab-service:latest}
     build:
       context: ../../backend
       dockerfile: Dockerfile
@@ -60,7 +60,7 @@ services:
       - "8083"
 
   live-chat-service:
-    image: ${LIVE_CHAT_SERVICE_IMAGE:-omoggle/live-chat-service:latest}
+    image: ${LIVE_CHAT_SERVICE_IMAGE:-chadchat/live-chat-service:latest}
     build:
       context: ../../backend
       dockerfile: Dockerfile
@@ -76,7 +76,7 @@ services:
       - "8084"
 
   duel-service:
-    image: ${DUEL_SERVICE_IMAGE:-omoggle/duel-service:latest}
+    image: ${DUEL_SERVICE_IMAGE:-chadchat/duel-service:latest}
     build:
       context: ../../backend
       dockerfile: Dockerfile
@@ -94,7 +94,7 @@ services:
       - "8085"
 
   api-gateway:
-    image: ${API_GATEWAY_IMAGE:-omoggle/api-gateway:latest}
+    image: ${API_GATEWAY_IMAGE:-chadchat/api-gateway:latest}
     build:
       context: ../../backend
       dockerfile: Dockerfile

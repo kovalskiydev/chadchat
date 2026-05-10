@@ -8,8 +8,8 @@ on:
 
 env:
   REGISTRY: ghcr.io
-  API_DEPLOY_PATH: /opt/omoggle/api
-  WEB_DEPLOY_PATH: /opt/omoggle/web
+  API_DEPLOY_PATH: /opt/chadchat/api
+  WEB_DEPLOY_PATH: /opt/chadchat/web
 
 jobs:
   build-and-push:
@@ -90,8 +90,8 @@ jobs:
           cache-to: type=gha,mode=max
           build-args: ${{ matrix.build_args }}
           tags: |
-            ${{ env.REGISTRY }}/${{ steps.vars.outputs.owner_lc }}/omoggle-${{ matrix.image_name }}:main
-            ${{ env.REGISTRY }}/${{ steps.vars.outputs.owner_lc }}/omoggle-${{ matrix.image_name }}:${{ github.sha }}
+            ${{ env.REGISTRY }}/${{ steps.vars.outputs.owner_lc }}/chadchat-${{ matrix.image_name }}:main
+            ${{ env.REGISTRY }}/${{ steps.vars.outputs.owner_lc }}/chadchat-${{ matrix.image_name }}:${{ github.sha }}
 
   deploy-api:
     runs-on: ubuntu-latest
@@ -135,13 +135,13 @@ jobs:
             API_PUBLIC_PORT=${{ vars.PROD_API_PUBLIC_PORT || '8080' }}
             AUTH_ACCESS_TOKEN_SECRET=${{ secrets.PROD_AUTH_ACCESS_TOKEN_SECRET }}
             AUTH_REFRESH_TOKEN_SECRET=${{ secrets.PROD_AUTH_REFRESH_TOKEN_SECRET }}
-            API_GATEWAY_IMAGE=${{ env.REGISTRY }}/${OWNER_LC}/omoggle-api-gateway:main
-            AUTH_SERVICE_IMAGE=${{ env.REGISTRY }}/${OWNER_LC}/omoggle-auth-service:main
-            VERIFICATION_SERVICE_IMAGE=${{ env.REGISTRY }}/${OWNER_LC}/omoggle-verification-service:main
-            TEST_LAB_SERVICE_IMAGE=${{ env.REGISTRY }}/${OWNER_LC}/omoggle-test-lab-service:main
-            LIVE_CHAT_SERVICE_IMAGE=${{ env.REGISTRY }}/${OWNER_LC}/omoggle-live-chat-service:main
-            DUEL_SERVICE_IMAGE=${{ env.REGISTRY }}/${OWNER_LC}/omoggle-duel-service:main
-            ML_SERVICE_IMAGE=${{ env.REGISTRY }}/${OWNER_LC}/omoggle-ml-service:main
+            API_GATEWAY_IMAGE=${{ env.REGISTRY }}/${OWNER_LC}/chadchat-api-gateway:main
+            AUTH_SERVICE_IMAGE=${{ env.REGISTRY }}/${OWNER_LC}/chadchat-auth-service:main
+            VERIFICATION_SERVICE_IMAGE=${{ env.REGISTRY }}/${OWNER_LC}/chadchat-verification-service:main
+            TEST_LAB_SERVICE_IMAGE=${{ env.REGISTRY }}/${OWNER_LC}/chadchat-test-lab-service:main
+            LIVE_CHAT_SERVICE_IMAGE=${{ env.REGISTRY }}/${OWNER_LC}/chadchat-live-chat-service:main
+            DUEL_SERVICE_IMAGE=${{ env.REGISTRY }}/${OWNER_LC}/chadchat-duel-service:main
+            ML_SERVICE_IMAGE=${{ env.REGISTRY }}/${OWNER_LC}/chadchat-ml-service:main
             EOF
             echo "${{ secrets.GHCR_TOKEN }}" | docker login ${{ env.REGISTRY }} -u "${{ secrets.GHCR_USERNAME }}" --password-stdin
             cd "${{ env.API_DEPLOY_PATH }}"
@@ -188,7 +188,7 @@ jobs:
             cat > "${{ env.WEB_DEPLOY_PATH }}/.env" <<EOF
             VITE_API_BASE_URL=${{ vars.PROD_API_BASE_URL }}
             WEB_PUBLIC_PORT=${{ vars.PROD_WEB_PUBLIC_PORT || '80' }}
-            WEB_IMAGE=${{ env.REGISTRY }}/${OWNER_LC}/omoggle-web:main
+            WEB_IMAGE=${{ env.REGISTRY }}/${OWNER_LC}/chadchat-web:main
             EOF
             echo "${{ secrets.GHCR_TOKEN }}" | docker login ${{ env.REGISTRY }} -u "${{ secrets.GHCR_USERNAME }}" --password-stdin
             cd "${{ env.WEB_DEPLOY_PATH }}"

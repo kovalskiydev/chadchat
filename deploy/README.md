@@ -107,8 +107,8 @@ Flow:
 
 ### Default remote paths
 
-- API stack: `/opt/omoggle/api`
-- Web stack: `/opt/omoggle/web`
+- API stack: `/opt/chadchat/api`
+- Web stack: `/opt/chadchat/web`
 
 If you want different paths, edit the workflow env block.
 
