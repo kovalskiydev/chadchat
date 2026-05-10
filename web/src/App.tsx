@@ -2923,12 +2923,10 @@ function formatScoreOutOfTen(value: number | null) {
 
 function TestLabModal({
   accessToken,
-  onFinished,
   onClose,
 }: {
   accessToken: string | null;
-  onFinished?: () => void;
-  onClose: () => void;
+  onClose: (completed: boolean) => void;
 }) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const overlayRef = useRef<HTMLCanvasElement>(null);
@@ -2948,7 +2946,7 @@ function TestLabModal({
   const [bestScore, setBestScore] = useState<number | null>(null);
   const [averageScore, setAverageScore] = useState<number | null>(null); // final
   const [secondsLeft, setSecondsLeft] = useState<number>(0);
-  const finishedRef = useRef(false);
+  const completedRef = useRef(false);
 
   useEffect(() => {
     let mounted = true;
@@ -3229,11 +3227,8 @@ function TestLabModal({
         setAverageScore(finalState.running_average);
       }
       if (typeof finalState.seconds_left === "number") setSecondsLeft(finalState.seconds_left);
+      completedRef.current = true;
       setPhase("result");
-      if (!finishedRef.current) {
-        finishedRef.current = true;
-        onFinished?.();
-      }
       streamRef.current?.getTracks().forEach((t) => t.stop());
       streamRef.current = null;
       if (videoRef.current) videoRef.current.srcObject = null;
@@ -3243,7 +3238,7 @@ function TestLabModal({
     } finally {
       setScanning(false);
     }
-  }, [accessToken, room, captureAndScan, onFinished]);
+  }, [accessToken, room, captureAndScan]);
 
   const roomID = getRoomID(room);
   const canStart = Boolean(
@@ -3278,7 +3273,7 @@ function TestLabModal({
       role="dialog"
       aria-modal="true"
       aria-labelledby="test-lab-title"
-      onMouseDown={onClose}
+      onMouseDown={() => onClose(completedRef.current)}
     >
       <div
         className="w-full max-w-6xl border border-purple-500/35 bg-zinc-950 shadow-[0_0_40px_rgba(132,0,255,0.22)]"
@@ -3298,7 +3293,7 @@ function TestLabModal({
           </div>
           <button
             className="inline-flex h-10 w-10 items-center justify-center border border-zinc-800 bg-black/80 text-zinc-400 transition-colors hover:border-purple-400 hover:text-white"
-            onClick={onClose}
+            onClick={() => onClose(completedRef.current)}
             type="button"
             aria-label="Close test lab"
           >
@@ -3410,7 +3405,7 @@ function TestLabModal({
               <button
                 type="button"
                 onClick={() => {
-                  finishedRef.current = false;
+                  completedRef.current = false;
                   setRunKey((current) => current + 1);
                   setSecondsLeft(0);
                   setPhase("waiting_camera");
@@ -3503,6 +3498,46 @@ function AnonymousProgressModal({
           >
             Continue as Anonymous
           </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function VerificationStartingModal({
+  status,
+}: {
+  status: string | null;
+}) {
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/78 p-4 backdrop-blur-sm"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="verification-starting-title"
+    >
+      <div className="w-full max-w-md border border-purple-500/35 bg-zinc-950 shadow-[0_0_40px_rgba(132,0,255,0.22)]">
+        <div className="border-b border-border px-5 py-4">
+          <div className="text-[10px] font-semibold uppercase tracking-[0.18em] text-zinc-600">
+            Verification
+          </div>
+          <h2
+            id="verification-starting-title"
+            className="mt-2 text-lg font-black uppercase tracking-[0.14em] text-zinc-100"
+          >
+            Starting Camera Check
+          </h2>
+        </div>
+        <div className="space-y-4 p-5">
+          <div className="flex items-center gap-3 border border-zinc-800 bg-black/60 px-4 py-3">
+            <div className="h-4 w-4 animate-spin rounded-full border-2 border-zinc-700 border-t-purple-300" />
+            <div className="text-sm text-zinc-300">
+              {status ?? "Contacting verification service..."}
+            </div>
+          </div>
+          <div className="text-[10px] font-semibold uppercase tracking-[0.12em] text-zinc-600">
+            Please wait. The webcam step will open automatically.
+          </div>
         </div>
       </div>
     </div>
@@ -4114,8 +4149,10 @@ export default function App() {
       {isTestLabOpen && (
         <TestLabModal
           accessToken={tokens?.accessToken ?? null}
-          onFinished={handleAnonymousGameFinished}
-          onClose={() => setIsTestLabOpen(false)}
+          onClose={(completed) => {
+            setIsTestLabOpen(false);
+            if (completed) handleAnonymousGameFinished();
+          }}
         />
       )}
       {isDuelOpen && (
@@ -4167,6 +4204,9 @@ export default function App() {
           isSubmitting={verificationSubmitting}
           error={verificationError}
         />
+      )}
+      {verificationStarting && !verificationSession && (
+        <VerificationStartingModal status={verificationStartStatus} />
       )}
       {verificationSuccessOpen && (
         <VerificationSuccessModal
