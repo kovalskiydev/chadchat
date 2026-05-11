@@ -59,6 +59,7 @@ import {
 import {
   duelCurrentMatch,
   duelGetMatch,
+  duelMediaReady,
   duelQueueJoin,
   duelQueueLeave,
   duelScoreFrame,
@@ -2633,6 +2634,7 @@ function DuelModal({
   const pendingCandidatesRef = useRef<RTCIceCandidateInit[]>([]);
   const makingOfferRef = useRef(false);
   const ignoreOfferRef = useRef(false);
+  const mediaReadySentRef = useRef(false);
   const [queueing, setQueueing] = useState(false);
   const [matchID, setMatchID] = useState("");
   const [phase, setPhase] = useState("queue");
@@ -2653,6 +2655,7 @@ function DuelModal({
     myNickname: string | null;
     oppNickname: string | null;
   } | null>(null);
+  const [mediaReadyMap, setMediaReadyMap] = useState<Record<string, boolean>>({});
   const [queueRunKey, setQueueRunKey] = useState(0);
   const finishedRef = useRef(false);
 
@@ -2662,17 +2665,26 @@ function DuelModal({
   const isOfferer = Boolean(myUserId && opponentUserId && myUserId < opponentUserId);
   const isQueueScreen = queueing || !matchID || phase === "queue";
   const timerMax =
-    phase === "pre_start" || phase === "post_chat"
+    phase === "awaiting_media"
+      ? 0
+      : phase === "pre_start" || phase === "post_chat"
       ? 10
       : phase === "overtime"
         ? 5
         : 10;
   const timerProgress = Math.max(
     0,
-    Math.min(100, ((secondsLeft ?? timerMax) / Math.max(1, timerMax)) * 100),
+    Math.min(
+      100,
+      phase === "awaiting_media"
+        ? 0
+        : ((secondsLeft ?? timerMax) / Math.max(1, timerMax)) * 100,
+    ),
   );
   const phaseLabel =
-    phase === "pre_start"
+    phase === "awaiting_media"
+      ? "Awaiting Media"
+      : phase === "pre_start"
       ? "Pre Start"
       : phase === "scoring"
         ? "Scoring"
@@ -2686,31 +2698,33 @@ function DuelModal({
                 ? "Finished"
               : "Queue";
   const phaseDescription =
-    phase === "pre_start"
-      ? "Camera check live. Scoring starts when the timer hits zero."
+    phase === "awaiting_media"
+      ? "Waiting for both cameras."
+    : phase === "pre_start"
+      ? "Get ready."
       : phase === "scoring"
-        ? "Face the camera. Rating is being calculated right now."
+        ? "Scoring."
         : phase === "overtime"
           ? "Close match. Extra time is active."
           : phase === "result"
             ? "Match complete. Final result is being prepared."
             : phase === "post_chat"
-              ? "Short post-match window before the duel closes."
+              ? "Post chat."
               : phase === "finished"
                 ? "Duel finished."
                 : "Searching for an opponent.";
   const stageSteps = [
+    { id: "awaiting_media", label: "Media" },
     { id: "pre_start", label: "Pre Start" },
     { id: "scoring", label: "Scoring" },
-    { id: "overtime", label: "Overtime" },
     { id: "finished", label: "Result" },
   ];
   const currentStepIndex =
-    phase === "pre_start"
+    phase === "awaiting_media"
       ? 0
-      : phase === "scoring"
+      : phase === "pre_start"
         ? 1
-        : phase === "overtime"
+        : phase === "scoring" || phase === "overtime"
           ? 2
           : phase === "result" || phase === "post_chat" || phase === "finished"
             ? 3
@@ -2720,6 +2734,8 @@ function DuelModal({
   const isTerminalPhase = useCallback((value: string | null | undefined) => {
     return value === "result" || value === "post_chat" || value === "finished";
   }, []);
+  const myMediaReady = myUserId ? Boolean(mediaReadyMap[myUserId]) : false;
+  const opponentMediaReady = opponentUserId ? Boolean(mediaReadyMap[opponentUserId]) : false;
 
   const extractMatchRecord = useCallback((payload: Record<string, unknown>) => {
     return (payload.match as Record<string, unknown> | undefined) ?? payload;
@@ -2738,6 +2754,14 @@ function DuelModal({
     }
 
     const players = match.players as Array<Record<string, unknown>> | undefined;
+    const mediaReady = match.media_ready as Record<string, boolean> | undefined;
+    if (mediaReady && typeof mediaReady === "object") {
+      setMediaReadyMap(
+        Object.fromEntries(
+          Object.entries(mediaReady).map(([key, value]) => [key, Boolean(value)]),
+        ),
+      );
+    }
     if (Array.isArray(players) && myUserId) {
       const mine = players.find((player) => String(player.user_id ?? "") === myUserId);
       const opponent = players.find((player) => String(player.user_id ?? "") !== myUserId);
@@ -2799,6 +2823,7 @@ function DuelModal({
 
   const resetMatchFlow = useCallback(() => {
     finishedRef.current = false;
+    mediaReadySentRef.current = false;
     setQueueing(false);
     setMatchID("");
     setPhase("queue");
@@ -2809,6 +2834,7 @@ function DuelModal({
     setOppScore(null);
     setOpponentUserId(null);
     setResultSummary(null);
+    setMediaReadyMap({});
     setStatus("Joining queue...");
     setError(null);
     remoteStreamRef.current = null;
@@ -2922,6 +2948,19 @@ function DuelModal({
       if (remoteVideoRef.current) {
         remoteVideoRef.current.srcObject = remoteStream;
         void remoteVideoRef.current.play().catch(() => {});
+        if (
+          accessToken &&
+          matchID &&
+          streamRef.current &&
+          remoteVideoRef.current.srcObject &&
+          !mediaReadySentRef.current
+        ) {
+          mediaReadySentRef.current = true;
+          void duelMediaReady(accessToken, matchID).catch((error: unknown) => {
+            mediaReadySentRef.current = false;
+            setError(error instanceof Error ? error.message : "Failed to confirm media");
+          });
+        }
       }
       pushDebug(`ontrack: remote tracks=${remoteStream.getTracks().length}`);
     };
@@ -2953,6 +2992,7 @@ function DuelModal({
       peerRef.current?.close();
       peerRef.current = null;
       remoteStreamRef.current = null;
+      mediaReadySentRef.current = false;
       pendingCandidatesRef.current = [];
       makingOfferRef.current = false;
       ignoreOfferRef.current = false;
@@ -3077,11 +3117,12 @@ function DuelModal({
           applyMatchSnapshot(payload);
           const p = extractPhase(payload) ?? extractPhase(body);
           if (p) {
+            if (p === "awaiting_media") setStatus("Waiting for both cameras");
             if (p === "pre_start") setStatus("Opponent connected");
             if (p === "scoring") setStatus("Scoring in progress");
             if (p === "overtime") setStatus("Overtime round");
             if (p === "result") setStatus("Calculating result");
-            if (p === "post_chat") setStatus("Post match window");
+            if (p === "post_chat") setStatus("Post chat");
             if (p === "finished") setStatus("Match finished");
           }
         }
@@ -3376,6 +3417,24 @@ function DuelModal({
                   <div className="mb-3 text-[11px] uppercase tracking-[0.1em] text-zinc-400">
                     {phaseDescription}
                   </div>
+                  {phase === "awaiting_media" && (
+                    <div className="mb-3 grid gap-2 sm:grid-cols-2">
+                      <div className="border border-zinc-800 bg-black px-3 py-2 text-[10px] font-semibold uppercase tracking-[0.12em] text-zinc-400">
+                        You:{" "}
+                        <span className={myMediaReady ? "text-emerald-300" : "text-zinc-500"}>
+                          {myMediaReady ? "Ready" : "Waiting"}
+                        </span>
+                      </div>
+                      <div className="border border-zinc-800 bg-black px-3 py-2 text-[10px] font-semibold uppercase tracking-[0.12em] text-zinc-400">
+                        Opponent:{" "}
+                        <span
+                          className={opponentMediaReady ? "text-emerald-300" : "text-zinc-500"}
+                        >
+                          {opponentMediaReady ? "Ready" : "Waiting"}
+                        </span>
+                      </div>
+                    </div>
+                  )}
                   <div className="h-2 overflow-hidden border border-zinc-800 bg-black">
                     <div
                       className="h-full bg-purple-400 transition-[width] duration-300 ease-out shadow-[0_0_14px_rgba(168,85,247,0.8)]"
