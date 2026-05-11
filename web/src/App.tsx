@@ -2717,6 +2717,9 @@ function DuelModal({
             : -1;
   const isResultPhase =
     phase === "result" || phase === "post_chat" || phase === "finished";
+  const isTerminalPhase = useCallback((value: string | null | undefined) => {
+    return value === "result" || value === "post_chat" || value === "finished";
+  }, []);
 
   const extractMatchRecord = useCallback((payload: Record<string, unknown>) => {
     return (payload.match as Record<string, unknown> | undefined) ?? payload;
@@ -2995,7 +2998,8 @@ function DuelModal({
       try {
         const joined = await duelQueueJoin(accessToken);
         const directMatch = String((joined.match_id as string | undefined) ?? "");
-        if (directMatch && mounted) {
+        const joinedPhase = extractPhase(joined as Record<string, unknown>);
+        if (directMatch && mounted && !isTerminalPhase(joinedPhase)) {
           setMatchID(directMatch);
           setStatus("Match found");
           setQueueing(false);
@@ -3005,6 +3009,7 @@ function DuelModal({
         poll = window.setInterval(async () => {
           try {
             const current = await duelCurrentMatch(accessToken);
+            const currentPhase = extractPhase(current as Record<string, unknown>);
             const id = String(
               (current.match_id as string | undefined) ??
                 ((current.match as Record<string, unknown> | undefined)?.id as
@@ -3012,7 +3017,7 @@ function DuelModal({
                   | undefined) ??
                 "",
             );
-            if (id && mounted) {
+            if (id && mounted && !isTerminalPhase(currentPhase)) {
               setMatchID(id);
               setStatus("Match found");
               setQueueing(false);
@@ -3037,7 +3042,7 @@ function DuelModal({
         void duelQueueLeave(accessToken);
       }
     };
-  }, [accessToken, queueRunKey]);
+  }, [accessToken, queueRunKey, extractPhase, isTerminalPhase]);
 
   useEffect(() => {
     if (!accessToken || !matchID) return;
