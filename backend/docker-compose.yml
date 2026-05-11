@@ -93,9 +93,12 @@ services:
     environment:
       - AUTH_SERVICE_URL=http://auth-service:8081
       - ML_SERVICE_URL=http://ml-service:8090
+      - CUSTOMIZATION_SERVICE_URL=http://customization-service:8087
+      - CUSTOMIZATION_INTERNAL_SECRET=dev-customization-secret-change-me
     depends_on:
       - auth-service
       - ml-service
+      - customization-service
     ports:
       - "8085:8085"
 
@@ -115,6 +118,23 @@ services:
     ports:
       - "8086:8086"
 
+  customization-service:
+    image: golang:1.23
+    working_dir: /app
+    volumes:
+      - .:/app
+    command: go run ./cmd/customization-service
+    environment:
+      - MYSQL_DSN=app:app@tcp(mysql:3306)/chadchat?parseTime=true&multiStatements=true&charset=utf8mb4
+      - AUTH_SERVICE_URL=http://auth-service:8081
+      - CUSTOMIZATION_INTERNAL_SECRET=dev-customization-secret-change-me
+      - DEFAULT_RESULT_SOUND_URL=https://cdn.chadchat.example/sounds/default_win.mp3
+    depends_on:
+      - mysql
+      - auth-service
+    ports:
+      - "8087:8087"
+
   api-gateway:
     image: golang:1.23
     working_dir: /app
@@ -128,6 +148,7 @@ services:
       - LIVE_CHAT_SERVICE_URL=http://live-chat-service:8084
       - DUEL_SERVICE_URL=http://duel-service:8085
       - RATING_SERVICE_URL=http://rating-service:8086
+      - CUSTOMIZATION_SERVICE_URL=http://customization-service:8087
       - ML_SERVICE_URL=http://ml-service:8090
     depends_on:
       - auth-service
@@ -136,6 +157,7 @@ services:
       - live-chat-service
       - duel-service
       - rating-service
+      - customization-service
     ports:
       - "8080:8080"
 

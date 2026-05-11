@@ -8,6 +8,7 @@
 - `live-chat-service` (`:8084`) — общий чат.
 - `duel-service` (`:8085`) — live 1v1 matchmaking и матч-фазы.
 - `rating-service` (`:8086`) — rating, rank, leaderboard, rating history.
+- `customization-service` (`:8087`) — result sounds и выбор активного победного звука.
 - `ml-service` (`:8090`) — Python FastAPI с вашей ML моделью.
 - `mysql` (`:3306`) — persistent store.
 
@@ -22,6 +23,7 @@ docker compose up --build
 - `AUTH_REFRESH_TOKEN_SECRET`
 - `VERIFICATION_INTERNAL_SECRET`
 - `MYSQL_DSN`
+- `CUSTOMIZATION_INTERNAL_SECRET`
 
 ## Storage
 
@@ -30,6 +32,7 @@ docker compose up --build
 В MySQL сохраняются:
 - пользователи и refresh-сессии
 - рейтинг, peak rating и rating history
+- result sounds, user ownership и selected sound settings
 - verification sessions и verification tokens
 - история общего чата
 - test-lab комнаты, сессии и samples
@@ -153,9 +156,13 @@ Python API из `ml/api.py` используется как есть:
 - Состояние матча.
 
 5. `GET /duel/match/{matchID}/stream`
-- SSE-события (`match_found`, `phase_changed`, `timer`, `score_update`, `finished`).
+- SSE-события (`joined`, `match_found`, `result_sounds_updated`, `media_ready_update`, `phase_changed`, `timer`, `score_update`, `finished`).
 
-6. `POST /duel/match/{matchID}/signal`
+6. `POST /duel/match/{matchID}/media-ready`
+- Вызывается фронтом после того, как удаленная вебка реально поднялась.
+- Только когда оба игрока отметились `media-ready`, матч переходит из `awaiting_media` в `pre_start`.
+
+7. `POST /duel/match/{matchID}/signal`
 - WebRTC signaling для видео/аудио (offer/answer/ice-candidate).
 - Body примеры:
 ```json
@@ -173,7 +180,7 @@ Python API из `ml/api.py` используется как есть:
 }
 ```
 
-7. `POST /duel/match/{matchID}/score-frame`
+8. `POST /duel/match/{matchID}/score-frame`
 - Body:
 ```json
 {
@@ -183,13 +190,52 @@ Python API из `ml/api.py` используется как есть:
 - Принимается только в фазах `scoring` и `overtime`.
 - На `score-frame` действует rate limit примерно `3.5 кадра/сек`.
 
+### Result sounds в дуэли
+
+- В snapshot матча теперь есть `result_sounds`:
+```json
+{
+  "result_sounds": {
+    "u_1": {
+      "id": "sigma_bell",
+      "title": "Sigma Bell",
+      "audio_url": "https://cdn.example.com/sounds/sigma_bell.mp3"
+    },
+    "u_2": {
+      "id": "default_win",
+      "title": "Default Win",
+      "audio_url": "https://cdn.example.com/sounds/default_win.mp3"
+    }
+  }
+}
+```
+- Фронт должен preload-ить оба звука сразу после `joined` / `match_found` / `result_sounds_updated`.
+- В `finished` приходит `winner_result_sound_id` и `winner_result_sound`, чтобы обе стороны синхронно проиграли звук победителя.
+
 ### Фазы матча
+- `awaiting_media` — матч найден, но старт не идет, пока оба клиента не подтвердят поднятое медиа.
 - `pre_start` — 10 сек до старта (видео/голос).
 - `scoring` — 10 сек оценка.
 - `overtime` — 5 сек, если разница средних < `0.15`.
 - `result` — вычисление результата.
 - `post_chat` — 10 сек после результата.
 - `finished` — матч завершен.
+
+## Customization API (через gateway :8080)
+
+Все эндпоинты требуют `Authorization: Bearer <access_token>`.
+
+1. `GET /result-sounds`
+- Возвращает все активные result sounds с полями `owned`, `selected`, `is_default`.
+
+2. `POST /result-sounds/select`
+- Body:
+```json
+{
+  "sound_id": "default_win"
+}
+```
+- Сервер разрешит выбрать только дефолтный или уже открытый пользователю звук.
 
 ## Security Notes
 

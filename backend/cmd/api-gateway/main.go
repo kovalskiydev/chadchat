@@ -19,6 +19,7 @@ func main() {
 	liveChatURL := envOr("LIVE_CHAT_SERVICE_URL", "http://localhost:8084")
 	duelURL := envOr("DUEL_SERVICE_URL", "http://localhost:8085")
 	ratingURL := envOr("RATING_SERVICE_URL", "http://localhost:8086")
+	customizationURL := envOr("CUSTOMIZATION_SERVICE_URL", "http://localhost:8087")
 
 	authProxy := mustProxy(authURL)
 	verificationProxy := mustProxy(verificationURL)
@@ -26,15 +27,17 @@ func main() {
 	liveChatProxy := mustProxy(liveChatURL)
 	duelProxy := mustProxy(duelURL)
 	ratingProxy := mustProxy(ratingURL)
+	customizationProxy := mustProxy(customizationURL)
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /health", handleHealth(map[string]string{
-		"auth":         authURL,
-		"verification": verificationURL,
-		"test_lab":     testLabURL,
-		"live_chat":    liveChatURL,
-		"duel":         duelURL,
-		"rating":       ratingURL,
+		"auth":          authURL,
+		"verification":  verificationURL,
+		"test_lab":      testLabURL,
+		"live_chat":     liveChatURL,
+		"duel":          duelURL,
+		"rating":        ratingURL,
+		"customization": customizationURL,
 	}))
 	mux.Handle("/auth/", authProxy)
 	mux.Handle("/me", authProxy)
@@ -45,6 +48,8 @@ func main() {
 	mux.Handle("/duel/", duelProxy)
 	mux.Handle("/rating/", ratingProxy)
 	mux.Handle("/leaderboard", ratingProxy)
+	mux.Handle("/result-sounds", customizationProxy)
+	mux.Handle("/result-sounds/", customizationProxy)
 
 	addr := ":" + envOr("PORT", "8080")
 	log.Printf("api-gateway on %s", addr)

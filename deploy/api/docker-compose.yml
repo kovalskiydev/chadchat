@@ -111,11 +111,33 @@ services:
       PORT: 8085
       AUTH_SERVICE_URL: http://auth-service:8081
       ML_SERVICE_URL: http://ml-service:8090
+      CUSTOMIZATION_SERVICE_URL: http://customization-service:8087
+      CUSTOMIZATION_INTERNAL_SECRET: ${CUSTOMIZATION_INTERNAL_SECRET}
     depends_on:
       - auth-service
       - ml-service
+      - customization-service
     expose:
       - "8085"
+
+  customization-service:
+    image: ${CUSTOMIZATION_SERVICE_IMAGE:-chadchat/customization-service:latest}
+    build:
+      context: ../../backend
+      dockerfile: Dockerfile
+      args:
+        SERVICE_PATH: ./cmd/customization-service
+    restart: unless-stopped
+    environment:
+      MYSQL_DSN: ${MYSQL_DSN}
+      PORT: 8087
+      AUTH_SERVICE_URL: http://auth-service:8081
+      CUSTOMIZATION_INTERNAL_SECRET: ${CUSTOMIZATION_INTERNAL_SECRET}
+    depends_on:
+      - mysql
+      - auth-service
+    expose:
+      - "8087"
 
   rating-service:
     image: ${RATING_SERVICE_IMAGE:-chadchat/rating-service:latest}
@@ -152,6 +174,7 @@ services:
       TEST_LAB_SERVICE_URL: ${TEST_LAB_SERVICE_URL:-http://test-lab-service:8083}
       LIVE_CHAT_SERVICE_URL: ${LIVE_CHAT_SERVICE_URL:-http://live-chat-service:8084}
       DUEL_SERVICE_URL: ${DUEL_SERVICE_URL:-http://duel-service:8085}
+      CUSTOMIZATION_SERVICE_URL: ${CUSTOMIZATION_SERVICE_URL:-http://customization-service:8087}
       RATING_SERVICE_URL: ${RATING_SERVICE_URL:-http://rating-service:8086}
       ML_SERVICE_URL: ${ML_SERVICE_URL:-http://ml-service:8090}
     depends_on:
@@ -160,6 +183,7 @@ services:
       - test-lab-service
       - live-chat-service
       - duel-service
+      - customization-service
       - rating-service
     ports:
       - "${API_PUBLIC_PORT:-8080}:8080"

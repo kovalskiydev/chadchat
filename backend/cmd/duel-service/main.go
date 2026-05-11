@@ -36,10 +36,13 @@ const (
 )
 
 type Server struct {
-	authServiceURL string
-	mlServiceURL   string
-	store          *Store
-	limiter        *rateutil.Limiter
+	authServiceURL          string
+	mlServiceURL            string
+	customizationServiceURL string
+	customizationSecret     string
+	defaultResultSoundURL   string
+	store                   *Store
+	limiter                 *rateutil.Limiter
 }
 
 type Store struct {
@@ -50,17 +53,18 @@ type Store struct {
 }
 
 type Match struct {
-	ID          string                     `json:"id"`
-	PlayerA     string                     `json:"player_a"`
-	PlayerB     string                     `json:"player_b"`
-	Phase       string                     `json:"phase"`
-	StartedAt   time.Time                  `json:"started_at"`
-	PhaseEndsAt time.Time                  `json:"phase_ends_at"`
-	Result      *MatchResult               `json:"result,omitempty"`
-	Players     map[string]*PlayerProgress `json:"players"`
-	MediaReady  map[string]bool            `json:"-"`
-	Subscribers map[string]chan []byte     `json:"-"`
-	Connections map[string]int             `json:"-"`
+	ID           string                     `json:"id"`
+	PlayerA      string                     `json:"player_a"`
+	PlayerB      string                     `json:"player_b"`
+	Phase        string                     `json:"phase"`
+	StartedAt    time.Time                  `json:"started_at"`
+	PhaseEndsAt  time.Time                  `json:"phase_ends_at"`
+	Result       *MatchResult               `json:"result,omitempty"`
+	Players      map[string]*PlayerProgress `json:"players"`
+	ResultSounds map[string]ResultSound     `json:"-"`
+	MediaReady   map[string]bool            `json:"-"`
+	Subscribers  map[string]chan []byte     `json:"-"`
+	Connections  map[string]int             `json:"-"`
 }
 
 type PlayerProgress struct {
@@ -79,6 +83,16 @@ type MatchResult struct {
 	Reason   string  `json:"reason"`
 	ScoreA   float64 `json:"score_a"`
 	ScoreB   float64 `json:"score_b"`
+}
+
+type ResultSound struct {
+	ID       string `json:"id"`
+	Title    string `json:"title"`
+	AudioURL string `json:"audio_url"`
+}
+
+type customizationSoundResponse struct {
+	Sound ResultSound `json:"sound"`
 }
 
 type meResponse struct {
@@ -111,8 +125,11 @@ type mlPredictResponse struct {
 
 func main() {
 	s := &Server{
-		authServiceURL: envOr("AUTH_SERVICE_URL", "http://localhost:8081"),
-		mlServiceURL:   envOr("ML_SERVICE_URL", "http://localhost:8090"),
+		authServiceURL:          envOr("AUTH_SERVICE_URL", "http://localhost:8081"),
+		mlServiceURL:            envOr("ML_SERVICE_URL", "http://localhost:8090"),
+		customizationServiceURL: envOr("CUSTOMIZATION_SERVICE_URL", "http://localhost:8087"),
+		customizationSecret:     envOr("CUSTOMIZATION_INTERNAL_SECRET", "dev-customization-secret-change-me"),
+		defaultResultSoundURL:   envOr("DEFAULT_RESULT_SOUND_URL", "https://cdn.chadchat.example/sounds/default_win.mp3"),
 		store: &Store{
 			queue:         []authUser{},
 			matches:       map[string]*Match{},
@@ -197,8 +214,6 @@ func (s *Server) resolveUser(authHeader string) (authUser, error) {
 
 func (s *Server) handleJoinQueue(w http.ResponseWriter, _ *http.Request, user authUser) {
 	s.store.mu.Lock()
-	defer s.store.mu.Unlock()
-
 	if mid, ok := s.store.userToMatchID[user.ID]; ok {
 		match := s.store.matches[mid]
 		if match == nil {
@@ -208,6 +223,7 @@ func (s *Server) handleJoinQueue(w http.ResponseWriter, _ *http.Request, user au
 			if releasableForRematch(match.Phase) {
 				delete(s.store.userToMatchID, user.ID)
 			} else {
+				s.store.mu.Unlock()
 				writeJSON(w, http.StatusOK, map[string]any{"status": "already_in_match", "match_id": mid})
 				return
 			}
@@ -215,6 +231,7 @@ func (s *Server) handleJoinQueue(w http.ResponseWriter, _ *http.Request, user au
 	}
 	for _, queued := range s.store.queue {
 		if queued.ID == user.ID {
+			s.store.mu.Unlock()
 			writeJSON(w, http.StatusOK, map[string]any{"status": "searching"})
 			return
 		}
@@ -222,6 +239,7 @@ func (s *Server) handleJoinQueue(w http.ResponseWriter, _ *http.Request, user au
 
 	if len(s.store.queue) == 0 {
 		s.store.queue = append(s.store.queue, user)
+		s.store.mu.Unlock()
 		writeJSON(w, http.StatusOK, map[string]any{"status": "searching"})
 		return
 	}
@@ -230,6 +248,7 @@ func (s *Server) handleJoinQueue(w http.ResponseWriter, _ *http.Request, user au
 	s.store.queue = s.store.queue[1:]
 	if opponent.ID == user.ID {
 		s.store.queue = append(s.store.queue, user)
+		s.store.mu.Unlock()
 		writeJSON(w, http.StatusOK, map[string]any{"status": "searching"})
 		return
 	}
@@ -238,9 +257,17 @@ func (s *Server) handleJoinQueue(w http.ResponseWriter, _ *http.Request, user au
 	s.store.userToMatchID[opponent.ID] = match.ID
 	s.store.userToMatchID[user.ID] = match.ID
 	s.store.matches[match.ID] = match
-	go s.runMatchLifecycle(match.ID)
+	s.store.mu.Unlock()
 
-	s.broadcastLocked(match, map[string]any{"type": "match_found", "match": snapshotMatch(match)})
+	go s.runMatchLifecycle(match.ID)
+	s.hydrateMatchResultSounds(match.ID)
+
+	s.store.mu.Lock()
+	created := s.store.matches[match.ID]
+	if created != nil {
+		s.broadcastLocked(created, map[string]any{"type": "match_found", "match": snapshotMatch(created)})
+	}
+	s.store.mu.Unlock()
 	writeJSON(w, http.StatusOK, map[string]any{"status": "matched", "match_id": match.ID})
 }
 
@@ -589,7 +616,7 @@ func (s *Server) syncPhaseLocked(m *Match) {
 			m.PhaseEndsAt = now
 			delete(s.store.userToMatchID, m.PlayerA)
 			delete(s.store.userToMatchID, m.PlayerB)
-			s.broadcastLocked(m, map[string]any{"type": "finished", "result": m.Result})
+			s.broadcastLocked(m, s.finishedEventLocked(m))
 			return
 		default:
 			return
@@ -621,7 +648,7 @@ func (s *Server) handleDisconnectLocked(m *Match, userID string) {
 	m.PhaseEndsAt = time.Now().UTC()
 	delete(s.store.userToMatchID, m.PlayerA)
 	delete(s.store.userToMatchID, m.PlayerB)
-	s.broadcastLocked(m, map[string]any{"type": "finished", "result": m.Result})
+	s.broadcastLocked(m, s.finishedEventLocked(m))
 }
 
 func (s *Server) finalizeScoresLocked(m *Match) {
@@ -657,6 +684,10 @@ func (s *Server) newMatchLocked(a, b authUser) *Match {
 		Players: map[string]*PlayerProgress{
 			a.ID: {UserID: a.ID, Nickname: a.Nickname},
 			b.ID: {UserID: b.ID, Nickname: b.Nickname},
+		},
+		ResultSounds: map[string]ResultSound{
+			a.ID: s.defaultResultSound(),
+			b.ID: s.defaultResultSound(),
 		},
 		MediaReady: map[string]bool{
 			a.ID: false,
@@ -703,6 +734,10 @@ func snapshotMatch(m *Match) map[string]any {
 		"phase_ends_at": m.PhaseEndsAt,
 		"seconds_left":  secondsLeft(m.PhaseEndsAt),
 		"players":       players,
+		"result_sounds": map[string]ResultSound{
+			m.PlayerA: m.ResultSounds[m.PlayerA],
+			m.PlayerB: m.ResultSounds[m.PlayerB],
+		},
 		"media_ready": map[string]bool{
 			m.PlayerA: m.MediaReady[m.PlayerA],
 			m.PlayerB: m.MediaReady[m.PlayerB],
@@ -730,6 +765,90 @@ func secondsLeft(t time.Time) int64 {
 		return 0
 	}
 	return int64(math.Ceil(d.Seconds()))
+}
+
+func (s *Server) hydrateMatchResultSounds(matchID string) {
+	s.store.mu.Lock()
+	m := s.store.matches[matchID]
+	if m == nil {
+		s.store.mu.Unlock()
+		return
+	}
+	playerA := m.PlayerA
+	playerB := m.PlayerB
+	s.store.mu.Unlock()
+
+	soundA, errA := s.fetchResultSound(playerA)
+	soundB, errB := s.fetchResultSound(playerB)
+
+	s.store.mu.Lock()
+	defer s.store.mu.Unlock()
+	m = s.store.matches[matchID]
+	if m == nil {
+		return
+	}
+	updated := false
+	if errA == nil {
+		m.ResultSounds[playerA] = soundA
+		updated = true
+	}
+	if errB == nil {
+		m.ResultSounds[playerB] = soundB
+		updated = true
+	}
+	if updated {
+		s.broadcastLocked(m, map[string]any{
+			"type":  "result_sounds_updated",
+			"match": snapshotMatch(m),
+		})
+	}
+}
+
+func (s *Server) fetchResultSound(userID string) (ResultSound, error) {
+	req, err := http.NewRequest(http.MethodGet, strings.TrimRight(s.customizationServiceURL, "/")+"/internal/users/"+userID+"/result-sound", nil)
+	if err != nil {
+		return ResultSound{}, err
+	}
+	req.Header.Set("X-Customization-Internal-Secret", s.customizationSecret)
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return ResultSound{}, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return ResultSound{}, fmt.Errorf("customization failed: %s", string(body))
+	}
+	var out customizationSoundResponse
+	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
+		return ResultSound{}, err
+	}
+	if out.Sound.ID == "" || out.Sound.AudioURL == "" {
+		return ResultSound{}, errors.New("empty_sound")
+	}
+	return out.Sound, nil
+}
+
+func (s *Server) defaultResultSound() ResultSound {
+	return ResultSound{
+		ID:       "default_win",
+		Title:    "Default Win",
+		AudioURL: s.defaultResultSoundURL,
+	}
+}
+
+func (s *Server) finishedEventLocked(m *Match) map[string]any {
+	payload := map[string]any{
+		"type":   "finished",
+		"result": m.Result,
+	}
+	if m.Result != nil && m.Result.WinnerID != "" {
+		if sound, ok := m.ResultSounds[m.Result.WinnerID]; ok {
+			payload["winner_result_sound_id"] = sound.ID
+			payload["winner_result_sound"] = sound
+		}
+	}
+	return payload
 }
 
 func (s *Server) predictScore(imageBase64 string) (float64, error) {
