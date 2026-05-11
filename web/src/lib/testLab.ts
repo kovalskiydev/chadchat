@@ -1,38 +1,6 @@
-const API_BASE = import.meta.env.VITE_API_BASE_URL ?? "";
+import { authorizedRequest } from "@/lib/auth";
 
 type JsonRecord = Record<string, unknown>;
-
-function getMessage(payload: unknown, status: number, fallback: string) {
-  if (status === 429) return "Too many requests, please try again later";
-  if (!payload || typeof payload !== "object") return fallback;
-  const p = payload as JsonRecord;
-  const raw = p.message ?? p.error ?? p.detail;
-  if (raw === "rate_limited") return "Too many requests, please try again later";
-  return typeof raw === "string" && raw.trim() ? raw : fallback;
-}
-
-async function request<T>(path: string, accessToken: string, init?: RequestInit): Promise<T> {
-  const response = await fetch(`${API_BASE}${path}`, {
-    ...init,
-    headers: {
-      Authorization: `Bearer ${accessToken}`,
-      ...(init?.headers ?? {}),
-    },
-  });
-  const text = await response.text();
-  let payload: unknown = {};
-  if (text) {
-    try {
-      payload = JSON.parse(text) as unknown;
-    } catch {
-      payload = { message: text };
-    }
-  }
-  if (!response.ok) {
-    throw new Error(getMessage(payload, response.status, `Request failed: ${response.status}`));
-  }
-  return payload as T;
-}
 
 export type TestLabRoom = {
   id?: string;
@@ -60,14 +28,18 @@ export type TestLabScanResponse = {
 };
 
 export async function createTestLabRoom(accessToken: string) {
-  const payload = await request<JsonRecord>("/test-lab/rooms", accessToken, {
+  const payload = await authorizedRequest<JsonRecord>("/test-lab/rooms", {
     method: "POST",
-  });
+  }, accessToken);
   return (payload.room as TestLabRoom | undefined) ?? (payload as TestLabRoom);
 }
 
 export async function getTestLabRoom(accessToken: string, roomID: string) {
-  const payload = await request<JsonRecord>(`/test-lab/rooms/${roomID}`, accessToken);
+  const payload = await authorizedRequest<JsonRecord>(
+    `/test-lab/rooms/${roomID}`,
+    undefined,
+    accessToken,
+  );
   return (payload.room as TestLabRoom | undefined) ?? (payload as TestLabRoom);
 }
 
@@ -76,14 +48,14 @@ export async function startTestLabSession(
   roomID: string,
   durationSec = 10,
 ) {
-  return request<TestLabSessionStartResponse>(
+  return authorizedRequest<TestLabSessionStartResponse>(
     `/test-lab/rooms/${roomID}/sessions/start`,
-    accessToken,
     {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ duration_sec: durationSec }),
     },
+    accessToken,
   );
 }
 
@@ -93,14 +65,14 @@ export async function scanTestLabSession(
   sessionID: string,
   imageBase64: string,
 ) {
-  return request<TestLabScanResponse>(
+  return authorizedRequest<TestLabScanResponse>(
     `/test-lab/rooms/${roomID}/sessions/${sessionID}/scan`,
-    accessToken,
     {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ image_base64: imageBase64 }),
     },
+    accessToken,
   );
 }
 
@@ -109,8 +81,9 @@ export async function getTestLabSession(
   roomID: string,
   sessionID: string,
 ) {
-  return request<TestLabScanResponse>(
+  return authorizedRequest<TestLabScanResponse>(
     `/test-lab/rooms/${roomID}/sessions/${sessionID}`,
+    undefined,
     accessToken,
   );
 }

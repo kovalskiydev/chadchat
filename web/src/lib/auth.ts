@@ -22,18 +22,39 @@ export type VerificationStartResponse = {
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL ?? "";
 const STORAGE_KEY = "chadchat_auth_tokens_v1";
+export const AUTH_TOKENS_CHANGED_EVENT = "chadchat-auth-tokens-changed";
+
+type JsonRecord = Record<string, unknown>;
+let refreshInFlight: Promise<AuthTokens> | null = null;
 
 function getMessage(payload: unknown, status: number, fallback: string) {
   if (status === 429) return "Too many requests, please try again later";
   if (!payload || typeof payload !== "object") return fallback;
-  const p = payload as Record<string, unknown>;
+  const p = payload as JsonRecord;
   const raw = p.message ?? p.error ?? p.detail;
   if (raw === "rate_limited") return "Too many requests, please try again later";
   return typeof raw === "string" && raw.trim() ? raw : fallback;
 }
 
-async function request<T>(path: string, init?: RequestInit): Promise<T> {
-  const response = await fetch(`${API_BASE}${path}`, init);
+function getRawError(payload: unknown) {
+  if (!payload || typeof payload !== "object") return "";
+  const p = payload as JsonRecord;
+  const raw = p.message ?? p.error ?? p.detail;
+  return typeof raw === "string" ? raw.trim() : "";
+}
+
+function isInvalidAccessToken(status: number, payload: unknown) {
+  const raw = getRawError(payload).toLowerCase();
+  return (
+    status === 401 ||
+    raw === "invalid_access_token" ||
+    raw === "invalid access token" ||
+    raw.includes("invalid_access_token") ||
+    raw.includes("invalid access token")
+  );
+}
+
+async function parseResponsePayload(response: Response) {
   const text = await response.text();
   let payload: unknown = {};
   if (text) {
@@ -43,6 +64,12 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
       payload = { message: text };
     }
   }
+  return payload;
+}
+
+async function request<T>(path: string, init?: RequestInit): Promise<T> {
+  const response = await fetch(`${API_BASE}${path}`, init);
+  const payload = await parseResponsePayload(response);
 
   if (!response.ok) {
     throw new Error(getMessage(payload, response.status, `Request failed: ${response.status}`));
@@ -101,9 +128,93 @@ export function saveTokens(tokens: AuthTokens | null) {
   if (typeof window === "undefined") return;
   if (!tokens) {
     window.localStorage.removeItem(STORAGE_KEY);
+    window.dispatchEvent(new CustomEvent(AUTH_TOKENS_CHANGED_EVENT));
     return;
   }
   window.localStorage.setItem(STORAGE_KEY, JSON.stringify(tokens));
+  window.dispatchEvent(new CustomEvent(AUTH_TOKENS_CHANGED_EVENT));
+}
+
+async function refreshStoredTokens(refreshToken: string) {
+  if (!refreshInFlight) {
+    refreshInFlight = authRefresh(refreshToken)
+      .then((result) => {
+        saveTokens(result.tokens);
+        return result.tokens;
+      })
+      .finally(() => {
+        refreshInFlight = null;
+      });
+  }
+
+  return refreshInFlight;
+}
+
+function withAuthorizationHeader(
+  init: RequestInit | undefined,
+  accessToken: string,
+): RequestInit {
+  return {
+    ...init,
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      ...(init?.headers ?? {}),
+    },
+  };
+}
+
+export async function authorizedFetch(
+  path: string,
+  init?: RequestInit,
+  fallbackAccessToken?: string | null,
+): Promise<Response> {
+  const storedTokens = loadTokens();
+  const firstAccessToken = storedTokens?.accessToken ?? fallbackAccessToken;
+  if (!firstAccessToken) {
+    throw new Error("Not authenticated");
+  }
+
+  let response = await fetch(`${API_BASE}${path}`, withAuthorizationHeader(init, firstAccessToken));
+  if (response.ok) {
+    return response;
+  }
+
+  const firstPayload = await parseResponsePayload(response.clone());
+  if (!isInvalidAccessToken(response.status, firstPayload) || !storedTokens?.refreshToken) {
+    throw new Error(
+      getMessage(firstPayload, response.status, `Request failed: ${response.status}`),
+    );
+  }
+
+  let refreshedTokens: AuthTokens;
+  try {
+    refreshedTokens = await refreshStoredTokens(storedTokens.refreshToken);
+  } catch (error) {
+    saveTokens(null);
+    throw error;
+  }
+  response = await fetch(
+    `${API_BASE}${path}`,
+    withAuthorizationHeader(init, refreshedTokens.accessToken),
+  );
+  if (response.ok) {
+    return response;
+  }
+
+  const retryPayload = await parseResponsePayload(response.clone());
+  throw new Error(
+    getMessage(retryPayload, response.status, `Request failed: ${response.status}`),
+  );
+}
+
+export async function authorizedRequest<T>(
+  path: string,
+  init?: RequestInit,
+  fallbackAccessToken?: string | null,
+): Promise<T> {
+  const response = await authorizedFetch(path, init, fallbackAccessToken);
+  const payload = await parseResponsePayload(response);
+  return payload as T;
 }
 
 export async function authAnonymous(verificationToken: string) {

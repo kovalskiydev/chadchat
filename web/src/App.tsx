@@ -26,6 +26,7 @@ import Shuffle from "@/components/Shuffle";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import {
+  AUTH_TOKENS_CHANGED_EVENT,
   authAnonymous,
   authLogin,
   authLogout,
@@ -4135,6 +4136,25 @@ export default function App() {
   useEffect(() => {
     if (typeof window === "undefined") return;
     setConsentAccepted(window.localStorage.getItem(CONSENT_ACCEPTED_KEY) === "1");
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+
+    const syncTokens = () => {
+      const nextTokens = loadTokens();
+      setTokens(nextTokens);
+      if (!nextTokens) {
+        setMe(null);
+        setRatingProfile(null);
+        setLeaderboardEntries([]);
+      }
+    };
+
+    window.addEventListener(AUTH_TOKENS_CHANGED_EVENT, syncTokens as EventListener);
+    return () => {
+      window.removeEventListener(AUTH_TOKENS_CHANGED_EVENT, syncTokens as EventListener);
+    };
   }, []);
 
   useEffect(() => {

@@ -1,38 +1,6 @@
-const API_BASE = import.meta.env.VITE_API_BASE_URL ?? "";
+import { authorizedFetch, authorizedRequest } from "@/lib/auth";
 
 type JsonRecord = Record<string, unknown>;
-
-function getMessage(payload: unknown, status: number, fallback: string) {
-  if (status === 429) return "Too many requests, please try again later";
-  if (!payload || typeof payload !== "object") return fallback;
-  const p = payload as JsonRecord;
-  const raw = p.message ?? p.error ?? p.detail;
-  if (raw === "rate_limited") return "Too many requests, please try again later";
-  return typeof raw === "string" && raw.trim() ? raw : fallback;
-}
-
-async function request<T>(path: string, accessToken: string, init?: RequestInit): Promise<T> {
-  const response = await fetch(`${API_BASE}${path}`, {
-    ...init,
-    headers: {
-      Authorization: `Bearer ${accessToken}`,
-      ...(init?.headers ?? {}),
-    },
-  });
-  const text = await response.text();
-  let payload: unknown = {};
-  if (text) {
-    try {
-      payload = JSON.parse(text) as unknown;
-    } catch {
-      payload = { message: text };
-    }
-  }
-  if (!response.ok) {
-    throw new Error(getMessage(payload, response.status, `Request failed: ${response.status}`));
-  }
-  return payload as T;
-}
 
 export type DuelMatch = {
   id?: string;
@@ -46,19 +14,19 @@ export type DuelMatch = {
 };
 
 export async function duelQueueJoin(accessToken: string) {
-  return request<JsonRecord>("/duel/queue/join", accessToken, { method: "POST" });
+  return authorizedRequest<JsonRecord>("/duel/queue/join", { method: "POST" }, accessToken);
 }
 
 export async function duelQueueLeave(accessToken: string) {
-  return request<JsonRecord>("/duel/queue/leave", accessToken, { method: "POST" });
+  return authorizedRequest<JsonRecord>("/duel/queue/leave", { method: "POST" }, accessToken);
 }
 
 export async function duelCurrentMatch(accessToken: string) {
-  return request<JsonRecord>("/duel/match/current", accessToken);
+  return authorizedRequest<JsonRecord>("/duel/match/current", undefined, accessToken);
 }
 
 export async function duelGetMatch(accessToken: string, matchID: string) {
-  return request<DuelMatch>(`/duel/match/${matchID}`, accessToken);
+  return authorizedRequest<DuelMatch>(`/duel/match/${matchID}`, undefined, accessToken);
 }
 
 export async function duelScoreFrame(
@@ -66,11 +34,11 @@ export async function duelScoreFrame(
   matchID: string,
   imageBase64: string,
 ) {
-  return request<JsonRecord>(`/duel/match/${matchID}/score-frame`, accessToken, {
+  return authorizedRequest<JsonRecord>(`/duel/match/${matchID}/score-frame`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ image_base64: imageBase64 }),
-  });
+  }, accessToken);
 }
 
 export async function duelSignal(
@@ -78,11 +46,11 @@ export async function duelSignal(
   matchID: string,
   payload: Record<string, unknown>,
 ) {
-  return request<JsonRecord>(`/duel/match/${matchID}/signal`, accessToken, {
+  return authorizedRequest<JsonRecord>(`/duel/match/${matchID}/signal`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload),
-  });
+  }, accessToken);
 }
 
 export async function duelStream(
@@ -91,14 +59,13 @@ export async function duelStream(
   onEvent: (event: string, data: unknown) => void,
   signal: AbortSignal,
 ) {
-  const response = await fetch(`${API_BASE}/duel/match/${matchID}/stream`, {
+  const response = await authorizedFetch(`/duel/match/${matchID}/stream`, {
     method: "GET",
     headers: {
-      Authorization: `Bearer ${accessToken}`,
       Accept: "text/event-stream",
     },
     signal,
-  });
+  }, accessToken);
   if (!response.ok || !response.body) {
     throw new Error(`SSE failed: ${response.status}`);
   }

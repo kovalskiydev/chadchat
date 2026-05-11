@@ -1,38 +1,6 @@
-const API_BASE = import.meta.env.VITE_API_BASE_URL ?? "";
+import { authorizedFetch, authorizedRequest } from "@/lib/auth";
 
 type JsonRecord = Record<string, unknown>;
-
-function getMessage(payload: unknown, status: number, fallback: string) {
-  if (status === 429) return "Too many requests, please try again later";
-  if (!payload || typeof payload !== "object") return fallback;
-  const p = payload as JsonRecord;
-  const raw = p.message ?? p.error ?? p.detail;
-  if (raw === "rate_limited") return "Too many requests, please try again later";
-  return typeof raw === "string" && raw.trim() ? raw : fallback;
-}
-
-async function request<T>(path: string, accessToken: string, init?: RequestInit): Promise<T> {
-  const response = await fetch(`${API_BASE}${path}`, {
-    ...init,
-    headers: {
-      Authorization: `Bearer ${accessToken}`,
-      ...(init?.headers ?? {}),
-    },
-  });
-  const text = await response.text();
-  let payload: unknown = {};
-  if (text) {
-    try {
-      payload = JSON.parse(text) as unknown;
-    } catch {
-      payload = { message: text };
-    }
-  }
-  if (!response.ok) {
-    throw new Error(getMessage(payload, response.status, `Request failed: ${response.status}`));
-  }
-  return payload as T;
-}
 
 export type LiveChatMessage = {
   id?: string | number;
@@ -46,11 +14,11 @@ export type LiveChatMessage = {
 
 export async function getLiveChatHistory(accessToken: string, limit = 40) {
   const normalizedLimit = Math.max(1, Math.min(1000, limit));
-  const payload = await request<JsonRecord>("/live-chat/history", accessToken, {
+  const payload = await authorizedRequest<JsonRecord>("/live-chat/history", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ limit: normalizedLimit }),
-  });
+  }, accessToken);
   const history =
     (payload.history as LiveChatMessage[] | undefined) ??
     (payload.messages as LiveChatMessage[] | undefined) ??
@@ -59,11 +27,11 @@ export async function getLiveChatHistory(accessToken: string, limit = 40) {
 }
 
 export async function sendLiveChatMessage(accessToken: string, text: string) {
-  return request<JsonRecord>("/live-chat/messages", accessToken, {
+  return authorizedRequest<JsonRecord>("/live-chat/messages", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ text }),
-  });
+  }, accessToken);
 }
 
 export async function streamLiveChat(
@@ -71,14 +39,13 @@ export async function streamLiveChat(
   onEvent: (event: string, data: unknown) => void,
   signal: AbortSignal,
 ) {
-  const response = await fetch(`${API_BASE}/live-chat/stream`, {
+  const response = await authorizedFetch("/live-chat/stream", {
     method: "GET",
     headers: {
-      Authorization: `Bearer ${accessToken}`,
       Accept: "text/event-stream",
     },
     signal,
-  });
+  }, accessToken);
   if (!response.ok || !response.body) {
     throw new Error(`SSE failed: ${response.status}`);
   }
