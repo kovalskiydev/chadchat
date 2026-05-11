@@ -58,6 +58,7 @@ type Match struct {
 	Result      *MatchResult               `json:"result,omitempty"`
 	Players     map[string]*PlayerProgress `json:"players"`
 	Subscribers map[string]chan []byte     `json:"-"`
+	Connections map[string]int             `json:"-"`
 }
 
 type PlayerProgress struct {
@@ -196,8 +197,18 @@ func (s *Server) handleJoinQueue(w http.ResponseWriter, _ *http.Request, user au
 	defer s.store.mu.Unlock()
 
 	if mid, ok := s.store.userToMatchID[user.ID]; ok {
-		writeJSON(w, http.StatusOK, map[string]any{"status": "already_in_match", "match_id": mid})
-		return
+		match := s.store.matches[mid]
+		if match == nil {
+			delete(s.store.userToMatchID, user.ID)
+		} else {
+			s.syncPhaseLocked(match)
+			if releasableForRematch(match.Phase) {
+				delete(s.store.userToMatchID, user.ID)
+			} else {
+				writeJSON(w, http.StatusOK, map[string]any{"status": "already_in_match", "match_id": mid})
+				return
+			}
+		}
 	}
 	for _, queued := range s.store.queue {
 		if queued.ID == user.ID {
@@ -430,6 +441,7 @@ func (s *Server) handleStream(w http.ResponseWriter, r *http.Request, user authU
 		return
 	}
 	m.Subscribers[subID] = sub
+	m.Connections[user.ID]++
 	s.syncPhaseLocked(m)
 	initial := snapshotMatch(m)
 	s.store.mu.Unlock()
@@ -438,6 +450,10 @@ func (s *Server) handleStream(w http.ResponseWriter, r *http.Request, user authU
 		s.store.mu.Lock()
 		if mm := s.store.matches[mid]; mm != nil {
 			delete(mm.Subscribers, subID)
+			if mm.Connections[user.ID] > 0 {
+				mm.Connections[user.ID]--
+			}
+			s.handleDisconnectLocked(mm, user.ID)
 		}
 		s.store.mu.Unlock()
 		close(sub)
@@ -541,6 +557,33 @@ func (s *Server) syncPhaseLocked(m *Match) {
 	}
 }
 
+func (s *Server) handleDisconnectLocked(m *Match, userID string) {
+	if m.Connections[userID] > 0 {
+		return
+	}
+	if m.Phase == phaseFinished || m.Phase == phaseResult || m.Phase == phasePostChat {
+		return
+	}
+	opponent := m.PlayerA
+	if userID == m.PlayerA {
+		opponent = m.PlayerB
+	}
+	scoreA := m.Players[m.PlayerA].RunningAvg
+	scoreB := m.Players[m.PlayerB].RunningAvg
+	m.Result = &MatchResult{
+		WinnerID: opponent,
+		LoserID:  userID,
+		Reason:   "disconnect",
+		ScoreA:   scoreA,
+		ScoreB:   scoreB,
+	}
+	m.Phase = phaseFinished
+	m.PhaseEndsAt = time.Now().UTC()
+	delete(s.store.userToMatchID, m.PlayerA)
+	delete(s.store.userToMatchID, m.PlayerB)
+	s.broadcastLocked(m, map[string]any{"type": "finished", "result": m.Result})
+}
+
 func (s *Server) finalizeScoresLocked(m *Match) {
 	for _, p := range m.Players {
 		p.FinalAvg = p.RunningAvg
@@ -576,6 +619,10 @@ func (s *Server) newMatchLocked(a, b authUser) *Match {
 			b.ID: {UserID: b.ID, Nickname: b.Nickname},
 		},
 		Subscribers: map[string]chan []byte{},
+		Connections: map[string]int{
+			a.ID: 0,
+			b.ID: 0,
+		},
 	}
 }
 
@@ -617,6 +664,10 @@ func snapshotMatch(m *Match) map[string]any {
 }
 
 func isPlayer(m *Match, userID string) bool { return userID == m.PlayerA || userID == m.PlayerB }
+
+func releasableForRematch(phase string) bool {
+	return phase == phaseResult || phase == phasePostChat || phase == phaseFinished
+}
 
 func otherPlayer(m *Match, userID string) *PlayerProgress {
 	if userID == m.PlayerA {
