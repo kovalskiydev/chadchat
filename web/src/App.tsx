@@ -1835,11 +1835,18 @@ function VerificationModal({
           ? "right"
           : "done";
   const [timeLeft, setTimeLeft] = useState(session.expires_in_sec);
+  const [cameraState, setCameraState] = useState<"loading" | "ready" | "error">("loading");
+  const [trackerState, setTrackerState] = useState<"loading" | "ready" | "error">("loading");
   const autoSubmittedRef = useRef(false);
 
   useEffect(() => {
     setTimeLeft(session.expires_in_sec);
   }, [session.expires_in_sec, session.verification_session_id]);
+
+  useEffect(() => {
+    setCameraState("loading");
+    setTrackerState("loading");
+  }, [session.verification_session_id]);
 
   useEffect(() => {
     const timer = window.setInterval(() => {
@@ -2017,6 +2024,7 @@ function VerificationModal({
           videoRef.current.srcObject = stream;
           await videoRef.current.play();
         }
+        setCameraState("ready");
 
         const importFromUrl = new Function(
           "url",
@@ -2065,9 +2073,14 @@ function VerificationModal({
           minTrackingConfidence: 0.5,
         });
 
+        setTrackerState("ready");
         detectLoop();
       } catch {
-        // no-op, error is shown by parent flow
+        if (!mounted) return;
+        if (!streamRef.current) {
+          setCameraState("error");
+        }
+        setTrackerState("error");
       }
     };
     void init();
@@ -2115,6 +2128,32 @@ function VerificationModal({
               ref={overlayRef}
               className="pointer-events-none absolute inset-0 z-10 h-full w-full object-cover opacity-100"
             />
+            {(cameraState !== "ready" || trackerState !== "ready") && (
+              <div className="absolute inset-0 z-20 flex items-center justify-center bg-black/72 p-4 text-center">
+                <div className="border border-zinc-800 bg-zinc-950 px-4 py-3">
+                  {cameraState === "loading" && (
+                    <div className="text-[10px] font-semibold uppercase tracking-[0.14em] text-zinc-300">
+                      Opening camera...
+                    </div>
+                  )}
+                  {cameraState === "ready" && trackerState === "loading" && (
+                    <div className="text-[10px] font-semibold uppercase tracking-[0.14em] text-zinc-300">
+                      Loading face tracker...
+                    </div>
+                  )}
+                  {cameraState === "error" && (
+                    <div className="text-[10px] font-semibold uppercase tracking-[0.14em] text-red-300">
+                      Camera access failed
+                    </div>
+                  )}
+                  {cameraState !== "error" && trackerState === "error" && (
+                    <div className="text-[10px] font-semibold uppercase tracking-[0.14em] text-red-300">
+                      Face tracker failed to load
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
           </div>
           <div className="space-y-3">
             <div className="border border-zinc-800 bg-black/60 p-3 text-[10px] uppercase tracking-[0.12em] text-zinc-500">
@@ -2135,6 +2174,11 @@ function VerificationModal({
               </div>
             </div>
             <div className="grid gap-2">
+              {trackerState === "error" && (
+                <div className="border border-red-500/45 bg-red-950/35 px-3 py-2 text-[10px] font-semibold uppercase tracking-[0.12em] text-red-200">
+                  Verification cannot continue until the face tracker loads. Close this window and try again.
+                </div>
+              )}
               <div
                 className={cn(
                   "border px-3 py-2 text-[10px] font-semibold uppercase tracking-[0.12em]",
