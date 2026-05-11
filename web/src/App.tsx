@@ -2663,6 +2663,7 @@ function DuelModal({
   const [mediaReadyMap, setMediaReadyMap] = useState<Record<string, boolean>>({});
   const [queueRunKey, setQueueRunKey] = useState(0);
   const [searchSoundEnabled, setSearchSoundEnabled] = useState(true);
+  const [showFinalResult, setShowFinalResult] = useState(false);
   const finishedRef = useRef(false);
 
   const pushDebug = useCallback((...args: unknown[]) => {
@@ -2742,6 +2743,8 @@ function DuelModal({
   }, []);
   const myMediaReady = myUserId ? Boolean(mediaReadyMap[myUserId]) : false;
   const opponentMediaReady = opponentUserId ? Boolean(mediaReadyMap[opponentUserId]) : false;
+  const myLost = Boolean(resultSummary?.loserId && myUserId && resultSummary.loserId === myUserId);
+  const opponentLost = Boolean(resultSummary?.loserId && myUserId && resultSummary.loserId !== myUserId);
 
   const extractMatchRecord = useCallback((payload: Record<string, unknown>) => {
     return (payload.match as Record<string, unknown> | undefined) ?? payload;
@@ -2843,6 +2846,7 @@ function DuelModal({
     setMediaReadyMap({});
     setStatus("Joining queue...");
     setError(null);
+    setShowFinalResult(false);
     remoteStreamRef.current = null;
     if (remoteVideoRef.current) {
       remoteVideoRef.current.srcObject = null;
@@ -3320,6 +3324,18 @@ function DuelModal({
   }, [accessToken, matchID, phase, captureFrame]);
 
   useEffect(() => {
+    if (!isResultPhase || !resultSummary) {
+      setShowFinalResult(false);
+      return;
+    }
+    setShowFinalResult(false);
+    const timer = window.setTimeout(() => {
+      setShowFinalResult(true);
+    }, 1600);
+    return () => window.clearTimeout(timer);
+  }, [isResultPhase, resultSummary, matchID]);
+
+  useEffect(() => {
     return () => {
       stopSearchAudio();
     };
@@ -3424,6 +3440,13 @@ function DuelModal({
                     Avg {myAvg === null ? "--" : `${(myAvg * 2).toFixed(1)}/10`}
                   </div>
                 </div>
+                {isResultPhase && resultSummary && !showFinalResult && myLost && (
+                  <div className="pointer-events-none absolute inset-x-[12%] top-[30%] z-20 flex justify-center">
+                    <div className="-rotate-2 border border-red-500/65 bg-red-950/48 px-6 py-3 text-4xl font-black uppercase tracking-[0.2em] text-red-300 shadow-[0_0_24px_rgba(248,113,113,0.45)] drop-shadow-[0_0_18px_rgba(248,113,113,0.8)]">
+                      MOGGED
+                    </div>
+                  </div>
+                )}
               </div>
 
               <div className="group relative overflow-hidden border border-zinc-800 bg-black/85">
@@ -3445,6 +3468,13 @@ function DuelModal({
                     Avg {oppAvg === null ? "--" : `${(oppAvg * 2).toFixed(1)}/10`}
                   </div>
                 </div>
+                {isResultPhase && resultSummary && !showFinalResult && opponentLost && (
+                  <div className="pointer-events-none absolute inset-x-[12%] top-[30%] z-20 flex justify-center">
+                    <div className="rotate-2 border border-red-500/65 bg-red-950/48 px-6 py-3 text-4xl font-black uppercase tracking-[0.2em] text-red-300 shadow-[0_0_24px_rgba(248,113,113,0.45)] drop-shadow-[0_0_18px_rgba(248,113,113,0.8)]">
+                      MOGGED
+                    </div>
+                  </div>
+                )}
               </div>
 
               <div className="pointer-events-none absolute inset-x-0 top-28 z-20 flex justify-center">
@@ -3521,7 +3551,7 @@ function DuelModal({
                 )}
               </div>
 
-              {isResultPhase && resultSummary && (
+              {isResultPhase && resultSummary && showFinalResult && (
                 <div className="absolute inset-0 z-30 flex items-center justify-center bg-black/88 p-6">
                   <div className="w-full max-w-xl border border-purple-500/35 bg-zinc-950 p-6 text-center shadow-[0_0_40px_rgba(132,0,255,0.22)]">
                     <div className="text-[10px] font-semibold uppercase tracking-[0.18em] text-zinc-600">
