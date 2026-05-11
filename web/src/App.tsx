@@ -78,6 +78,11 @@ import {
   type LeaderboardEntry,
   type RatingProfile,
 } from "@/lib/rating";
+import {
+  getResultSounds,
+  selectResultSound,
+  type ResultSoundOption,
+} from "@/lib/resultSounds";
 
 const magicBlockClass =
   "magic-bento-card magic-bento-wire magic-bento-card--border-glow";
@@ -197,6 +202,12 @@ type ChatCustomization = {
 type GameCustomization = {
   frame: string;
   victorySound: string;
+};
+
+type DuelResultSound = {
+  id: string;
+  title: string;
+  audio_url: string;
 };
 
 const defaultChatCustomization: ChatCustomization = {
@@ -463,6 +474,20 @@ function playVictoryPreview(sound: string) {
     playTone(587.33, now + 0.12, 0.14, "sine");
     playTone(698.46, now + 0.24, 0.16, "sine");
   }
+}
+
+function normalizeDuelResultSound(value: unknown): DuelResultSound | null {
+  if (!value || typeof value !== "object") return null;
+  const record = value as Record<string, unknown>;
+  const id = record.id ? String(record.id) : "";
+  const title = record.title ? String(record.title) : "Unknown Sound";
+  const audioUrl = record.audio_url ? String(record.audio_url) : "";
+  if (!id || !audioUrl) return null;
+  return {
+    id,
+    title,
+    audio_url: audioUrl,
+  };
 }
 
 function PositionAvatar({
@@ -922,14 +947,20 @@ function StatsModal({
 function CustomizeModal({
   chatCustomization,
   gameCustomization,
+  resultSoundOptions,
+  resultSoundLoading,
   onChangeChatCustomization,
   onChangeGameCustomization,
+  onSelectResultSound,
   onClose,
 }: {
   chatCustomization: ChatCustomization;
   gameCustomization: GameCustomization;
+  resultSoundOptions: ResultSoundOption[];
+  resultSoundLoading: boolean;
   onChangeChatCustomization: (next: Partial<ChatCustomization>) => void;
   onChangeGameCustomization: (next: Partial<GameCustomization>) => void;
+  onSelectResultSound: (sound: ResultSoundOption) => void;
   onClose: () => void;
 }) {
   const [view, setView] = useState<"menu" | "chat" | "game">("menu");
@@ -1007,13 +1038,9 @@ function CustomizeModal({
     { label: "Carbon", locked: false },
     { label: "Abyss", locked: true },
   ];
-  const victorySoundItems = [
-    { label: "Pulse", locked: false },
-    { label: "Chime", locked: false },
-    { label: "Impact", locked: false },
-    { label: "Arcade", locked: true },
-  ];
   const isGameView = view === "game";
+  const selectedResultSound =
+    resultSoundOptions.find((sound) => sound.selected) ?? null;
 
   return (
     <div
@@ -1306,43 +1333,65 @@ function CustomizeModal({
               </div>
 
               <div className="space-y-3">
-                <div className="text-[10px] font-semibold uppercase tracking-[0.14em] text-zinc-600">
-                  Victory Sound
-                </div>
-                {victorySoundItems.map((item) => (
-                  <div className="grid grid-cols-[1fr_auto] gap-2" key={item.label}>
-                    <button
-                      className={cn(
-                        "border px-3 py-2 text-left text-[10px] font-semibold uppercase tracking-[0.12em] transition-colors",
-                        item.locked && "cursor-not-allowed opacity-45",
-                        !item.locked &&
-                          (gameCustomization.victorySound === item.label
-                            ? "border-purple-400 bg-purple-950/35 text-purple-100"
-                            : "border-zinc-700 bg-zinc-900/55 text-zinc-200 hover:border-purple-500/60"),
-                      )}
-                      disabled={item.locked}
-                      onClick={() =>
-                        onChangeGameCustomization({ victorySound: item.label })
-                      }
-                      type="button"
-                    >
-                      {item.label}
-                    </button>
-                    <button
-                      className={cn(
-                        "border px-3 text-[10px] font-semibold uppercase tracking-[0.12em] transition-colors",
-                        item.locked
-                          ? "cursor-not-allowed border-zinc-900 bg-black/60 text-zinc-700"
-                          : "border-zinc-700 bg-zinc-900/55 text-zinc-200 hover:border-purple-500/60",
-                      )}
-                      disabled={item.locked}
-                      onClick={() => playVictoryPreview(item.label)}
-                      type="button"
-                    >
-                      Play
-                    </button>
+                <div className="flex items-center justify-between gap-3">
+                  <div className="text-[10px] font-semibold uppercase tracking-[0.14em] text-zinc-600">
+                    Result Sound
                   </div>
-                ))}
+                  {resultSoundLoading && (
+                    <div className="text-[10px] uppercase tracking-[0.12em] text-zinc-500">
+                      Loading...
+                    </div>
+                  )}
+                </div>
+                <div className="max-h-[264px] space-y-2 overflow-y-auto pr-1">
+                  {resultSoundOptions.map((sound) => {
+                    const locked = !sound.owned;
+                    return (
+                      <div className="grid grid-cols-[1fr_auto] gap-2" key={sound.id}>
+                        <button
+                          className={cn(
+                            "border px-3 py-2 text-left text-[10px] font-semibold uppercase tracking-[0.12em] transition-colors",
+                            locked && "cursor-not-allowed border-zinc-900 bg-black/60 text-zinc-700",
+                            !locked &&
+                              (sound.selected
+                                ? "border-purple-400 bg-purple-950/35 text-purple-100"
+                                : "border-zinc-700 bg-zinc-900/55 text-zinc-200 hover:border-purple-500/60"),
+                          )}
+                          disabled={locked}
+                          onClick={() => onSelectResultSound(sound)}
+                          type="button"
+                        >
+                          <div className="flex items-center justify-between gap-2">
+                            <span>{sound.title}</span>
+                            <span className="text-[9px] uppercase tracking-[0.12em] text-zinc-500">
+                              {locked ? "Locked" : sound.selected ? "Selected" : sound.is_default ? "Default" : "Owned"}
+                            </span>
+                          </div>
+                        </button>
+                        <button
+                          className={cn(
+                            "border px-3 text-[10px] font-semibold uppercase tracking-[0.12em] transition-colors",
+                            !sound.audio_url
+                              ? "cursor-not-allowed border-zinc-900 bg-black/60 text-zinc-700"
+                              : "border-zinc-700 bg-zinc-900/55 text-zinc-200 hover:border-purple-500/60",
+                          )}
+                          disabled={!sound.audio_url}
+                          onClick={() => {
+                            if (sound.audio_url) {
+                              const audio = new Audio(sound.audio_url);
+                              void audio.play().catch(() => {});
+                              return;
+                            }
+                            playVictoryPreview(sound.title);
+                          }}
+                          type="button"
+                        >
+                          Play
+                        </button>
+                      </div>
+                    );
+                  })}
+                </div>
               </div>
             </div>
 
@@ -1371,12 +1420,14 @@ function CustomizeModal({
                 </div>
                 <div className="mt-3 flex items-center justify-between">
                   <span className="text-[10px] uppercase tracking-[0.12em] text-zinc-600">
-                    Victory Sound: {gameCustomization.victorySound}
+                    Result Sound: {selectedResultSound?.title ?? gameCustomization.victorySound}
                   </span>
                   <button
                     className="border border-zinc-700 bg-zinc-900/55 px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-zinc-200 transition-colors hover:border-purple-500/60"
                     onClick={() =>
-                      playVictoryPreview(gameCustomization.victorySound)
+                      selectedResultSound?.audio_url
+                        ? void new Audio(selectedResultSound.audio_url).play().catch(() => {})
+                        : playVictoryPreview(gameCustomization.victorySound)
                     }
                     type="button"
                   >
@@ -2683,6 +2734,8 @@ function DuelModal({
   const streamRef = useRef<MediaStream | null>(null);
   const remoteStreamRef = useRef<MediaStream | null>(null);
   const peerRef = useRef<RTCPeerConnection | null>(null);
+  const duelAudioContextRef = useRef<AudioContext | null>(null);
+  const preloadedSoundBuffersRef = useRef<Map<string, AudioBuffer>>(new Map());
   const pendingCandidatesRef = useRef<RTCIceCandidateInit[]>([]);
   const makingOfferRef = useRef(false);
   const ignoreOfferRef = useRef(false);
@@ -2801,6 +2854,73 @@ function DuelModal({
     return (payload.match as Record<string, unknown> | undefined) ?? payload;
   }, []);
 
+  const ensureDuelAudioContext = useCallback(() => {
+    if (typeof window === "undefined") return null;
+    const ExistingContext = window.AudioContext || (window as typeof window & {
+      webkitAudioContext?: typeof AudioContext;
+    }).webkitAudioContext;
+    if (!ExistingContext) return null;
+    if (!duelAudioContextRef.current) {
+      duelAudioContextRef.current = new ExistingContext();
+    }
+    return duelAudioContextRef.current;
+  }, []);
+
+  const preloadResultSound = useCallback(
+    async (sound: DuelResultSound | null) => {
+      if (!sound?.id || !sound.audio_url) return;
+      if (preloadedSoundBuffersRef.current.has(sound.id)) return;
+      const audioContext = ensureDuelAudioContext();
+      if (!audioContext) return;
+      const response = await fetch(sound.audio_url);
+      if (!response.ok) {
+        throw new Error(`Failed to preload sound: ${response.status}`);
+      }
+      const arrayBuffer = await response.arrayBuffer();
+      const decoded = await audioContext.decodeAudioData(arrayBuffer.slice(0));
+      preloadedSoundBuffersRef.current.set(sound.id, decoded);
+    },
+    [ensureDuelAudioContext],
+  );
+
+  const preloadResultSoundsMap = useCallback(
+    (soundsByUser: Record<string, DuelResultSound>) => {
+      void Promise.all(
+        Object.values(soundsByUser).map((sound) =>
+          preloadResultSound(sound).catch(() => {}),
+        ),
+      );
+    },
+    [preloadResultSound],
+  );
+
+  const playPreloadedResultSound = useCallback(
+    async (soundID: string | null | undefined, fallbackSound?: DuelResultSound | null) => {
+      if (!soundID) return;
+      const audioContext = ensureDuelAudioContext();
+      if (!audioContext) return;
+      if (audioContext.state === "suspended") {
+        await audioContext.resume().catch(() => {});
+      }
+
+      let buffer = preloadedSoundBuffersRef.current.get(soundID);
+      if (!buffer && fallbackSound && fallbackSound.id === soundID) {
+        await preloadResultSound(fallbackSound).catch(() => {});
+        buffer = preloadedSoundBuffersRef.current.get(soundID);
+      }
+      if (!buffer) return;
+
+      const source = audioContext.createBufferSource();
+      const gain = audioContext.createGain();
+      gain.gain.value = 0.9;
+      source.buffer = buffer;
+      source.connect(gain);
+      gain.connect(audioContext.destination);
+      source.start(0);
+    },
+    [ensureDuelAudioContext, preloadResultSound],
+  );
+
   const applyMatchSnapshot = useCallback((payload: Record<string, unknown>) => {
     const match = extractMatchRecord(payload);
     const nextPhase = extractPhase(payload) ?? extractPhase(match);
@@ -2815,12 +2935,21 @@ function DuelModal({
 
     const players = match.players as Array<Record<string, unknown>> | undefined;
     const mediaReady = match.media_ready as Record<string, boolean> | undefined;
+    const rawResultSounds = match.result_sounds as Record<string, unknown> | undefined;
     if (mediaReady && typeof mediaReady === "object") {
       setMediaReadyMap(
         Object.fromEntries(
           Object.entries(mediaReady).map(([key, value]) => [key, Boolean(value)]),
         ),
       );
+    }
+    if (rawResultSounds && typeof rawResultSounds === "object") {
+      const normalized = Object.fromEntries(
+        Object.entries(rawResultSounds)
+          .map(([userID, value]) => [userID, normalizeDuelResultSound(value)])
+          .filter((entry): entry is [string, DuelResultSound] => Boolean(entry[1])),
+      );
+      preloadResultSoundsMap(normalized);
     }
     if (Array.isArray(players) && myUserId) {
       const mine = players.find((player) => String(player.user_id ?? "") === myUserId);
@@ -2879,7 +3008,7 @@ function DuelModal({
     if (directOpponent) {
       setOpponentUserId(directOpponent);
     }
-  }, [extractMatchRecord, extractPhase, myUserId]);
+  }, [extractMatchRecord, extractPhase, myUserId, preloadResultSoundsMap]);
 
   const resetMatchFlow = useCallback(() => {
     finishedRef.current = false;
@@ -2899,6 +3028,7 @@ function DuelModal({
     setError(null);
     setShowFinalResult(false);
     remoteStreamRef.current = null;
+    preloadedSoundBuffersRef.current.clear();
     if (remoteVideoRef.current) {
       remoteVideoRef.current.srcObject = null;
     }
@@ -3253,7 +3383,13 @@ function DuelModal({
         const msgType = (payload.type as string | undefined) ?? event;
         const body = (payload.payload as Record<string, unknown> | undefined) ?? payload;
 
-        if (msgType === "joined" || msgType === "phase_changed") {
+        if (
+          msgType === "joined" ||
+          msgType === "match_found" ||
+          msgType === "phase_changed" ||
+          msgType === "result_sounds_updated" ||
+          msgType === "media_ready_update"
+        ) {
           applyMatchSnapshot(payload);
           const p = extractPhase(payload) ?? extractPhase(body);
           if (p) {
@@ -3281,6 +3417,14 @@ function DuelModal({
           applyMatchSnapshot(payload);
           setPhase("finished");
           setStatus("Match finished");
+          const winnerSoundId =
+            (payload.winner_result_sound_id as string | undefined) ??
+            (body.winner_result_sound_id as string | undefined) ??
+            null;
+          const winnerSound =
+            normalizeDuelResultSound(payload.winner_result_sound) ??
+            normalizeDuelResultSound(body.winner_result_sound);
+          void playPreloadedResultSound(winnerSoundId, winnerSound);
           if (!finishedRef.current) {
             finishedRef.current = true;
             onFinished?.();
@@ -3389,7 +3533,7 @@ function DuelModal({
       if (poll) window.clearInterval(poll);
       controller.abort();
     };
-  }, [accessToken, matchID, pushDebug, pickSignalPayload, myUserId, extractUsersFromMatch, onFinished, applyMatchSnapshot, extractPhase]);
+  }, [accessToken, matchID, pushDebug, pickSignalPayload, myUserId, extractUsersFromMatch, onFinished, applyMatchSnapshot, extractPhase, playPreloadedResultSound]);
 
   useEffect(() => {
     if (!accessToken || !matchID) return;
@@ -3420,8 +3564,15 @@ function DuelModal({
   }, [isResultPhase, resultSummary, matchID]);
 
   useEffect(() => {
+    const soundBuffers = preloadedSoundBuffersRef.current;
+    const audioContext = duelAudioContextRef.current;
     return () => {
       stopSearchAudio();
+      soundBuffers.clear();
+      audioContext?.close().catch(() => {});
+      if (duelAudioContextRef.current === audioContext) {
+        duelAudioContextRef.current = null;
+      }
     };
   }, [stopSearchAudio]);
 
@@ -4706,6 +4857,8 @@ export default function App() {
   const [ratingDataLoading, setRatingDataLoading] = useState(false);
   const [leaderboardEntries, setLeaderboardEntries] = useState<LeaderboardEntry[]>([]);
   const [leaderboardLoading, setLeaderboardLoading] = useState(false);
+  const [resultSoundOptions, setResultSoundOptions] = useState<ResultSoundOption[]>([]);
+  const [resultSoundLoading, setResultSoundLoading] = useState(false);
   const [backendDownMessage, setBackendDownMessage] = useState<string | null>(null);
   const [legalModal, setLegalModal] = useState<"rules" | "privacy" | null>(null);
   const [showEntryChoice, setShowEntryChoice] = useState(false);
@@ -4842,6 +4995,8 @@ export default function App() {
       setRatingProfile(null);
       setLeaderboardEntries([]);
       setLeaderboardLoading(false);
+      setResultSoundOptions([]);
+      setResultSoundLoading(false);
       return;
     }
 
@@ -4875,6 +5030,73 @@ export default function App() {
       cancelled = true;
     };
   }, [tokens?.accessToken]);
+
+  useEffect(() => {
+    if (!tokens?.accessToken) {
+      setResultSoundOptions([]);
+      setResultSoundLoading(false);
+      return;
+    }
+
+    let cancelled = false;
+
+    const loadSounds = async () => {
+      setResultSoundLoading(true);
+      try {
+        const sounds = await getResultSounds(tokens.accessToken);
+        if (cancelled) return;
+        setResultSoundOptions(sounds);
+        const selected = sounds.find((sound) => sound.selected);
+        if (selected) {
+          setGameCustomization((current) => ({
+            ...current,
+            victorySound: selected.title,
+          }));
+        }
+      } catch {
+        if (cancelled) return;
+        setResultSoundOptions([]);
+      } finally {
+        if (!cancelled) setResultSoundLoading(false);
+      }
+    };
+
+    void loadSounds();
+    return () => {
+      cancelled = true;
+    };
+  }, [tokens?.accessToken]);
+
+  const handleSelectResultSound = useCallback(
+    async (sound: ResultSoundOption) => {
+      if (!tokens?.accessToken || !sound.owned) return;
+      try {
+        const nextSounds = await selectResultSound(tokens.accessToken, sound.id);
+        if (nextSounds) {
+          setResultSoundOptions(nextSounds);
+          const selected = nextSounds.find((item) => item.selected) ?? sound;
+          setGameCustomization((current) => ({
+            ...current,
+            victorySound: selected.title,
+          }));
+          return;
+        }
+        setResultSoundOptions((current) =>
+          current.map((item) => ({
+            ...item,
+            selected: item.id === sound.id,
+          })),
+        );
+        setGameCustomization((current) => ({
+          ...current,
+          victorySound: sound.title,
+        }));
+      } catch (error) {
+        setAuthError(error instanceof Error ? error.message : "Failed to select result sound");
+      }
+    },
+    [tokens?.accessToken],
+  );
 
   useEffect(() => {
     if (!isStatsOpen && !isCustomizeOpen && !isStartModesOpen && !isTestLabOpen && !isDuelOpen && !isAuthOpen) return;
@@ -5338,12 +5560,15 @@ export default function App() {
         <CustomizeModal
           chatCustomization={chatCustomization}
           gameCustomization={gameCustomization}
+          resultSoundOptions={resultSoundOptions}
+          resultSoundLoading={resultSoundLoading}
           onChangeChatCustomization={(next) =>
             setChatCustomization((current) => ({ ...current, ...next }))
           }
           onChangeGameCustomization={(next) =>
             setGameCustomization((current) => ({ ...current, ...next }))
           }
+          onSelectResultSound={handleSelectResultSound}
           onClose={() => setIsCustomizeOpen(false)}
         />
       )}
