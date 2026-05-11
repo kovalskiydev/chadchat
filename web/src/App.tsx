@@ -2956,7 +2956,7 @@ function DuelModal({
       try {
         const stream = await navigator.mediaDevices.getUserMedia({
           video: { facingMode: "user" },
-          audio: false,
+          audio: true,
         });
         if (!mounted) return;
         streamRef.current = stream;
