@@ -7,6 +7,7 @@
 - `test-lab-service` (`:8083`) — комнаты и скоринг для test lab.
 - `live-chat-service` (`:8084`) — общий чат.
 - `duel-service` (`:8085`) — live 1v1 matchmaking и матч-фазы.
+- `rating-service` (`:8086`) — rating, rank, leaderboard, rating history.
 - `ml-service` (`:8090`) — Python FastAPI с вашей ML моделью.
 - `mysql` (`:3306`) — persistent store.
 
@@ -28,6 +29,7 @@ docker compose up --build
 
 В MySQL сохраняются:
 - пользователи и refresh-сессии
+- рейтинг, peak rating и rating history
 - verification sessions и verification tokens
 - история общего чата
 - test-lab комнаты, сессии и samples
@@ -38,6 +40,17 @@ docker compose up --build
 - in-memory rate limits
 
 Это сделано специально: долговечные данные уже переживают рестарт, а live-эфемерное состояние пока оставлено простым.
+
+## Rating API
+
+Рейтинг больше не живет в `auth-service`. Его источник истины теперь отдельный `rating-service`.
+
+Эндпоинты через gateway:
+- `GET /rating/me`
+- `GET /rating/{userID}`
+- `GET /leaderboard`
+
+`/me`, `login`, `register`, `anonymous`, `upgrade`, `refresh` больше не должны считаться источником рейтинга. Фронт должен получать рейтинг отдельно через `rating-service`.
 
 ## Flow верификации до регистрации
 

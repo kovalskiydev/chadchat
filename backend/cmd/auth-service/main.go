@@ -568,7 +568,7 @@ func (s *Server) findUserByNickname(nickname string) (*User, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &User{
+	user := &User{
 		ID:                 publicUserID(rawID),
 		Nickname:           nick.String,
 		PasswordHash:       passwordHash.String,
@@ -576,7 +576,8 @@ func (s *Server) findUserByNickname(nickname string) (*User, error) {
 		VerificationStatus: verificationStatus,
 		CreatedAt:          createdAt,
 		UpdatedAt:          updatedAt,
-	}, nil
+	}
+	return user, nil
 }
 
 func withJSON(next http.Handler) http.Handler {

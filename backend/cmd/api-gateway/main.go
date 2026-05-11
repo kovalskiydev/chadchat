@@ -18,12 +18,14 @@ func main() {
 	testLabURL := envOr("TEST_LAB_SERVICE_URL", "http://localhost:8083")
 	liveChatURL := envOr("LIVE_CHAT_SERVICE_URL", "http://localhost:8084")
 	duelURL := envOr("DUEL_SERVICE_URL", "http://localhost:8085")
+	ratingURL := envOr("RATING_SERVICE_URL", "http://localhost:8086")
 
 	authProxy := mustProxy(authURL)
 	verificationProxy := mustProxy(verificationURL)
 	testLabProxy := mustProxy(testLabURL)
 	liveChatProxy := mustProxy(liveChatURL)
 	duelProxy := mustProxy(duelURL)
+	ratingProxy := mustProxy(ratingURL)
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /health", handleHealth(map[string]string{
@@ -32,6 +34,7 @@ func main() {
 		"test_lab":     testLabURL,
 		"live_chat":    liveChatURL,
 		"duel":         duelURL,
+		"rating":       ratingURL,
 	}))
 	mux.Handle("/auth/", authProxy)
 	mux.Handle("/me", authProxy)
@@ -40,6 +43,8 @@ func main() {
 	mux.Handle("/test-lab/", testLabProxy)
 	mux.Handle("/live-chat/", liveChatProxy)
 	mux.Handle("/duel/", duelProxy)
+	mux.Handle("/rating/", ratingProxy)
+	mux.Handle("/leaderboard", ratingProxy)
 
 	addr := ":" + envOr("PORT", "8080")
 	log.Printf("api-gateway on %s", addr)
