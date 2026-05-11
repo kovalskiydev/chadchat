@@ -3624,7 +3624,7 @@ function BackendStatusModal({
                     key={name}
                     className="border border-zinc-800 bg-zinc-950/70 px-3 py-2 text-[10px] font-semibold uppercase tracking-[0.12em] text-zinc-300"
                   >
-                    <div>{name.replaceAll("_", " ")}</div>
+                    <div>{name.split("_").join(" ")}</div>
                     <div className="mt-1 text-zinc-500">
                       {service.status_code ? `HTTP ${service.status_code}` : service.error || "Unavailable"}
                     </div>
