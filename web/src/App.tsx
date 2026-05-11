@@ -25,7 +25,9 @@ import GradientText from "@/components/GradientText";
 import { GlobalSpotlight, ParticleCard } from "@/components/MagicBento";
 import PixelBlast from "@/components/PixelBlast";
 import Shuffle from "@/components/Shuffle";
-import looksmaxxingTrack from "@/looksmaxxing.mp3";
+import track1 from "@/track-1.m4a";
+import track2 from "@/track-2.m4a";
+import track3 from "@/track-3.m4a";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import {
@@ -80,6 +82,7 @@ import {
 const magicBlockClass =
   "magic-bento-card magic-bento-wire magic-bento-card--border-glow";
 const magicGlow = "132, 0, 255";
+const duelQueueTracks = [track1, track2, track3];
 const leaderboardPageSize = 6;
 const auraBalance = 12840;
 const currentStats = {
@@ -2686,6 +2689,7 @@ function DuelModal({
   const mediaReadySentRef = useRef(false);
   const searchAudioRef = useRef<HTMLAudioElement | null>(null);
   const searchAudioFadeRef = useRef<number | null>(null);
+  const lastQueueTrackIndexRef = useRef<number | null>(null);
   const [queueing, setQueueing] = useState(false);
   const [matchID, setMatchID] = useState("");
   const [phase, setPhase] = useState("queue");
@@ -2918,7 +2922,12 @@ function DuelModal({
     if (searchAudioRef.current) return;
 
     try {
-      const audio = new Audio(looksmaxxingTrack);
+      let nextIndex = Math.floor(Math.random() * duelQueueTracks.length);
+      if (duelQueueTracks.length > 1 && lastQueueTrackIndexRef.current === nextIndex) {
+        nextIndex = (nextIndex + 1) % duelQueueTracks.length;
+      }
+      lastQueueTrackIndexRef.current = nextIndex;
+      const audio = new Audio(duelQueueTracks[nextIndex]);
       audio.loop = true;
       audio.volume = 0.001;
       searchAudioRef.current = audio;
