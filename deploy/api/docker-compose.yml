@@ -133,6 +133,7 @@ services:
       TEST_LAB_SERVICE_URL: ${TEST_LAB_SERVICE_URL:-http://test-lab-service:8083}
       LIVE_CHAT_SERVICE_URL: ${LIVE_CHAT_SERVICE_URL:-http://live-chat-service:8084}
       DUEL_SERVICE_URL: ${DUEL_SERVICE_URL:-http://duel-service:8085}
+      ML_SERVICE_URL: ${ML_SERVICE_URL:-http://ml-service:8090}
     depends_on:
       - auth-service
       - verification-service
