@@ -3295,7 +3295,7 @@ function DuelModal({
                   autoPlay
                 />
                 <div className="pointer-events-none absolute inset-x-0 top-0 h-24 bg-gradient-to-b from-black/80 to-transparent" />
-                <div className="absolute left-4 top-4 border border-purple-500/45 bg-black/65 px-3 py-2">
+                <div className="absolute left-4 top-28 border border-purple-500/45 bg-zinc-950 px-3 py-2 shadow-[0_0_18px_rgba(0,0,0,0.45)]">
                   <div className="text-[10px] uppercase tracking-[0.12em] text-zinc-500">
                     You
                   </div>
@@ -3316,7 +3316,7 @@ function DuelModal({
                   autoPlay
                 />
                 <div className="pointer-events-none absolute inset-x-0 top-0 h-24 bg-gradient-to-b from-black/80 to-transparent" />
-                <div className="absolute right-4 top-4 border border-zinc-700 bg-black/65 px-3 py-2 text-right">
+                <div className="absolute right-4 top-28 border border-zinc-700 bg-zinc-950 px-3 py-2 text-right shadow-[0_0_18px_rgba(0,0,0,0.45)]">
                   <div className="text-[10px] uppercase tracking-[0.12em] text-zinc-500">
                     Opponent
                   </div>
@@ -3329,8 +3329,8 @@ function DuelModal({
                 </div>
               </div>
 
-              <div className="pointer-events-none absolute inset-x-0 top-4 z-20 flex justify-center">
-                <div className="border border-zinc-700 bg-black/75 px-4 py-2 text-center shadow-[0_0_24px_rgba(132,0,255,0.16)]">
+              <div className="pointer-events-none absolute inset-x-0 top-28 z-20 flex justify-center">
+                <div className="border border-zinc-700 bg-zinc-950 px-4 py-2 text-center shadow-[0_0_24px_rgba(132,0,255,0.16)]">
                   <div className="text-[10px] font-semibold uppercase tracking-[0.18em] text-zinc-500">
                     {phaseLabel}
                   </div>
@@ -3349,10 +3349,10 @@ function DuelModal({
                       <div
                         key={step.id}
                         className={cn(
-                          "border px-3 py-2 text-center text-[10px] font-semibold uppercase tracking-[0.14em] backdrop-blur-sm",
+                          "border px-3 py-2 text-center text-[10px] font-semibold uppercase tracking-[0.14em]",
                           active && "border-purple-400/60 bg-purple-950/55 text-purple-100",
                           complete && "border-emerald-400/35 bg-emerald-950/30 text-emerald-200",
-                          !active && !complete && "border-zinc-800 bg-black/70 text-zinc-500",
+                          !active && !complete && "border-zinc-800 bg-zinc-950 text-zinc-500",
                         )}
                       >
                         {step.label}
@@ -3363,7 +3363,7 @@ function DuelModal({
               </div>
 
               <div className="absolute inset-x-6 bottom-6 z-20">
-                <div className="border border-zinc-800 bg-black/78 px-4 py-3 backdrop-blur-sm">
+                <div className="border border-zinc-800 bg-zinc-950 px-4 py-3 shadow-[0_0_24px_rgba(0,0,0,0.42)]">
                   <div className="mb-2 flex items-center justify-between gap-4 text-[10px] font-semibold uppercase tracking-[0.14em] text-zinc-500">
                     <span>{status || "Live Match"}</span>
                     <span className="text-purple-200">{secondsLeft ?? 0}s</span>
@@ -3371,7 +3371,7 @@ function DuelModal({
                   <div className="mb-3 text-[11px] uppercase tracking-[0.1em] text-zinc-400">
                     {phaseDescription}
                   </div>
-                  <div className="h-2 overflow-hidden bg-zinc-900">
+                  <div className="h-2 overflow-hidden border border-zinc-800 bg-black">
                     <div
                       className="h-full bg-purple-400 transition-[width] duration-300 ease-out shadow-[0_0_14px_rgba(168,85,247,0.8)]"
                       style={{ width: `${timerProgress}%` }}
@@ -3386,8 +3386,8 @@ function DuelModal({
               </div>
 
               {isResultPhase && resultSummary && (
-                <div className="absolute inset-0 z-30 flex items-center justify-center bg-black/62 p-6 backdrop-blur-sm">
-                  <div className="w-full max-w-xl border border-purple-500/35 bg-zinc-950/96 p-6 text-center shadow-[0_0_40px_rgba(132,0,255,0.22)]">
+                <div className="absolute inset-0 z-30 flex items-center justify-center bg-black/88 p-6">
+                  <div className="w-full max-w-xl border border-purple-500/35 bg-zinc-950 p-6 text-center shadow-[0_0_40px_rgba(132,0,255,0.22)]">
                     <div className="text-[10px] font-semibold uppercase tracking-[0.18em] text-zinc-600">
                       Match Result
                     </div>
