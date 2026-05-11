@@ -53,6 +53,12 @@ export async function duelSignal(
   }, accessToken);
 }
 
+export async function duelMediaReady(accessToken: string, matchID: string) {
+  return authorizedRequest<JsonRecord>(`/duel/match/${matchID}/media-ready`, {
+    method: "POST",
+  }, accessToken);
+}
+
 export async function duelStream(
   accessToken: string,
   matchID: string,
