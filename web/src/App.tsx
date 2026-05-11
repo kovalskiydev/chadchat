@@ -2568,7 +2568,7 @@ function DuelModal({
   onFinished?: () => void;
   onClose: () => void;
 }) {
-  const extractPhase = (payload: Record<string, unknown>) =>
+  const extractPhase = useCallback((payload: Record<string, unknown>) =>
     (payload.phase as string | undefined) ??
     (payload.current_phase as string | undefined) ??
     (payload.state as string | undefined) ??
@@ -2580,7 +2580,7 @@ function DuelModal({
       | undefined) ??
     ((payload.match as Record<string, unknown> | undefined)?.state as
       | string
-      | undefined);
+      | undefined), []);
   const parseMaybeJsonObject = useCallback((value: unknown): Record<string, unknown> | null => {
     if (!value) return null;
     if (typeof value === "object") return value as Record<string, unknown>;
@@ -2674,7 +2674,60 @@ function DuelModal({
               ? "Post Chat"
               : phase === "finished"
                 ? "Finished"
-                : "Queue";
+              : "Queue";
+
+  const extractMatchRecord = useCallback((payload: Record<string, unknown>) => {
+    return (payload.match as Record<string, unknown> | undefined) ?? payload;
+  }, []);
+
+  const applyMatchSnapshot = useCallback((payload: Record<string, unknown>) => {
+    const match = extractMatchRecord(payload);
+    const nextPhase = extractPhase(payload) ?? extractPhase(match);
+    if (nextPhase) setPhase(nextPhase);
+
+    const nextSecondsLeft =
+      (match.seconds_left as number | undefined) ??
+      (payload.seconds_left as number | undefined);
+    if (typeof nextSecondsLeft === "number") {
+      setSecondsLeft(nextSecondsLeft);
+    }
+
+    const players = match.players as Array<Record<string, unknown>> | undefined;
+    if (Array.isArray(players) && myUserId) {
+      const mine = players.find((player) => String(player.user_id ?? "") === myUserId);
+      const opponent = players.find((player) => String(player.user_id ?? "") !== myUserId);
+
+      if (mine) {
+        const mineAvg =
+          (mine.running_avg as number | undefined) ??
+          (mine.final_avg as number | undefined);
+        const mineScore = mine.last_score as number | undefined;
+        if (typeof mineAvg === "number") setMyAvg(mineAvg);
+        if (typeof mineScore === "number") setMyScore(mineScore);
+      }
+
+      if (opponent) {
+        const opponentId = opponent.user_id ? String(opponent.user_id) : null;
+        const opponentAvg =
+          (opponent.running_avg as number | undefined) ??
+          (opponent.final_avg as number | undefined);
+        const opponentScore = opponent.last_score as number | undefined;
+        if (opponentId) setOpponentUserId(opponentId);
+        if (typeof opponentAvg === "number") setOppAvg(opponentAvg);
+        if (typeof opponentScore === "number") setOppScore(opponentScore);
+      }
+    }
+
+    const directOpponent =
+      (match.player_a as string | undefined) === myUserId
+        ? (match.player_b as string | undefined)
+        : (match.player_b as string | undefined) === myUserId
+          ? (match.player_a as string | undefined)
+          : undefined;
+    if (directOpponent) {
+      setOpponentUserId(directOpponent);
+    }
+  }, [extractMatchRecord, extractPhase, myUserId]);
 
   const extractUsersFromMatch = useCallback((payload: Record<string, unknown>) => {
     const match = (payload.match as Record<string, unknown> | undefined) ?? payload;
@@ -2714,6 +2767,9 @@ function DuelModal({
         if (!mounted) return;
         streamRef.current = stream;
         if (videoRef.current) {
+          videoRef.current.muted = true;
+          videoRef.current.autoplay = true;
+          videoRef.current.playsInline = true;
           videoRef.current.srcObject = stream;
           await videoRef.current.play();
         }
@@ -2733,6 +2789,9 @@ function DuelModal({
   useEffect(() => {
     const attachLocal = async () => {
       if (!videoRef.current || !streamRef.current) return;
+      videoRef.current.muted = true;
+      videoRef.current.autoplay = true;
+      videoRef.current.playsInline = true;
       if (videoRef.current.srcObject !== streamRef.current) {
         videoRef.current.srcObject = streamRef.current;
       }
@@ -2741,6 +2800,8 @@ function DuelModal({
 
     const attachRemote = async () => {
       if (!remoteVideoRef.current || !remoteStreamRef.current) return;
+      remoteVideoRef.current.autoplay = true;
+      remoteVideoRef.current.playsInline = true;
       if (remoteVideoRef.current.srcObject !== remoteStreamRef.current) {
         remoteVideoRef.current.srcObject = remoteStreamRef.current;
       }
@@ -2902,10 +2963,7 @@ function DuelModal({
       try {
         const match = await duelGetMatch(accessToken, matchID);
         if (!mounted) return;
-        setPhase(extractPhase(match as Record<string, unknown>) ?? "unknown");
-        if (typeof match.seconds_left === "number") setSecondsLeft(match.seconds_left);
-        if (typeof match.my_avg === "number") setMyAvg(match.my_avg);
-        if (typeof match.opp_avg === "number") setOppAvg(match.opp_avg);
+        applyMatchSnapshot(match as Record<string, unknown>);
       } catch {
         // keep stream running
       }
@@ -2925,9 +2983,9 @@ function DuelModal({
         const body = (payload.payload as Record<string, unknown> | undefined) ?? payload;
 
         if (msgType === "joined" || msgType === "phase_changed") {
+          applyMatchSnapshot(payload);
           const p = extractPhase(payload) ?? extractPhase(body);
           if (p) {
-            setPhase(p);
             if (p === "pre_start") setStatus("Opponent connected");
             if (p === "scoring") setStatus("Scoring in progress");
             if (p === "overtime") setStatus("Overtime round");
@@ -2935,8 +2993,6 @@ function DuelModal({
             if (p === "post_chat") setStatus("Post match window");
             if (p === "finished") setStatus("Match finished");
           }
-          const ids = extractUsersFromMatch(payload);
-          if (ids.opponent) setOpponentUserId(ids.opponent);
         }
         if (msgType === "timer") {
           if (typeof payload.seconds_left === "number") setSecondsLeft(payload.seconds_left);
@@ -2950,6 +3006,7 @@ function DuelModal({
           if (typeof body.seconds_left === "number") setSecondsLeft(body.seconds_left);
         }
         if (msgType === "finished") {
+          applyMatchSnapshot(payload);
           setPhase("finished");
           setStatus("Match finished");
           if (!finishedRef.current) {
@@ -3060,7 +3117,7 @@ function DuelModal({
       if (poll) window.clearInterval(poll);
       controller.abort();
     };
-  }, [accessToken, matchID, pushDebug, pickSignalPayload, myUserId, extractUsersFromMatch, onFinished]);
+  }, [accessToken, matchID, pushDebug, pickSignalPayload, myUserId, extractUsersFromMatch, onFinished, applyMatchSnapshot, extractPhase]);
 
   useEffect(() => {
     if (!accessToken || !matchID) return;
