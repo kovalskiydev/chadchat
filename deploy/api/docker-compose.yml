@@ -9,6 +9,7 @@ services:
     restart: unless-stopped
     environment:
       PORT: 8082
+      VERIFICATION_INTERNAL_SECRET: ${VERIFICATION_INTERNAL_SECRET}
     expose:
       - "8082"
 
@@ -25,6 +26,7 @@ services:
       VERIFICATION_SERVICE_URL: http://verification-service:8082
       AUTH_ACCESS_TOKEN_SECRET: ${AUTH_ACCESS_TOKEN_SECRET}
       AUTH_REFRESH_TOKEN_SECRET: ${AUTH_REFRESH_TOKEN_SECRET}
+      VERIFICATION_INTERNAL_SECRET: ${VERIFICATION_INTERNAL_SECRET}
     depends_on:
       - verification-service
     expose:
