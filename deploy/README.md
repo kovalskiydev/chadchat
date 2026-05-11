@@ -3,7 +3,7 @@
 ## Recommended layout
 
 - `VPS 1` (`web`) - only the static frontend from `web/`
-- `VPS 2` (`api`) - `api-gateway`, `auth-service`, `verification-service`, `test-lab-service`, `live-chat-service`, `duel-service`, `ml-service`
+- `VPS 2` (`api`) - `api-gateway`, `auth-service`, `verification-service`, `test-lab-service`, `live-chat-service`, `duel-service`, `ml-service`, `mysql`
 
 This layout fits the current codebase:
 
@@ -92,6 +92,8 @@ Flow:
 - `PROD_AUTH_ACCESS_TOKEN_SECRET`
 - `PROD_AUTH_REFRESH_TOKEN_SECRET`
 - `PROD_VERIFICATION_INTERNAL_SECRET`
+- `PROD_MYSQL_PASSWORD`
+- `PROD_MYSQL_ROOT_PASSWORD`
 
 ### Required GitHub Variables
 
@@ -130,6 +132,21 @@ The gateway and services already support this through env variables.
 - Set `CORS_ALLOWED_ORIGINS` to your real frontend domain.
 - Set persistent `AUTH_ACCESS_TOKEN_SECRET` and `AUTH_REFRESH_TOKEN_SECRET`, otherwise every auth-service restart invalidates user tokens.
 - Set persistent `VERIFICATION_INTERNAL_SECRET`, otherwise internal verification consume flow is not safe for production.
+- `mysql` is now part of the API stack baseline; app state for auth, verification, live chat, and test lab depends on `MYSQL_DSN`.
 - Keep private service ports closed if the service stays behind the gateway.
-- Current backend state is in memory. After restart, users, chats, queues, rooms, and matches are lost.
-- The next production step after this deployment baseline is Postgres plus Redis.
+- `duel-service` queue/live match state, SSE subscribers, and rate limiting are still in memory.
+
+## MySQL rollout
+
+1. Add GitHub secrets `PROD_MYSQL_PASSWORD` and `PROD_MYSQL_ROOT_PASSWORD`.
+2. Deploy the API stack so `mysql` starts and app `.env` receives `MYSQL_DSN`.
+3. Wait for `mysql` to become ready, then restart the API stack if needed.
+4. Tables are created automatically by services at startup.
+
+Default built-in DSN in this deploy:
+
+```text
+app:<password>@tcp(mysql:3306)/chadchat?parseTime=true&multiStatements=true&charset=utf8mb4
+```
+
+If you later move to managed MySQL, keep `MYSQL_DSN` semantics the same and update the deploy flow to write your external DSN instead of the local `mysql` host.

@@ -1,4 +1,18 @@
 services:
+  mysql:
+    image: mysql:8.4
+    command: --default-authentication-plugin=mysql_native_password
+    restart: unless-stopped
+    environment:
+      MYSQL_DATABASE: ${MYSQL_DATABASE}
+      MYSQL_USER: ${MYSQL_USER}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD}
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+    volumes:
+      - mysql_data:/var/lib/mysql
+    expose:
+      - "3306"
+
   verification-service:
     image: ${VERIFICATION_SERVICE_IMAGE:-chadchat/verification-service:latest}
     build:
@@ -8,8 +22,11 @@ services:
         SERVICE_PATH: ./cmd/verification-service
     restart: unless-stopped
     environment:
+      MYSQL_DSN: ${MYSQL_DSN}
       PORT: 8082
       VERIFICATION_INTERNAL_SECRET: ${VERIFICATION_INTERNAL_SECRET}
+    depends_on:
+      - mysql
     expose:
       - "8082"
 
@@ -22,12 +39,14 @@ services:
         SERVICE_PATH: ./cmd/auth-service
     restart: unless-stopped
     environment:
+      MYSQL_DSN: ${MYSQL_DSN}
       PORT: 8081
       VERIFICATION_SERVICE_URL: http://verification-service:8082
       AUTH_ACCESS_TOKEN_SECRET: ${AUTH_ACCESS_TOKEN_SECRET}
       AUTH_REFRESH_TOKEN_SECRET: ${AUTH_REFRESH_TOKEN_SECRET}
       VERIFICATION_INTERNAL_SECRET: ${VERIFICATION_INTERNAL_SECRET}
     depends_on:
+      - mysql
       - verification-service
     expose:
       - "8081"
@@ -52,10 +71,12 @@ services:
         SERVICE_PATH: ./cmd/test-lab-service
     restart: unless-stopped
     environment:
+      MYSQL_DSN: ${MYSQL_DSN}
       PORT: 8083
       AUTH_SERVICE_URL: http://auth-service:8081
       ML_SERVICE_URL: http://ml-service:8090
     depends_on:
+      - mysql
       - auth-service
       - ml-service
     expose:
@@ -70,9 +91,11 @@ services:
         SERVICE_PATH: ./cmd/live-chat-service
     restart: unless-stopped
     environment:
+      MYSQL_DSN: ${MYSQL_DSN}
       PORT: 8084
       AUTH_SERVICE_URL: http://auth-service:8081
     depends_on:
+      - mysql
       - auth-service
     expose:
       - "8084"
@@ -119,3 +142,6 @@ services:
       - duel-service
     ports:
       - "${API_PUBLIC_PORT:-8080}:8080"
+
+volumes:
+  mysql_data:
