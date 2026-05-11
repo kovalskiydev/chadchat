@@ -64,7 +64,7 @@ import {
   duelSignal,
   duelStream,
 } from "@/lib/duel";
-import { getApiHealth, type ApiHealthResponse } from "@/lib/health";
+import { getApiHealth } from "@/lib/health";
 
 const magicBlockClass =
   "magic-bento-card magic-bento-wire magic-bento-card--border-glow";
@@ -3582,14 +3582,10 @@ function VerificationStartingModal({
 }
 
 function BackendStatusModal({
-  health,
   message,
 }: {
-  health: ApiHealthResponse | null;
   message: string;
 }) {
-  const degradedServices = Object.entries(health?.services ?? {}).filter(([, service]) => !service.ok);
-
   return (
     <div
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/82 p-4 backdrop-blur-sm"
@@ -3613,26 +3609,6 @@ function BackendStatusModal({
           <div className="border border-red-500/30 bg-red-950/25 px-4 py-3 text-sm leading-6 text-zinc-200">
             {message}
           </div>
-          {degradedServices.length > 0 && (
-            <div className="space-y-2 border border-zinc-800 bg-black/60 p-4">
-              <div className="text-[10px] font-semibold uppercase tracking-[0.12em] text-zinc-500">
-                Affected Services
-              </div>
-              <div className="grid gap-2 sm:grid-cols-2">
-                {degradedServices.map(([name, service]) => (
-                  <div
-                    key={name}
-                    className="border border-zinc-800 bg-zinc-950/70 px-3 py-2 text-[10px] font-semibold uppercase tracking-[0.12em] text-zinc-300"
-                  >
-                    <div>{name.split("_").join(" ")}</div>
-                    <div className="mt-1 text-zinc-500">
-                      {service.status_code ? `HTTP ${service.status_code}` : service.error || "Unavailable"}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
           <button
             type="button"
             onClick={() => window.location.reload()}
@@ -3933,7 +3909,6 @@ export default function App() {
   const [verifiedPurpose, setVerifiedPurpose] = useState<
     "register" | "anonymous" | null
   >(null);
-  const [backendHealth, setBackendHealth] = useState<ApiHealthResponse | null>(null);
   const [backendDownMessage, setBackendDownMessage] = useState<string | null>(null);
   const [legalModal, setLegalModal] = useState<"rules" | "privacy" | null>(null);
   const [showEntryChoice, setShowEntryChoice] = useState(false);
@@ -3973,7 +3948,6 @@ export default function App() {
       try {
         const result = await getApiHealth(controller.signal);
         if (!mounted) return;
-        setBackendHealth(result.health);
         if (!result.httpOk || result.health?.ok === false || result.health?.status === "degraded") {
           setBackendDownMessage("Some backend services are unavailable right now. Please reload the page and try again.");
           return;
@@ -4611,7 +4585,6 @@ export default function App() {
       )}
       {backendDownMessage && (
         <BackendStatusModal
-          health={backendHealth}
           message={backendDownMessage}
         />
       )}
