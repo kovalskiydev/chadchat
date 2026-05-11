@@ -1,7 +1,7 @@
 version: "3.9"
 services:
   verification-service:
-    image: golang:1.22
+    image: golang:1.23
     working_dir: /app
     volumes:
       - .:/app
@@ -10,7 +10,7 @@ services:
       - "8082:8082"
 
   auth-service:
-    image: golang:1.22
+    image: golang:1.23
     working_dir: /app
     volumes:
       - .:/app
@@ -32,7 +32,7 @@ services:
       - "8090:8090"
 
   test-lab-service:
-    image: golang:1.22
+    image: golang:1.23
     working_dir: /app
     volumes:
       - .:/app
@@ -47,7 +47,7 @@ services:
       - "8083:8083"
 
   live-chat-service:
-    image: golang:1.22
+    image: golang:1.23
     working_dir: /app
     volumes:
       - .:/app
@@ -61,7 +61,7 @@ services:
 
 
   duel-service:
-    image: golang:1.22
+    image: golang:1.23
     working_dir: /app
     volumes:
       - .:/app
@@ -76,7 +76,7 @@ services:
       - "8085:8085"
 
   api-gateway:
-    image: golang:1.22
+    image: golang:1.23
     working_dir: /app
     volumes:
       - .:/app
