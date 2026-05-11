@@ -19,12 +19,13 @@ import (
 )
 
 const (
-	phasePreStart = "pre_start"
-	phaseScoring  = "scoring"
-	phaseOvertime = "overtime"
-	phaseResult   = "result"
-	phasePostChat = "post_chat"
-	phaseFinished = "finished"
+	phaseAwaitingMedia = "awaiting_media"
+	phasePreStart      = "pre_start"
+	phaseScoring       = "scoring"
+	phaseOvertime      = "overtime"
+	phaseResult        = "result"
+	phasePostChat      = "post_chat"
+	phaseFinished      = "finished"
 
 	preStartDuration        = 10 * time.Second
 	scoringDuration         = 10 * time.Second
@@ -57,6 +58,7 @@ type Match struct {
 	PhaseEndsAt time.Time                  `json:"phase_ends_at"`
 	Result      *MatchResult               `json:"result,omitempty"`
 	Players     map[string]*PlayerProgress `json:"players"`
+	MediaReady  map[string]bool            `json:"-"`
 	Subscribers map[string]chan []byte     `json:"-"`
 	Connections map[string]int             `json:"-"`
 }
@@ -126,6 +128,7 @@ func main() {
 	mux.HandleFunc("GET /duel/match/current", s.withAuth(s.handleCurrentMatch))
 	mux.HandleFunc("GET /duel/match/{matchID}", s.withAuth(s.handleGetMatch))
 	mux.HandleFunc("GET /duel/match/{matchID}/stream", s.withAuth(s.handleStream))
+	mux.HandleFunc("POST /duel/match/{matchID}/media-ready", s.withAuth(s.handleMediaReady))
 	mux.HandleFunc("POST /duel/match/{matchID}/signal", s.withAuth(s.handleSignal))
 	mux.HandleFunc("POST /duel/match/{matchID}/score-frame", s.withRateLimit(scoreRateLimitPerMinute, time.Minute, s.withAuth(s.handleScoreFrame)))
 
@@ -417,6 +420,40 @@ func (s *Server) handleSignal(w http.ResponseWriter, r *http.Request, user authU
 	writeJSON(w, http.StatusOK, map[string]any{"status": "ok"})
 }
 
+func (s *Server) handleMediaReady(w http.ResponseWriter, r *http.Request, user authUser) {
+	mid := r.PathValue("matchID")
+
+	s.store.mu.Lock()
+	defer s.store.mu.Unlock()
+	m := s.store.matches[mid]
+	if m == nil {
+		writeErr(w, http.StatusNotFound, "match_not_found")
+		return
+	}
+	if !isPlayer(m, user.ID) {
+		writeErr(w, http.StatusForbidden, "forbidden")
+		return
+	}
+	if m.Phase == phaseResult || m.Phase == phaseFinished || m.Phase == phasePostChat {
+		writeErr(w, http.StatusBadRequest, "match_not_ready_for_media")
+		return
+	}
+
+	m.MediaReady[user.ID] = true
+	if m.MediaReady[m.PlayerA] && m.MediaReady[m.PlayerB] && m.Phase == phaseAwaitingMedia {
+		m.Phase = phasePreStart
+		m.PhaseEndsAt = time.Now().UTC().Add(preStartDuration)
+		s.broadcastLocked(m, map[string]any{"type": "phase_changed", "phase": m.Phase, "match": snapshotMatch(m)})
+	} else {
+		s.broadcastLocked(m, map[string]any{
+			"type":  "media_ready_update",
+			"match": snapshotMatch(m),
+		})
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"status": "ok", "match": snapshotMatch(m)})
+}
+
 func (s *Server) handleStream(w http.ResponseWriter, r *http.Request, user authUser) {
 	mid := r.PathValue("matchID")
 	flusher, ok := w.(http.Flusher)
@@ -517,6 +554,9 @@ func (s *Server) runMatchLifecycle(matchID string) {
 }
 
 func (s *Server) syncPhaseLocked(m *Match) {
+	if m.Phase == phaseAwaitingMedia {
+		return
+	}
 	now := time.Now().UTC()
 	for {
 		if now.Before(m.PhaseEndsAt) {
@@ -611,12 +651,16 @@ func (s *Server) newMatchLocked(a, b authUser) *Match {
 		ID:          id,
 		PlayerA:     a.ID,
 		PlayerB:     b.ID,
-		Phase:       phasePreStart,
+		Phase:       phaseAwaitingMedia,
 		StartedAt:   now,
-		PhaseEndsAt: now.Add(preStartDuration),
+		PhaseEndsAt: time.Time{},
 		Players: map[string]*PlayerProgress{
 			a.ID: {UserID: a.ID, Nickname: a.Nickname},
 			b.ID: {UserID: b.ID, Nickname: b.Nickname},
+		},
+		MediaReady: map[string]bool{
+			a.ID: false,
+			b.ID: false,
 		},
 		Subscribers: map[string]chan []byte{},
 		Connections: map[string]int{
@@ -659,7 +703,11 @@ func snapshotMatch(m *Match) map[string]any {
 		"phase_ends_at": m.PhaseEndsAt,
 		"seconds_left":  secondsLeft(m.PhaseEndsAt),
 		"players":       players,
-		"result":        m.Result,
+		"media_ready": map[string]bool{
+			m.PlayerA: m.MediaReady[m.PlayerA],
+			m.PlayerB: m.MediaReady[m.PlayerB],
+		},
+		"result": m.Result,
 	}
 }
 
