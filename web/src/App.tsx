@@ -2628,6 +2628,7 @@ function DuelModal({
   const videoRef = useRef<HTMLVideoElement>(null);
   const remoteVideoRef = useRef<HTMLVideoElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
+  const remoteStreamRef = useRef<MediaStream | null>(null);
   const peerRef = useRef<RTCPeerConnection | null>(null);
   const pendingCandidatesRef = useRef<RTCIceCandidateInit[]>([]);
   const makingOfferRef = useRef(false);
@@ -2723,10 +2724,32 @@ function DuelModal({
     void init();
     return () => {
       mounted = false;
+      remoteStreamRef.current = null;
       streamRef.current?.getTracks().forEach((t) => t.stop());
       streamRef.current = null;
     };
   }, []);
+
+  useEffect(() => {
+    const attachLocal = async () => {
+      if (!videoRef.current || !streamRef.current) return;
+      if (videoRef.current.srcObject !== streamRef.current) {
+        videoRef.current.srcObject = streamRef.current;
+      }
+      await videoRef.current.play().catch(() => {});
+    };
+
+    const attachRemote = async () => {
+      if (!remoteVideoRef.current || !remoteStreamRef.current) return;
+      if (remoteVideoRef.current.srcObject !== remoteStreamRef.current) {
+        remoteVideoRef.current.srcObject = remoteStreamRef.current;
+      }
+      await remoteVideoRef.current.play().catch(() => {});
+    };
+
+    void attachLocal();
+    void attachRemote();
+  }, [isQueueScreen, matchID, phase]);
 
   useEffect(() => {
     if (!accessToken || !matchID || !streamRef.current) return;
@@ -2744,9 +2767,12 @@ function DuelModal({
 
     pc.ontrack = (event) => {
       const [remoteStream] = event.streams;
-      if (!remoteStream || !remoteVideoRef.current) return;
-      remoteVideoRef.current.srcObject = remoteStream;
-      void remoteVideoRef.current.play().catch(() => {});
+      if (!remoteStream) return;
+      remoteStreamRef.current = remoteStream;
+      if (remoteVideoRef.current) {
+        remoteVideoRef.current.srcObject = remoteStream;
+        void remoteVideoRef.current.play().catch(() => {});
+      }
       pushDebug(`ontrack: remote tracks=${remoteStream.getTracks().length}`);
     };
 
@@ -2776,6 +2802,7 @@ function DuelModal({
     return () => {
       peerRef.current?.close();
       peerRef.current = null;
+      remoteStreamRef.current = null;
       pendingCandidatesRef.current = [];
       makingOfferRef.current = false;
       ignoreOfferRef.current = false;
