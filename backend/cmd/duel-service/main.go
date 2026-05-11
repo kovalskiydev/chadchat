@@ -119,6 +119,7 @@ func main() {
 	}
 
 	mux := http.NewServeMux()
+	mux.HandleFunc("GET /health", s.handleHealth)
 	mux.HandleFunc("POST /duel/queue/join", s.withAuth(s.handleJoinQueue))
 	mux.HandleFunc("POST /duel/queue/leave", s.withAuth(s.handleLeaveQueue))
 	mux.HandleFunc("GET /duel/match/current", s.withAuth(s.handleCurrentMatch))
@@ -130,6 +131,13 @@ func main() {
 	addr := ":" + envOr("PORT", "8085")
 	log.Printf("duel-service on %s", addr)
 	log.Fatal(http.ListenAndServe(addr, withJSON(mux)))
+}
+
+func (s *Server) handleHealth(w http.ResponseWriter, _ *http.Request) {
+	writeJSON(w, http.StatusOK, map[string]any{
+		"ok":     true,
+		"status": "ok",
+	})
 }
 
 func (s *Server) withRateLimit(limit int, window time.Duration, next http.HandlerFunc) http.HandlerFunc {

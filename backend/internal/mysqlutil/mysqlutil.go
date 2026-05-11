@@ -1,6 +1,7 @@
 package mysqlutil
 
 import (
+	"context"
 	"database/sql"
 	"fmt"
 	"os"
@@ -39,4 +40,10 @@ func ExecStatements(db *sql.DB, statements []string) error {
 		}
 	}
 	return nil
+}
+
+func Ping(db *sql.DB) error {
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	return db.PingContext(ctx)
 }

@@ -69,6 +69,7 @@ func main() {
 	}
 
 	mux := http.NewServeMux()
+	mux.HandleFunc("GET /health", s.handleHealth)
 	mux.HandleFunc("GET /live-chat/history", s.withAuth(s.handleHistory))
 	mux.HandleFunc("POST /live-chat/history", s.withAuth(s.handleHistoryWithLimit))
 	mux.HandleFunc("GET /live-chat/stream", s.withAuth(s.handleStream))
@@ -77,6 +78,24 @@ func main() {
 	addr := ":" + envOr("PORT", "8084")
 	log.Printf("live-chat-service on %s", addr)
 	log.Fatal(http.ListenAndServe(addr, withJSON(mux)))
+}
+
+func (s *Server) handleHealth(w http.ResponseWriter, _ *http.Request) {
+	if err := mysqlutil.Ping(s.db); err != nil {
+		writeJSON(w, http.StatusServiceUnavailable, map[string]any{
+			"ok":     false,
+			"status": "degraded",
+			"error":  "mysql_unavailable",
+		})
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"ok":     true,
+		"status": "ok",
+		"checks": map[string]string{
+			"mysql": "ok",
+		},
+	})
 }
 
 func liveChatSchema() []string {

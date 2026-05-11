@@ -98,6 +98,7 @@ func main() {
 	}
 
 	mux := http.NewServeMux()
+	mux.HandleFunc("GET /health", s.handleHealth)
 	mux.HandleFunc("POST /auth/anonymous", s.withRateLimit(10, time.Minute, s.handleAnonymous))
 	mux.HandleFunc("POST /auth/register", s.withRateLimit(10, time.Minute, s.handleRegister))
 	mux.HandleFunc("POST /auth/login", s.withRateLimit(20, time.Minute, s.handleLogin))
@@ -109,6 +110,24 @@ func main() {
 	addr := ":" + envOr("PORT", "8081")
 	log.Printf("auth-service on %s", addr)
 	log.Fatal(http.ListenAndServe(addr, withJSON(mux)))
+}
+
+func (s *Server) handleHealth(w http.ResponseWriter, _ *http.Request) {
+	if err := mysqlutil.Ping(s.db); err != nil {
+		writeJSON(w, http.StatusServiceUnavailable, map[string]any{
+			"ok":     false,
+			"status": "degraded",
+			"error":  "mysql_unavailable",
+		})
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"ok":     true,
+		"status": "ok",
+		"checks": map[string]string{
+			"mysql": "ok",
+		},
+	})
 }
 
 func authSchema() []string {

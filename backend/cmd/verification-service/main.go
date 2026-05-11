@@ -57,6 +57,7 @@ func main() {
 	}
 
 	mux := http.NewServeMux()
+	mux.HandleFunc("GET /health", s.handleHealth)
 	mux.HandleFunc("POST /verification/start", s.withRateLimit(10, time.Minute, s.handleStart))
 	mux.HandleFunc("POST /verification/submit", s.withRateLimit(20, time.Minute, s.handleSubmit))
 	mux.HandleFunc("POST /verification/consume", s.handleConsume)
@@ -64,6 +65,24 @@ func main() {
 	addr := ":" + envOr("PORT", "8082")
 	log.Printf("verification-service on %s", addr)
 	log.Fatal(http.ListenAndServe(addr, withJSON(mux)))
+}
+
+func (s *store) handleHealth(w http.ResponseWriter, _ *http.Request) {
+	if err := mysqlutil.Ping(s.db); err != nil {
+		writeJSON(w, http.StatusServiceUnavailable, map[string]any{
+			"ok":     false,
+			"status": "degraded",
+			"error":  "mysql_unavailable",
+		})
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"ok":     true,
+		"status": "ok",
+		"checks": map[string]string{
+			"mysql": "ok",
+		},
+	})
 }
 
 func verificationSchema() []string {

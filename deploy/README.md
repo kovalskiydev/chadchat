@@ -135,6 +135,7 @@ The gateway and services already support this through env variables.
 - `mysql` is now part of the API stack baseline; app state for auth, verification, live chat, and test lab depends on `MYSQL_DSN`.
 - Keep private service ports closed if the service stays behind the gateway.
 - `duel-service` queue/live match state, SSE subscribers, and rate limiting are still in memory.
+- Public API health is available at `/health` on `api-gateway`; it aggregates health of auth, verification, test lab, live chat, duel, and ML services.
 
 ## MySQL rollout
 

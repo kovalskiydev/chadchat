@@ -1,12 +1,15 @@
 package main
 
 import (
+	"encoding/json"
+	"fmt"
 	"log"
 	"net/http"
 	"net/http/httputil"
 	"net/url"
 	"os"
 	"strings"
+	"time"
 )
 
 func main() {
@@ -23,6 +26,13 @@ func main() {
 	duelProxy := mustProxy(duelURL)
 
 	mux := http.NewServeMux()
+	mux.HandleFunc("GET /health", handleHealth(map[string]string{
+		"auth":         authURL,
+		"verification": verificationURL,
+		"test_lab":     testLabURL,
+		"live_chat":    liveChatURL,
+		"duel":         duelURL,
+	}))
 	mux.Handle("/auth/", authProxy)
 	mux.Handle("/me", authProxy)
 	mux.Handle("/verification/start", verificationProxy)
@@ -34,6 +44,68 @@ func main() {
 	addr := ":" + envOr("PORT", "8080")
 	log.Printf("api-gateway on %s", addr)
 	log.Fatal(http.ListenAndServe(addr, withCORS(mux)))
+}
+
+type healthComponent struct {
+	OK         bool   `json:"ok"`
+	StatusCode int    `json:"status_code,omitempty"`
+	Error      string `json:"error,omitempty"`
+}
+
+func handleHealth(services map[string]string) http.HandlerFunc {
+	client := &http.Client{Timeout: 2 * time.Second}
+	return func(w http.ResponseWriter, _ *http.Request) {
+		checks := make(map[string]healthComponent, len(services)+1)
+		allOK := true
+		for name, baseURL := range services {
+			ref := strings.TrimRight(baseURL, "/") + "/health"
+			ok, statusCode, errText := healthCheck(client, ref)
+			checks[name] = healthComponent{
+				OK:         ok,
+				StatusCode: statusCode,
+				Error:      errText,
+			}
+			if !ok {
+				allOK = false
+			}
+		}
+
+		mlURL := envOr("ML_SERVICE_URL", "http://localhost:8090")
+		ok, statusCode, errText := healthCheck(client, strings.TrimRight(mlURL, "/")+"/health")
+		checks["ml"] = healthComponent{
+			OK:         ok,
+			StatusCode: statusCode,
+			Error:      errText,
+		}
+		if !ok {
+			allOK = false
+		}
+
+		statusCodeOut := http.StatusOK
+		statusText := "ok"
+		if !allOK {
+			statusCodeOut = http.StatusServiceUnavailable
+			statusText = "degraded"
+		}
+
+		writeJSON(w, statusCodeOut, map[string]any{
+			"ok":       allOK,
+			"status":   statusText,
+			"services": checks,
+		})
+	}
+}
+
+func healthCheck(client *http.Client, rawURL string) (bool, int, string) {
+	resp, err := client.Get(rawURL)
+	if err != nil {
+		return false, 0, err.Error()
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return false, resp.StatusCode, fmt.Sprintf("unexpected_status_%d", resp.StatusCode)
+	}
+	return true, resp.StatusCode, ""
 }
 
 func mustProxy(raw string) *httputil.ReverseProxy {
@@ -60,6 +132,12 @@ func withCORS(next http.Handler) http.Handler {
 		}
 		next.ServeHTTP(w, r)
 	})
+}
+
+func writeJSON(w http.ResponseWriter, status int, payload any) {
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	w.WriteHeader(status)
+	_ = json.NewEncoder(w).Encode(payload)
 }
 
 func allowedOrigins() map[string]struct{} {
