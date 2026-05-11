@@ -2643,14 +2643,35 @@ function DuelModal({
   const [opponentUserId, setOpponentUserId] = useState<string | null>(null);
   const [myScore, setMyScore] = useState<number | null>(null);
   const [oppScore, setOppScore] = useState<number | null>(null);
-  const [debugLines, setDebugLines] = useState<string[]>([]);
   const finishedRef = useRef(false);
 
-  const pushDebug = useCallback((line: string) => {
-    const stamp = new Date().toLocaleTimeString();
-    setDebugLines((current) => [...current.slice(-39), `[${stamp}] ${line}`]);
-  }, []);
+  const pushDebug = useCallback(() => {}, []);
   const isOfferer = Boolean(myUserId && opponentUserId && myUserId < opponentUserId);
+  const isQueueScreen = queueing || !matchID || phase === "queue";
+  const timerMax =
+    phase === "pre_start" || phase === "post_chat"
+      ? 10
+      : phase === "overtime"
+        ? 5
+        : 10;
+  const timerProgress = Math.max(
+    0,
+    Math.min(100, ((secondsLeft ?? timerMax) / Math.max(1, timerMax)) * 100),
+  );
+  const phaseLabel =
+    phase === "pre_start"
+      ? "Pre Start"
+      : phase === "scoring"
+        ? "Scoring"
+        : phase === "overtime"
+          ? "Overtime"
+          : phase === "result"
+            ? "Result"
+            : phase === "post_chat"
+              ? "Post Chat"
+              : phase === "finished"
+                ? "Finished"
+                : "Queue";
 
   const extractUsersFromMatch = useCallback((payload: Record<string, unknown>) => {
     const match = (payload.match as Record<string, unknown> | undefined) ?? payload;
@@ -2876,7 +2897,15 @@ function DuelModal({
 
         if (msgType === "joined" || msgType === "phase_changed") {
           const p = extractPhase(payload) ?? extractPhase(body);
-          if (p) setPhase(p);
+          if (p) {
+            setPhase(p);
+            if (p === "pre_start") setStatus("Opponent connected");
+            if (p === "scoring") setStatus("Scoring in progress");
+            if (p === "overtime") setStatus("Overtime round");
+            if (p === "result") setStatus("Calculating result");
+            if (p === "post_chat") setStatus("Post match window");
+            if (p === "finished") setStatus("Match finished");
+          }
           const ids = extractUsersFromMatch(payload);
           if (ids.opponent) setOpponentUserId(ids.opponent);
         }
@@ -3029,7 +3058,7 @@ function DuelModal({
       onMouseDown={onClose}
     >
       <div
-        className="w-full max-w-5xl border border-purple-500/35 bg-zinc-950 shadow-[0_0_40px_rgba(132,0,255,0.22)]"
+        className="w-full max-w-6xl border border-purple-500/35 bg-zinc-950 shadow-[0_0_40px_rgba(132,0,255,0.22)]"
         onMouseDown={(event) => event.stopPropagation()}
       >
         <div className="flex items-center justify-between border-b border-border px-5 py-4">
@@ -3045,81 +3074,121 @@ function DuelModal({
             <X className="h-4 w-4" aria-hidden="true" />
           </button>
         </div>
-        <div className="grid gap-4 p-5 lg:grid-cols-[1.6fr_1fr]">
-          <div className="grid gap-3 lg:grid-rows-2">
-            <div className="overflow-hidden border border-zinc-800 bg-black/80">
-              <video ref={videoRef} className="h-full min-h-[205px] w-full object-cover" muted playsInline autoPlay />
-            </div>
-            <div className="overflow-hidden border border-zinc-800 bg-black/80">
-              <video ref={remoteVideoRef} className="h-full min-h-[205px] w-full object-cover" playsInline autoPlay />
-            </div>
-          </div>
-          <div className="space-y-3">
-            <div className="border border-zinc-800 bg-black/60 p-3 text-[10px] uppercase tracking-[0.12em] text-zinc-500">
-              {queueing ? "Queueing..." : status}
-              <br />
-              Match: {matchID || "-"}
-            </div>
-            <div className="border border-zinc-800 bg-black/60 p-3">
-              <div className="text-[10px] uppercase tracking-[0.12em] text-zinc-500">Phase</div>
-              <div className="mt-1 text-lg font-black uppercase text-zinc-100">{phase}</div>
-            </div>
-            <div className="grid grid-cols-2 gap-2">
-              <div className="border border-zinc-800 bg-black/60 p-3">
-                <div className="text-[10px] uppercase tracking-[0.12em] text-zinc-500">My Score</div>
-                <div className="mt-1 text-lg font-black tabular-nums text-zinc-100">
-                  {myScore === null ? "-" : `${(myScore * 2).toFixed(1)}/10`}
+        <div className="p-5">
+          {isQueueScreen ? (
+            <div className="flex min-h-[72vh] flex-col items-center justify-center border border-zinc-800 bg-black/80 px-6 text-center">
+              <div className="text-[10px] font-semibold uppercase tracking-[0.18em] text-zinc-600">
+                Matchmaking
+              </div>
+              <div className="mt-4 h-14 w-14 animate-spin rounded-full border-2 border-zinc-800 border-t-purple-300" />
+              <div className="mt-6 text-2xl font-black uppercase tracking-[0.14em] text-zinc-100">
+                Finding Opponent
+              </div>
+              <div className="mt-3 text-sm uppercase tracking-[0.12em] text-zinc-500">
+                {status || "Searching for a live 1v1 match"}
+              </div>
+              <div className="mt-8 grid gap-3 sm:grid-cols-3">
+                {[
+                  ["Mode", "1v1 Ranked"],
+                  ["Region", "Auto"],
+                  ["Status", "Queue Active"],
+                ].map(([label, value]) => (
+                  <div
+                    key={label}
+                    className="border border-zinc-800 bg-black/70 px-4 py-3"
+                  >
+                    <div className="text-[10px] uppercase tracking-[0.12em] text-zinc-600">
+                      {label}
+                    </div>
+                    <div className="mt-2 text-xs font-black uppercase tracking-[0.12em] text-zinc-200">
+                      {value}
+                    </div>
+                  </div>
+                ))}
+              </div>
+              {error && (
+                <div className="mt-6 border border-red-500/45 bg-red-950/35 px-3 py-2 text-[10px] font-semibold uppercase tracking-[0.12em] text-red-200">
+                  {error}
                 </div>
-              </div>
-              <div className="border border-zinc-800 bg-black/60 p-3">
-                <div className="text-[10px] uppercase tracking-[0.12em] text-zinc-500">Opp Score</div>
-                <div className="mt-1 text-lg font-black tabular-nums text-zinc-100">
-                  {oppScore === null ? "-" : `${(oppScore * 2).toFixed(1)}/10`}
-                </div>
-              </div>
-              <div className="border border-zinc-800 bg-black/60 p-3">
-                <div className="text-[10px] uppercase tracking-[0.12em] text-zinc-500">My Avg</div>
-                <div className="mt-1 text-lg font-black tabular-nums text-zinc-100">
-                  {myAvg === null ? "-" : `${(myAvg * 2).toFixed(1)}/10`}
-                </div>
-              </div>
-              <div className="border border-zinc-800 bg-black/60 p-3">
-                <div className="text-[10px] uppercase tracking-[0.12em] text-zinc-500">Opp Avg</div>
-                <div className="mt-1 text-lg font-black tabular-nums text-zinc-100">
-                  {oppAvg === null ? "-" : `${(oppAvg * 2).toFixed(1)}/10`}
-                </div>
-              </div>
+              )}
             </div>
-            <div className="border border-zinc-800 bg-black/60 p-3">
-              <div className="mb-2 flex items-center justify-between text-[10px] uppercase tracking-[0.12em] text-zinc-500">
-                <span>Timer</span>
-                <span className="text-purple-200">{secondsLeft ?? 0}s</span>
-              </div>
-              <div className="h-2 overflow-hidden bg-zinc-900">
-                <div
-                  className="h-full bg-purple-400 transition-all duration-300 ease-out"
-                  style={{ width: `${Math.max(0, Math.min(100, ((secondsLeft ?? 0) / 10) * 100))}%` }}
+          ) : (
+            <div className="relative grid min-h-[72vh] gap-4 lg:grid-cols-2">
+              <div className="group relative overflow-hidden border border-zinc-800 bg-black/85">
+                <video
+                  ref={videoRef}
+                  className="h-full min-h-[320px] w-full object-cover"
+                  muted
+                  playsInline
+                  autoPlay
                 />
+                <div className="pointer-events-none absolute inset-x-0 top-0 h-24 bg-gradient-to-b from-black/80 to-transparent" />
+                <div className="absolute left-4 top-4 border border-purple-500/45 bg-black/65 px-3 py-2">
+                  <div className="text-[10px] uppercase tracking-[0.12em] text-zinc-500">
+                    You
+                  </div>
+                  <div className="mt-1 text-lg font-black tabular-nums text-zinc-100">
+                    {myScore === null ? "--" : `${(myScore * 2).toFixed(1)}/10`}
+                  </div>
+                  <div className="mt-1 text-[10px] uppercase tracking-[0.12em] text-purple-200">
+                    Avg {myAvg === null ? "--" : `${(myAvg * 2).toFixed(1)}/10`}
+                  </div>
+                </div>
               </div>
-            </div>
-            {error && (
-              <div className="border border-red-500/45 bg-red-950/35 px-3 py-2 text-[10px] font-semibold uppercase tracking-[0.12em] text-red-200">
-                {error}
+
+              <div className="group relative overflow-hidden border border-zinc-800 bg-black/85">
+                <video
+                  ref={remoteVideoRef}
+                  className="h-full min-h-[320px] w-full object-cover"
+                  playsInline
+                  autoPlay
+                />
+                <div className="pointer-events-none absolute inset-x-0 top-0 h-24 bg-gradient-to-b from-black/80 to-transparent" />
+                <div className="absolute right-4 top-4 border border-zinc-700 bg-black/65 px-3 py-2 text-right">
+                  <div className="text-[10px] uppercase tracking-[0.12em] text-zinc-500">
+                    Opponent
+                  </div>
+                  <div className="mt-1 text-lg font-black tabular-nums text-zinc-100">
+                    {oppScore === null ? "--" : `${(oppScore * 2).toFixed(1)}/10`}
+                  </div>
+                  <div className="mt-1 text-[10px] uppercase tracking-[0.12em] text-zinc-300">
+                    Avg {oppAvg === null ? "--" : `${(oppAvg * 2).toFixed(1)}/10`}
+                  </div>
+                </div>
               </div>
-            )}
-            <div className="border border-zinc-800 bg-black/60 p-2">
-              <div className="mb-2 text-[10px] font-semibold uppercase tracking-[0.12em] text-zinc-500">
-                Debug
+
+              <div className="pointer-events-none absolute inset-x-0 top-4 z-20 flex justify-center">
+                <div className="border border-zinc-700 bg-black/75 px-4 py-2 text-center shadow-[0_0_24px_rgba(132,0,255,0.16)]">
+                  <div className="text-[10px] font-semibold uppercase tracking-[0.18em] text-zinc-500">
+                    {phaseLabel}
+                  </div>
+                  <div className="mt-1 text-2xl font-black uppercase tracking-[0.16em] text-zinc-100">
+                    VS
+                  </div>
+                </div>
               </div>
-              <div className="max-h-32 overflow-y-auto space-y-1 font-mono text-[10px] leading-4 text-zinc-400">
-                {debugLines.length === 0 ? (
-                  <div>no logs yet</div>
-                ) : (
-                  debugLines.map((line, idx) => <div key={`${idx}-${line}`}>{line}</div>)
+
+              <div className="absolute inset-x-6 bottom-6 z-20">
+                <div className="border border-zinc-800 bg-black/78 px-4 py-3 backdrop-blur-sm">
+                  <div className="mb-2 flex items-center justify-between gap-4 text-[10px] font-semibold uppercase tracking-[0.14em] text-zinc-500">
+                    <span>{status || "Live Match"}</span>
+                    <span className="text-purple-200">{secondsLeft ?? 0}s</span>
+                  </div>
+                  <div className="h-2 overflow-hidden bg-zinc-900">
+                    <div
+                      className="h-full bg-purple-400 transition-[width] duration-300 ease-out shadow-[0_0_14px_rgba(168,85,247,0.8)]"
+                      style={{ width: `${timerProgress}%` }}
+                    />
+                  </div>
+                </div>
+                {error && (
+                  <div className="mt-3 border border-red-500/45 bg-red-950/35 px-3 py-2 text-[10px] font-semibold uppercase tracking-[0.12em] text-red-200">
+                    {error}
+                  </div>
                 )}
               </div>
             </div>
-          </div>
+          )}
         </div>
       </div>
     </div>
