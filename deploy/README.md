@@ -91,6 +91,7 @@ Flow:
 - `PROD_API_CORS_ALLOWED_ORIGINS`
 - `PROD_AUTH_ACCESS_TOKEN_SECRET`
 - `PROD_AUTH_REFRESH_TOKEN_SECRET`
+- `PROD_VERIFICATION_INTERNAL_SECRET`
 
 ### Required GitHub Variables
 
@@ -128,6 +129,7 @@ The gateway and services already support this through env variables.
 
 - Set `CORS_ALLOWED_ORIGINS` to your real frontend domain.
 - Set persistent `AUTH_ACCESS_TOKEN_SECRET` and `AUTH_REFRESH_TOKEN_SECRET`, otherwise every auth-service restart invalidates user tokens.
+- Set persistent `VERIFICATION_INTERNAL_SECRET`, otherwise internal verification consume flow is not safe for production.
 - Keep private service ports closed if the service stays behind the gateway.
 - Current backend state is in memory. After restart, users, chats, queues, rooms, and matches are lost.
 - The next production step after this deployment baseline is Postgres plus Redis.
