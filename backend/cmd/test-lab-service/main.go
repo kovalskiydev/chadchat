@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"crypto/rand"
+	"database/sql"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -12,22 +13,17 @@ import (
 	"net/http"
 	"os"
 	"strings"
-	"sync"
 	"time"
 
+	"backend/internal/mysqlutil"
 	"backend/internal/rateutil"
 )
 
 type Server struct {
 	authServiceURL string
 	mlServiceURL   string
-	store          *Store
+	db             *sql.DB
 	limiter        *rateutil.Limiter
-}
-
-type Store struct {
-	mu    sync.RWMutex
-	rooms map[string]*Room
 }
 
 type Room struct {
@@ -45,6 +41,7 @@ type ScoreRecord struct {
 
 type LabSession struct {
 	ID           string        `json:"id"`
+	RoomID       string        `json:"-"`
 	StartedAt    time.Time     `json:"started_at"`
 	EndsAt       time.Time     `json:"ends_at"`
 	FinishedAt   *time.Time    `json:"finished_at,omitempty"`
@@ -64,8 +61,10 @@ type mlPredictResponse struct {
 	Score float64 `json:"score"`
 }
 
-const testLabSessionDuration = 10 * time.Second
-const scanRateLimitPerMinute = 210
+const (
+	testLabSessionDuration = 10 * time.Second
+	scanRateLimitPerMinute = 210
+)
 
 type sessionStateResponse struct {
 	RoomID         string     `json:"room_id"`
@@ -89,10 +88,18 @@ type meResponse struct {
 }
 
 func main() {
+	db, err := mysqlutil.OpenFromEnv()
+	if err != nil {
+		log.Fatalf("open mysql: %v", err)
+	}
+	if err := mysqlutil.ExecStatements(db, testLabSchema()); err != nil {
+		log.Fatalf("test lab schema: %v", err)
+	}
+
 	s := &Server{
 		authServiceURL: envOr("AUTH_SERVICE_URL", "http://localhost:8081"),
 		mlServiceURL:   envOr("ML_SERVICE_URL", "http://localhost:8090"),
-		store:          &Store{rooms: map[string]*Room{}},
+		db:             db,
 		limiter:        rateutil.NewLimiter(),
 	}
 
@@ -106,6 +113,34 @@ func main() {
 	addr := ":" + envOr("PORT", "8083")
 	log.Printf("test-lab-service on %s", addr)
 	log.Fatal(http.ListenAndServe(addr, withJSON(mux)))
+}
+
+func testLabSchema() []string {
+	return []string{
+		`CREATE TABLE IF NOT EXISTS test_lab_rooms (
+			id VARCHAR(64) NOT NULL PRIMARY KEY,
+			owner_id VARCHAR(64) NOT NULL,
+			mode VARCHAR(32) NOT NULL,
+			created_at DATETIME(6) NOT NULL,
+			INDEX idx_test_lab_rooms_owner_id (owner_id)
+		) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`,
+		`CREATE TABLE IF NOT EXISTS test_lab_sessions (
+			id VARCHAR(64) NOT NULL PRIMARY KEY,
+			room_id VARCHAR(64) NOT NULL,
+			started_at DATETIME(6) NOT NULL,
+			ends_at DATETIME(6) NOT NULL,
+			finished_at DATETIME(6) NULL,
+			final_average DOUBLE NULL,
+			INDEX idx_test_lab_sessions_room_id (room_id)
+		) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`,
+		`CREATE TABLE IF NOT EXISTS test_lab_samples (
+			id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+			session_id VARCHAR(64) NOT NULL,
+			score DOUBLE NOT NULL,
+			created_at DATETIME(6) NOT NULL,
+			INDEX idx_test_lab_samples_session_id (session_id, created_at)
+		) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`,
+	}
 }
 
 func (s *Server) withRateLimit(limit int, window time.Duration, next http.HandlerFunc) http.HandlerFunc {
@@ -171,24 +206,21 @@ func (s *Server) handleCreateRoom(w http.ResponseWriter, _ *http.Request, userID
 		Sessions:  []*LabSession{},
 	}
 
-	s.store.mu.Lock()
-	s.store.rooms[room.ID] = room
-	s.store.mu.Unlock()
+	if _, err := s.db.Exec(
+		`INSERT INTO test_lab_rooms (id, owner_id, mode, created_at) VALUES (?, ?, ?, ?)`,
+		room.ID, room.OwnerID, room.Mode, room.CreatedAt,
+	); err != nil {
+		writeErr(w, http.StatusInternalServerError, "db_error")
+		return
+	}
 
 	writeJSON(w, http.StatusOK, createRoomResponse{Room: room})
 }
 
 func (s *Server) handleGetRoom(w http.ResponseWriter, r *http.Request, userID string) {
 	roomID := r.PathValue("roomID")
-	if roomID == "" {
-		writeErr(w, http.StatusBadRequest, "missing_room_id")
-		return
-	}
-
-	s.store.mu.RLock()
-	room, ok := s.store.rooms[roomID]
-	s.store.mu.RUnlock()
-	if !ok {
+	room, err := s.loadRoom(roomID)
+	if err != nil {
 		writeErr(w, http.StatusNotFound, "room_not_found")
 		return
 	}
@@ -196,21 +228,13 @@ func (s *Server) handleGetRoom(w http.ResponseWriter, r *http.Request, userID st
 		writeErr(w, http.StatusForbidden, "forbidden")
 		return
 	}
-
 	writeJSON(w, http.StatusOK, map[string]*Room{"room": room})
 }
 
 func (s *Server) handleStartSession(w http.ResponseWriter, r *http.Request, userID string) {
 	roomID := r.PathValue("roomID")
-	if roomID == "" {
-		writeErr(w, http.StatusBadRequest, "missing_room_id")
-		return
-	}
-
-	s.store.mu.Lock()
-	defer s.store.mu.Unlock()
-	room, ok := s.store.rooms[roomID]
-	if !ok {
+	room, err := s.loadRoom(roomID)
+	if err != nil {
 		writeErr(w, http.StatusNotFound, "room_not_found")
 		return
 	}
@@ -219,15 +243,24 @@ func (s *Server) handleStartSession(w http.ResponseWriter, r *http.Request, user
 		return
 	}
 
+	now := time.Now().UTC()
 	session := &LabSession{
 		ID:        "sess_" + randHex(8),
-		StartedAt: time.Now().UTC(),
-		EndsAt:    time.Now().UTC().Add(testLabSessionDuration),
+		StartedAt: now,
+		EndsAt:    now.Add(testLabSessionDuration),
 		Samples:   []ScoreRecord{},
 	}
-	room.Sessions = append(room.Sessions, session)
+	if _, err := s.db.Exec(
+		`INSERT INTO test_lab_sessions (id, room_id, started_at, ends_at, finished_at, final_average)
+		 VALUES (?, ?, ?, ?, NULL, NULL)`,
+		session.ID, roomID, session.StartedAt, session.EndsAt,
+	); err != nil {
+		writeErr(w, http.StatusInternalServerError, "db_error")
+		return
+	}
+
 	writeJSON(w, http.StatusOK, map[string]any{
-		"room_id":      room.ID,
+		"room_id":      roomID,
 		"session_id":   session.ID,
 		"duration_sec": int(testLabSessionDuration / time.Second),
 		"started_at":   session.StartedAt,
@@ -253,37 +286,45 @@ func (s *Server) handleScanFrame(w http.ResponseWriter, r *http.Request, userID 
 		return
 	}
 
-	s.store.mu.Lock()
-	room, ok := s.store.rooms[roomID]
-	if !ok {
-		s.store.mu.Unlock()
+	room, err := s.loadRoom(roomID)
+	if err != nil {
 		writeErr(w, http.StatusNotFound, "room_not_found")
 		return
 	}
 	if room.OwnerID != userID {
-		s.store.mu.Unlock()
 		writeErr(w, http.StatusForbidden, "forbidden")
 		return
 	}
 
-	session := findSession(room, sessionID)
-	if session == nil {
-		s.store.mu.Unlock()
+	session, err := s.loadSession(sessionID)
+	if err != nil || sessionRoomID(session) != roomID {
 		writeErr(w, http.StatusNotFound, "session_not_found")
 		return
 	}
 
 	now := time.Now().UTC()
 	if session.FinishedAt == nil && !now.Before(session.EndsAt) {
-		finishSession(session, now)
-	}
-	if session.FinishedAt != nil {
-		resp := buildSessionState(room.ID, session, now)
-		s.store.mu.Unlock()
-		writeJSON(w, http.StatusOK, resp)
+		if err := s.finishSession(sessionID, now); err != nil {
+			writeErr(w, http.StatusInternalServerError, "db_error")
+			return
+		}
+		state, err := s.buildSessionState(roomID, sessionID)
+		if err != nil {
+			writeErr(w, http.StatusInternalServerError, "db_error")
+			return
+		}
+		writeJSON(w, http.StatusOK, state)
 		return
 	}
-	s.store.mu.Unlock()
+	if session.FinishedAt != nil {
+		state, err := s.buildSessionState(roomID, sessionID)
+		if err != nil {
+			writeErr(w, http.StatusInternalServerError, "db_error")
+			return
+		}
+		writeJSON(w, http.StatusOK, state)
+		return
+	}
 
 	score, err := s.predictScore(req.ImageBase64)
 	if err != nil {
@@ -291,28 +332,27 @@ func (s *Server) handleScanFrame(w http.ResponseWriter, r *http.Request, userID 
 		return
 	}
 
-	s.store.mu.Lock()
-	defer s.store.mu.Unlock()
-	room = s.store.rooms[roomID]
-	if room == nil || room.OwnerID != userID {
-		writeErr(w, http.StatusForbidden, "forbidden")
-		return
-	}
-	session = findSession(room, sessionID)
-	if session == nil {
-		writeErr(w, http.StatusNotFound, "session_not_found")
+	if _, err := s.db.Exec(
+		`INSERT INTO test_lab_samples (session_id, score, created_at) VALUES (?, ?, ?)`,
+		sessionID, score, time.Now().UTC(),
+	); err != nil {
+		writeErr(w, http.StatusInternalServerError, "db_error")
 		return
 	}
 
-	now = time.Now().UTC()
-	if session.FinishedAt == nil && now.Before(session.EndsAt) {
-		session.Samples = append(session.Samples, ScoreRecord{Score: score, CreatedAt: now})
-	}
-	if session.FinishedAt == nil && !now.Before(session.EndsAt) {
-		finishSession(session, now)
+	if time.Now().UTC().After(session.EndsAt) {
+		if err := s.finishSession(sessionID, time.Now().UTC()); err != nil {
+			writeErr(w, http.StatusInternalServerError, "db_error")
+			return
+		}
 	}
 
-	writeJSON(w, http.StatusOK, buildSessionState(room.ID, session, now))
+	state, err := s.buildSessionState(roomID, sessionID)
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, "db_error")
+		return
+	}
+	writeJSON(w, http.StatusOK, state)
 }
 
 func (s *Server) handleGetSession(w http.ResponseWriter, r *http.Request, userID string) {
@@ -323,10 +363,8 @@ func (s *Server) handleGetSession(w http.ResponseWriter, r *http.Request, userID
 		return
 	}
 
-	s.store.mu.Lock()
-	defer s.store.mu.Unlock()
-	room, ok := s.store.rooms[roomID]
-	if !ok {
+	room, err := s.loadRoom(roomID)
+	if err != nil {
 		writeErr(w, http.StatusNotFound, "room_not_found")
 		return
 	}
@@ -334,79 +372,205 @@ func (s *Server) handleGetSession(w http.ResponseWriter, r *http.Request, userID
 		writeErr(w, http.StatusForbidden, "forbidden")
 		return
 	}
-	session := findSession(room, sessionID)
-	if session == nil {
+
+	session, err := s.loadSession(sessionID)
+	if err != nil || sessionRoomID(session) != roomID {
 		writeErr(w, http.StatusNotFound, "session_not_found")
 		return
 	}
-	now := time.Now().UTC()
-	if session.FinishedAt == nil && !now.Before(session.EndsAt) {
-		finishSession(session, now)
-	}
-	writeJSON(w, http.StatusOK, buildSessionState(room.ID, session, now))
-}
-
-func findSession(room *Room, sessionID string) *LabSession {
-	for _, s := range room.Sessions {
-		if s.ID == sessionID {
-			return s
+	if session.FinishedAt == nil && !time.Now().UTC().Before(session.EndsAt) {
+		if err := s.finishSession(sessionID, time.Now().UTC()); err != nil {
+			writeErr(w, http.StatusInternalServerError, "db_error")
+			return
 		}
 	}
-	return nil
-}
 
-func finishSession(session *LabSession, now time.Time) {
-	if session.FinishedAt != nil {
+	state, err := s.buildSessionState(roomID, sessionID)
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, "db_error")
 		return
 	}
-	session.FinishedAt = &now
-	avg := average(session.Samples)
-	session.FinalAverage = &avg
+	writeJSON(w, http.StatusOK, state)
 }
 
-func buildSessionState(roomID string, session *LabSession, now time.Time) sessionStateResponse {
-	isFinished := session.FinishedAt != nil
-	secondsLeft := int64(0)
-	if !isFinished {
-		secondsLeft = int64(time.Until(session.EndsAt).Seconds())
-		if secondsLeft < 0 {
-			secondsLeft = 0
+func (s *Server) loadRoom(roomID string) (*Room, error) {
+	var room Room
+	err := s.db.QueryRow(
+		`SELECT id, owner_id, mode, created_at FROM test_lab_rooms WHERE id = ?`,
+		roomID,
+	).Scan(&room.ID, &room.OwnerID, &room.Mode, &room.CreatedAt)
+	if err != nil {
+		return nil, err
+	}
+
+	rows, err := s.db.Query(
+		`SELECT id, started_at, ends_at, finished_at, final_average
+		 FROM test_lab_sessions WHERE room_id = ? ORDER BY started_at ASC`,
+		roomID,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	room.Sessions = []*LabSession{}
+	for rows.Next() {
+		var session LabSession
+		var finishedAt sql.NullTime
+		var finalAvg sql.NullFloat64
+		if err := rows.Scan(&session.ID, &session.StartedAt, &session.EndsAt, &finishedAt, &finalAvg); err != nil {
+			return nil, err
 		}
+		if finishedAt.Valid {
+			t := finishedAt.Time
+			session.FinishedAt = &t
+		}
+		if finalAvg.Valid {
+			v := finalAvg.Float64
+			session.FinalAverage = &v
+		}
+		room.Sessions = append(room.Sessions, &session)
 	}
-	var lastScore *float64
-	var latestAt *time.Time
-	if n := len(session.Samples); n > 0 {
-		v := session.Samples[n-1].Score
-		t := session.Samples[n-1].CreatedAt
-		lastScore = &v
-		latestAt = &t
-	}
-	running := average(session.Samples)
-	return sessionStateResponse{
-		RoomID:         roomID,
-		SessionID:      session.ID,
-		IsFinished:     isFinished,
-		SecondsLeft:    secondsLeft,
-		SamplesCount:   len(session.Samples),
-		LastScore:      lastScore,
-		RunningAverage: &running,
-		FinalAverage:   session.FinalAverage,
-		LatestSampleAt: latestAt,
-		StartedAt:      session.StartedAt,
-		EndsAt:         session.EndsAt,
-		FinishedAt:     session.FinishedAt,
-	}
+	return &room, rows.Err()
 }
 
-func average(samples []ScoreRecord) float64 {
-	if len(samples) == 0 {
+func (s *Server) loadSession(sessionID string) (*LabSession, error) {
+	var session LabSession
+	var roomID string
+	var finishedAt sql.NullTime
+	var finalAvg sql.NullFloat64
+	err := s.db.QueryRow(
+		`SELECT id, room_id, started_at, ends_at, finished_at, final_average
+		 FROM test_lab_sessions WHERE id = ?`,
+		sessionID,
+	).Scan(&session.ID, &roomID, &session.StartedAt, &session.EndsAt, &finishedAt, &finalAvg)
+	if err != nil {
+		return nil, err
+	}
+	session.RoomID = roomID
+	session.Samples = []ScoreRecord{}
+	if finishedAt.Valid {
+		t := finishedAt.Time
+		session.FinishedAt = &t
+	}
+	if finalAvg.Valid {
+		v := finalAvg.Float64
+		session.FinalAverage = &v
+	}
+	return &session, nil
+}
+
+func sessionRoomID(session *LabSession) string {
+	return session.RoomID
+}
+
+func (s *Server) finishSession(sessionID string, now time.Time) error {
+	stats, err := s.sessionStats(sessionID)
+	if err != nil {
+		return err
+	}
+	finalAverage := 0.0
+	if stats.SamplesCount > 0 {
+		finalAverage = stats.RunningAverage
+	}
+	_, err = s.db.Exec(
+		`UPDATE test_lab_sessions
+		 SET finished_at = COALESCE(finished_at, ?), final_average = ?
+		 WHERE id = ?`,
+		now, finalAverage, sessionID,
+	)
+	return err
+}
+
+func (s *Server) buildSessionState(roomID, sessionID string) (sessionStateResponse, error) {
+	var startedAt, endsAt time.Time
+	var finishedAt sql.NullTime
+	var finalAvg sql.NullFloat64
+	err := s.db.QueryRow(
+		`SELECT started_at, ends_at, finished_at, final_average
+		 FROM test_lab_sessions WHERE id = ?`,
+		sessionID,
+	).Scan(&startedAt, &endsAt, &finishedAt, &finalAvg)
+	if err != nil {
+		return sessionStateResponse{}, err
+	}
+
+	stats, err := s.sessionStats(sessionID)
+	if err != nil {
+		return sessionStateResponse{}, err
+	}
+
+	resp := sessionStateResponse{
+		RoomID:         roomID,
+		SessionID:      sessionID,
+		IsFinished:     finishedAt.Valid,
+		SecondsLeft:    secondsLeft(endsAt, finishedAt.Valid),
+		SamplesCount:   stats.SamplesCount,
+		RunningAverage: &stats.RunningAverage,
+		StartedAt:      startedAt,
+		EndsAt:         endsAt,
+	}
+	if stats.LastScoreValid {
+		resp.LastScore = &stats.LastScore
+		resp.LatestSampleAt = &stats.LastSampleAt
+	}
+	if finishedAt.Valid {
+		t := finishedAt.Time
+		resp.FinishedAt = &t
+	}
+	if finalAvg.Valid {
+		v := finalAvg.Float64
+		resp.FinalAverage = &v
+	}
+	return resp, nil
+}
+
+type stats struct {
+	SamplesCount   int
+	RunningAverage float64
+	LastScore      float64
+	LastScoreValid bool
+	LastSampleAt   time.Time
+}
+
+func (s *Server) sessionStats(sessionID string) (stats, error) {
+	var out stats
+	err := s.db.QueryRow(
+		`SELECT COUNT(*), COALESCE(AVG(score), 0)
+		 FROM test_lab_samples WHERE session_id = ?`,
+		sessionID,
+	).Scan(&out.SamplesCount, &out.RunningAverage)
+	if err != nil {
+		return out, err
+	}
+
+	err = s.db.QueryRow(
+		`SELECT score, created_at
+		 FROM test_lab_samples
+		 WHERE session_id = ?
+		 ORDER BY created_at DESC
+		 LIMIT 1`,
+		sessionID,
+	).Scan(&out.LastScore, &out.LastSampleAt)
+	if err == nil {
+		out.LastScoreValid = true
+		return out, nil
+	}
+	if errors.Is(err, sql.ErrNoRows) {
+		return out, nil
+	}
+	return out, err
+}
+
+func secondsLeft(endsAt time.Time, finished bool) int64 {
+	if finished {
 		return 0
 	}
-	sum := 0.0
-	for _, s := range samples {
-		sum += s.Score
+	delta := time.Until(endsAt)
+	if delta <= 0 {
+		return 0
 	}
-	return sum / float64(len(samples))
+	return int64(delta.Seconds())
 }
 
 func (s *Server) predictScore(imageBase64 string) (float64, error) {
@@ -445,15 +609,15 @@ func writeErr(w http.ResponseWriter, status int, code string) {
 	writeJSON(w, status, map[string]string{"error": code})
 }
 
-func envOr(k, d string) string {
-	if v := os.Getenv(k); v != "" {
-		return v
+func envOr(key, fallback string) string {
+	if value := os.Getenv(key); value != "" {
+		return value
 	}
-	return d
+	return fallback
 }
 
 func randHex(n int) string {
-	b := make([]byte, n)
-	_, _ = rand.Read(b)
-	return hex.EncodeToString(b)
+	buf := make([]byte, n)
+	_, _ = rand.Read(buf)
+	return hex.EncodeToString(buf)
 }

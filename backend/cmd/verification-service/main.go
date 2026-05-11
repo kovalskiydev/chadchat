@@ -2,14 +2,15 @@ package main
 
 import (
 	"crypto/rand"
+	"database/sql"
 	"encoding/hex"
 	"encoding/json"
 	"log"
 	"net/http"
 	"os"
-	"sync"
 	"time"
 
+	"backend/internal/mysqlutil"
 	"backend/internal/rateutil"
 )
 
@@ -19,27 +20,38 @@ type challengeSession struct {
 	TurnLeft    int
 	TurnRight   int
 	ExpiresAt   time.Time
-	CompletedAt *time.Time
-}
-
-type verificationToken struct {
-	Token     string
-	ExpiresAt time.Time
-	Used      bool
+	CompletedAt sql.NullTime
 }
 
 type store struct {
-	mu             sync.Mutex
-	sessions       map[string]*challengeSession
-	tokens         map[string]*verificationToken
+	db             *sql.DB
 	internalSecret string
 	limiter        *rateutil.Limiter
 }
 
+type submitRequest struct {
+	VerificationSessionID string `json:"verification_session_id"`
+	DetectedBlinkCount    int    `json:"detected_blink_count"`
+	DetectedTurnLeft      int    `json:"detected_turn_left"`
+	DetectedTurnRight     int    `json:"detected_turn_right"`
+}
+
+type consumeRequest struct {
+	VerificationToken string `json:"verification_token"`
+}
+
 func main() {
+	db, err := mysqlutil.OpenFromEnv()
+	if err != nil {
+		log.Fatalf("open mysql: %v", err)
+	}
+
+	if err := mysqlutil.ExecStatements(db, verificationSchema()); err != nil {
+		log.Fatalf("verification schema: %v", err)
+	}
+
 	s := &store{
-		sessions:       map[string]*challengeSession{},
-		tokens:         map[string]*verificationToken{},
+		db:             db,
 		internalSecret: envOr("VERIFICATION_INTERNAL_SECRET", "dev-internal-secret-change-me"),
 		limiter:        rateutil.NewLimiter(),
 	}
@@ -54,34 +66,54 @@ func main() {
 	log.Fatal(http.ListenAndServe(addr, withJSON(mux)))
 }
 
+func verificationSchema() []string {
+	return []string{
+		`CREATE TABLE IF NOT EXISTS verification_sessions (
+			id VARCHAR(64) NOT NULL PRIMARY KEY,
+			blink_count INT NOT NULL,
+			turn_left INT NOT NULL,
+			turn_right INT NOT NULL,
+			expires_at DATETIME(6) NOT NULL,
+			completed_at DATETIME(6) NULL,
+			created_at DATETIME(6) NOT NULL
+		) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`,
+		`CREATE TABLE IF NOT EXISTS verification_tokens (
+			token VARCHAR(128) NOT NULL PRIMARY KEY,
+			expires_at DATETIME(6) NOT NULL,
+			used_at DATETIME(6) NULL,
+			created_at DATETIME(6) NOT NULL
+		) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`,
+	}
+}
+
 func (s *store) handleStart(w http.ResponseWriter, _ *http.Request) {
 	sessionID := randHex(12)
-	challenge := &challengeSession{
+	now := time.Now().UTC()
+	session := challengeSession{
 		ID:         sessionID,
 		BlinkCount: randInt(1, 4),
 		TurnLeft:   randInt(1, 3),
 		TurnRight:  randInt(1, 3),
-		ExpiresAt:  time.Now().UTC().Add(90 * time.Second),
+		ExpiresAt:  now.Add(90 * time.Second),
 	}
 
-	s.mu.Lock()
-	s.sessions[sessionID] = challenge
-	s.mu.Unlock()
+	_, err := s.db.Exec(
+		`INSERT INTO verification_sessions (id, blink_count, turn_left, turn_right, expires_at, completed_at, created_at)
+		 VALUES (?, ?, ?, ?, ?, NULL, ?)`,
+		session.ID, session.BlinkCount, session.TurnLeft, session.TurnRight, session.ExpiresAt, now,
+	)
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, "db_error")
+		return
+	}
 
 	writeJSON(w, http.StatusOK, map[string]any{
-		"verification_session_id": sessionID,
-		"blink_count":             challenge.BlinkCount,
-		"turn_left":               challenge.TurnLeft,
-		"turn_right":              challenge.TurnRight,
+		"verification_session_id": session.ID,
+		"blink_count":             session.BlinkCount,
+		"turn_left":               session.TurnLeft,
+		"turn_right":              session.TurnRight,
 		"expires_in_sec":          90,
 	})
-}
-
-type submitRequest struct {
-	VerificationSessionID string `json:"verification_session_id"`
-	DetectedBlinkCount    int    `json:"detected_blink_count"`
-	DetectedTurnLeft      int    `json:"detected_turn_left"`
-	DetectedTurnRight     int    `json:"detected_turn_right"`
 }
 
 func (s *store) handleSubmit(w http.ResponseWriter, r *http.Request) {
@@ -91,39 +123,50 @@ func (s *store) handleSubmit(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	session, ok := s.sessions[req.VerificationSessionID]
-	if !ok || session.ExpiresAt.Before(time.Now().UTC()) {
+	var session challengeSession
+	err := s.db.QueryRow(
+		`SELECT id, blink_count, turn_left, turn_right, expires_at, completed_at
+		 FROM verification_sessions WHERE id = ?`,
+		req.VerificationSessionID,
+	).Scan(&session.ID, &session.BlinkCount, &session.TurnLeft, &session.TurnRight, &session.ExpiresAt, &session.CompletedAt)
+	if err != nil || session.ExpiresAt.Before(time.Now().UTC()) {
 		writeErr(w, http.StatusBadRequest, "invalid_or_expired_session")
 		return
 	}
-	if session.CompletedAt != nil {
+	if session.CompletedAt.Valid {
 		writeErr(w, http.StatusBadRequest, "session_already_completed")
 		return
 	}
 
-	passed := req.DetectedBlinkCount == session.BlinkCount && req.DetectedTurnLeft == session.TurnLeft && req.DetectedTurnRight == session.TurnRight
+	passed := req.DetectedBlinkCount == session.BlinkCount &&
+		req.DetectedTurnLeft == session.TurnLeft &&
+		req.DetectedTurnRight == session.TurnRight
 	if !passed {
 		writeJSON(w, http.StatusOK, map[string]any{"passed": false})
 		return
 	}
 
 	now := time.Now().UTC()
-	session.CompletedAt = &now
+	if _, err := s.db.Exec(`UPDATE verification_sessions SET completed_at = ? WHERE id = ?`, now, session.ID); err != nil {
+		writeErr(w, http.StatusInternalServerError, "db_error")
+		return
+	}
+
 	token := randHex(24)
-	s.tokens[token] = &verificationToken{Token: token, ExpiresAt: now.Add(5 * time.Minute)}
+	if _, err := s.db.Exec(
+		`INSERT INTO verification_tokens (token, expires_at, used_at, created_at)
+		 VALUES (?, ?, NULL, ?)`,
+		token, now.Add(5*time.Minute), now,
+	); err != nil {
+		writeErr(w, http.StatusInternalServerError, "db_error")
+		return
+	}
 
 	writeJSON(w, http.StatusOK, map[string]any{
 		"passed":             true,
 		"verification_token": token,
 		"expires_in_sec":     300,
 	})
-}
-
-type consumeRequest struct {
-	VerificationToken string `json:"verification_token"`
 }
 
 func (s *store) handleConsume(w http.ResponseWriter, r *http.Request) {
@@ -138,15 +181,22 @@ func (s *store) handleConsume(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	tok, ok := s.tokens[req.VerificationToken]
-	if !ok || tok.ExpiresAt.Before(time.Now().UTC()) || tok.Used {
+	var expiresAt time.Time
+	var usedAt sql.NullTime
+	err := s.db.QueryRow(
+		`SELECT expires_at, used_at FROM verification_tokens WHERE token = ?`,
+		req.VerificationToken,
+	).Scan(&expiresAt, &usedAt)
+	if err != nil || expiresAt.Before(time.Now().UTC()) || usedAt.Valid {
 		writeErr(w, http.StatusUnauthorized, "invalid_verification_token")
 		return
 	}
-	tok.Used = true
+
+	now := time.Now().UTC()
+	if _, err := s.db.Exec(`UPDATE verification_tokens SET used_at = ? WHERE token = ? AND used_at IS NULL`, now, req.VerificationToken); err != nil {
+		writeErr(w, http.StatusInternalServerError, "db_error")
+		return
+	}
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
 }
 
@@ -178,23 +228,23 @@ func writeErr(w http.ResponseWriter, status int, code string) {
 }
 
 func randHex(n int) string {
-	b := make([]byte, n)
-	_, _ = rand.Read(b)
-	return hex.EncodeToString(b)
+	buf := make([]byte, n)
+	_, _ = rand.Read(buf)
+	return hex.EncodeToString(buf)
 }
 
 func randInt(min, max int) int {
 	if max <= min {
 		return min
 	}
-	b := make([]byte, 1)
-	_, _ = rand.Read(b)
-	return min + int(b[0])%(max-min+1)
+	buf := make([]byte, 1)
+	_, _ = rand.Read(buf)
+	return min + int(buf[0])%(max-min+1)
 }
 
-func envOr(k, d string) string {
-	if v := os.Getenv(k); v != "" {
-		return v
+func envOr(key, fallback string) string {
+	if value := os.Getenv(key); value != "" {
+		return value
 	}
-	return d
+	return fallback
 }

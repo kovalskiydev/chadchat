@@ -1,6 +1,7 @@
 package main
 
 import (
+	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -11,19 +12,16 @@ import (
 	"sync"
 	"time"
 
+	"backend/internal/mysqlutil"
 	"backend/internal/rateutil"
 )
 
 type Server struct {
 	authServiceURL string
-	store          *Store
+	db             *sql.DB
+	subsMu         sync.RWMutex
+	subscribers    map[string]chan []byte
 	limiter        *rateutil.Limiter
-}
-
-type Store struct {
-	mu          sync.RWMutex
-	messages    []ChatMessage
-	subscribers map[string]chan []byte
 }
 
 type ChatMessage struct {
@@ -55,13 +53,19 @@ type authUser struct {
 }
 
 func main() {
+	db, err := mysqlutil.OpenFromEnv()
+	if err != nil {
+		log.Fatalf("open mysql: %v", err)
+	}
+	if err := mysqlutil.ExecStatements(db, liveChatSchema()); err != nil {
+		log.Fatalf("live chat schema: %v", err)
+	}
+
 	s := &Server{
 		authServiceURL: envOr("AUTH_SERVICE_URL", "http://localhost:8081"),
-		store: &Store{
-			messages:    make([]ChatMessage, 0, 200),
-			subscribers: map[string]chan []byte{},
-		},
-		limiter: rateutil.NewLimiter(),
+		db:             db,
+		subscribers:    map[string]chan []byte{},
+		limiter:        rateutil.NewLimiter(),
 	}
 
 	mux := http.NewServeMux()
@@ -75,14 +79,16 @@ func main() {
 	log.Fatal(http.ListenAndServe(addr, withJSON(mux)))
 }
 
-func (s *Server) withRateLimit(limit int, window time.Duration, next http.HandlerFunc) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		key := r.Method + ":" + r.URL.Path + ":" + rateutil.ClientKey(r)
-		if !s.limiter.Allow(key, limit, window) {
-			writeErr(w, http.StatusTooManyRequests, "rate_limited")
-			return
-		}
-		next(w, r)
+func liveChatSchema() []string {
+	return []string{
+		`CREATE TABLE IF NOT EXISTS live_chat_messages (
+			id VARCHAR(64) NOT NULL PRIMARY KEY,
+			sender_id VARCHAR(64) NOT NULL,
+			sender_nickname VARCHAR(64) NOT NULL,
+			text TEXT NOT NULL,
+			created_at DATETIME(6) NOT NULL,
+			INDEX idx_live_chat_created_at (created_at)
+		) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`,
 	}
 }
 
@@ -99,6 +105,17 @@ func (s *Server) withAuth(next func(http.ResponseWriter, *http.Request, authUser
 			return
 		}
 		next(w, r, user)
+	}
+}
+
+func (s *Server) withRateLimit(limit int, window time.Duration, next http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		key := r.Method + ":" + r.URL.Path + ":" + rateutil.ClientKey(r)
+		if !s.limiter.Allow(key, limit, window) {
+			writeErr(w, http.StatusTooManyRequests, "rate_limited")
+			return
+		}
+		next(w, r)
 	}
 }
 
@@ -123,16 +140,15 @@ func (s *Server) resolveUser(authHeader string) (authUser, error) {
 	if me.User.ID == "" {
 		return authUser{}, errors.New("empty_user")
 	}
-	return authUser{
-		ID:       me.User.ID,
-		Nickname: me.User.Nickname,
-	}, nil
+	return authUser{ID: me.User.ID, Nickname: me.User.Nickname}, nil
 }
 
 func (s *Server) handleHistory(w http.ResponseWriter, _ *http.Request, _ authUser) {
-	s.store.mu.RLock()
-	messages := append([]ChatMessage(nil), s.store.messages...)
-	s.store.mu.RUnlock()
+	messages, err := s.fetchHistory(1000)
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, "db_error")
+		return
+	}
 	writeJSON(w, http.StatusOK, map[string]any{"messages": messages})
 }
 
@@ -146,16 +162,11 @@ func (s *Server) handleHistoryWithLimit(w http.ResponseWriter, r *http.Request, 
 		writeErr(w, http.StatusBadRequest, "invalid_limit")
 		return
 	}
-
-	s.store.mu.RLock()
-	total := len(s.store.messages)
-	start := total - req.Limit
-	if start < 0 {
-		start = 0
+	messages, err := s.fetchHistory(req.Limit)
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, "db_error")
+		return
 	}
-	messages := append([]ChatMessage(nil), s.store.messages[start:]...)
-	s.store.mu.RUnlock()
-
 	writeJSON(w, http.StatusOK, map[string]any{"messages": messages})
 }
 
@@ -182,20 +193,17 @@ func (s *Server) handlePostMessage(w http.ResponseWriter, r *http.Request, user 
 		Text:           text,
 		CreatedAt:      time.Now().UTC(),
 	}
-	payload, _ := json.Marshal(map[string]any{"type": "message", "message": msg})
+	if _, err := s.db.Exec(
+		`INSERT INTO live_chat_messages (id, sender_id, sender_nickname, text, created_at)
+		 VALUES (?, ?, ?, ?, ?)`,
+		msg.ID, msg.SenderID, msg.SenderNickname, msg.Text, msg.CreatedAt,
+	); err != nil {
+		writeErr(w, http.StatusInternalServerError, "db_error")
+		return
+	}
 
-	s.store.mu.Lock()
-	s.store.messages = append(s.store.messages, msg)
-	if len(s.store.messages) > 1000 {
-		s.store.messages = append([]ChatMessage(nil), s.store.messages[len(s.store.messages)-1000:]...)
-	}
-	for _, sub := range s.store.subscribers {
-		select {
-		case sub <- payload:
-		default:
-		}
-	}
-	s.store.mu.Unlock()
+	payload, _ := json.Marshal(map[string]any{"type": "message", "message": msg})
+	s.broadcast(payload)
 
 	writeJSON(w, http.StatusOK, map[string]any{"message": msg})
 }
@@ -207,18 +215,22 @@ func (s *Server) handleStream(w http.ResponseWriter, r *http.Request, user authU
 		return
 	}
 
+	history, err := s.fetchHistory(1000)
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, "db_error")
+		return
+	}
+
 	subID := fmt.Sprintf("sub_%d", time.Now().UnixNano())
 	sub := make(chan []byte, 64)
-
-	s.store.mu.Lock()
-	s.store.subscribers[subID] = sub
-	history := append([]ChatMessage(nil), s.store.messages...)
-	s.store.mu.Unlock()
+	s.subsMu.Lock()
+	s.subscribers[subID] = sub
+	s.subsMu.Unlock()
 
 	defer func() {
-		s.store.mu.Lock()
-		delete(s.store.subscribers, subID)
-		s.store.mu.Unlock()
+		s.subsMu.Lock()
+		delete(s.subscribers, subID)
+		s.subsMu.Unlock()
 		close(sub)
 	}()
 
@@ -228,9 +240,9 @@ func (s *Server) handleStream(w http.ResponseWriter, r *http.Request, user authU
 
 	joined, _ := json.Marshal(map[string]any{"type": "joined", "user_id": user.ID, "nickname": user.Nickname})
 	_, _ = fmt.Fprintf(w, "data: %s\n\n", joined)
-	for _, m := range history {
-		p, _ := json.Marshal(map[string]any{"type": "history", "message": m})
-		_, _ = fmt.Fprintf(w, "data: %s\n\n", p)
+	for _, msg := range history {
+		payload, _ := json.Marshal(map[string]any{"type": "history", "message": msg})
+		_, _ = fmt.Fprintf(w, "data: %s\n\n", payload)
 	}
 	flusher.Flush()
 
@@ -247,6 +259,45 @@ func (s *Server) handleStream(w http.ResponseWriter, r *http.Request, user authU
 		case payload := <-sub:
 			_, _ = fmt.Fprintf(w, "data: %s\n\n", payload)
 			flusher.Flush()
+		}
+	}
+}
+
+func (s *Server) fetchHistory(limit int) ([]ChatMessage, error) {
+	rows, err := s.db.Query(
+		`SELECT id, sender_id, sender_nickname, text, created_at
+		 FROM (
+		 	SELECT id, sender_id, sender_nickname, text, created_at
+		 	FROM live_chat_messages
+		 	ORDER BY created_at DESC
+		 	LIMIT ?
+		 ) recent
+		 ORDER BY created_at ASC`,
+		limit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	messages := make([]ChatMessage, 0, limit)
+	for rows.Next() {
+		var msg ChatMessage
+		if err := rows.Scan(&msg.ID, &msg.SenderID, &msg.SenderNickname, &msg.Text, &msg.CreatedAt); err != nil {
+			return nil, err
+		}
+		messages = append(messages, msg)
+	}
+	return messages, rows.Err()
+}
+
+func (s *Server) broadcast(payload []byte) {
+	s.subsMu.RLock()
+	defer s.subsMu.RUnlock()
+	for _, sub := range s.subscribers {
+		select {
+		case sub <- payload:
+		default:
 		}
 	}
 }
@@ -269,9 +320,9 @@ func writeErr(w http.ResponseWriter, status int, code string) {
 	writeJSON(w, status, map[string]string{"error": code})
 }
 
-func envOr(k, d string) string {
-	if v := os.Getenv(k); v != "" {
-		return v
+func envOr(key, fallback string) string {
+	if value := os.Getenv(key); value != "" {
+		return value
 	}
-	return d
+	return fallback
 }

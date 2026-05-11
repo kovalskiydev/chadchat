@@ -5,7 +5,10 @@
 - `auth-service` (`:8081`) — anonymous/register/login/upgrade/refresh/logout/me.
 - `verification-service` (`:8082`) — pre-registration liveness flow.
 - `test-lab-service` (`:8083`) — комнаты и скоринг для test lab.
+- `live-chat-service` (`:8084`) — общий чат.
+- `duel-service` (`:8085`) — live 1v1 matchmaking и матч-фазы.
 - `ml-service` (`:8090`) — Python FastAPI с вашей ML моделью.
+- `mysql` (`:3306`) — persistent store.
 
 ## Запуск локально
 
@@ -17,6 +20,24 @@ docker compose up --build
 - `AUTH_ACCESS_TOKEN_SECRET`
 - `AUTH_REFRESH_TOKEN_SECRET`
 - `VERIFICATION_INTERNAL_SECRET`
+- `MYSQL_DSN`
+
+## Storage
+
+Сейчас для хранения подходит `MySQL`, и он уже подключен как основной persistent store.
+
+В MySQL сохраняются:
+- пользователи и refresh-сессии
+- verification sessions и verification tokens
+- история общего чата
+- test-lab комнаты, сессии и samples
+
+Пока остаются в памяти:
+- live subscribers для SSE
+- duel matchmaking queue и live match state
+- in-memory rate limits
+
+Это сделано специально: долговечные данные уже переживают рестарт, а live-эфемерное состояние пока оставлено простым.
 
 ## Flow верификации до регистрации
 
