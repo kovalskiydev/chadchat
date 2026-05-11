@@ -2572,6 +2572,8 @@ function DuelModal({
   onFinished?: () => void;
   onClose: () => void;
 }) {
+  const DUEL_SOUND_ENABLED_KEY = "chadchat_duel_sound_enabled_v1";
+  const DUEL_SOUND_VOLUME_KEY = "chadchat_duel_sound_volume_v1";
   const extractPhase = useCallback((payload: Record<string, unknown>) =>
     (payload.phase as string | undefined) ??
     (payload.current_phase as string | undefined) ??
@@ -2663,6 +2665,7 @@ function DuelModal({
   const [mediaReadyMap, setMediaReadyMap] = useState<Record<string, boolean>>({});
   const [queueRunKey, setQueueRunKey] = useState(0);
   const [searchSoundEnabled, setSearchSoundEnabled] = useState(true);
+  const [searchVolume, setSearchVolume] = useState(0.18);
   const [showFinalResult, setShowFinalResult] = useState(false);
   const finishedRef = useRef(false);
 
@@ -2880,9 +2883,9 @@ function DuelModal({
       let currentVolume = 0.001;
       searchAudioFadeRef.current = window.setInterval(() => {
         if (!searchAudioRef.current) return;
-        currentVolume = Math.min(0.18, currentVolume + 0.016);
+        currentVolume = Math.min(searchVolume, currentVolume + 0.016);
         searchAudioRef.current.volume = currentVolume;
-        if (currentVolume >= 0.18 && searchAudioFadeRef.current) {
+        if (currentVolume >= searchVolume && searchAudioFadeRef.current) {
           window.clearInterval(searchAudioFadeRef.current);
           searchAudioFadeRef.current = null;
         }
@@ -2890,7 +2893,35 @@ function DuelModal({
     } catch {
       stopSearchAudio();
     }
-  }, [stopSearchAudio]);
+  }, [stopSearchAudio, searchVolume]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const storedEnabled = window.localStorage.getItem(DUEL_SOUND_ENABLED_KEY);
+    const storedVolume = window.localStorage.getItem(DUEL_SOUND_VOLUME_KEY);
+    if (storedEnabled !== null) {
+      setSearchSoundEnabled(storedEnabled === "1");
+    }
+    if (storedVolume !== null) {
+      const parsed = Number(storedVolume);
+      if (Number.isFinite(parsed)) {
+        setSearchVolume(Math.max(0, Math.min(1, parsed)));
+      }
+    }
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    window.localStorage.setItem(DUEL_SOUND_ENABLED_KEY, searchSoundEnabled ? "1" : "0");
+  }, [searchSoundEnabled]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    window.localStorage.setItem(DUEL_SOUND_VOLUME_KEY, String(searchVolume));
+    if (searchAudioRef.current && !searchAudioFadeRef.current) {
+      searchAudioRef.current.volume = searchVolume;
+    }
+  }, [searchVolume]);
 
   const extractUsersFromMatch = useCallback((payload: Record<string, unknown>) => {
     const match = (payload.match as Record<string, unknown> | undefined) ?? payload;
@@ -3369,20 +3400,6 @@ function DuelModal({
         <div className="p-5">
           {isQueueScreen ? (
             <div className="flex min-h-[72vh] flex-col items-center justify-center border border-zinc-800 bg-black/80 px-6 text-center">
-              <div className="absolute right-10 top-10">
-                <button
-                  type="button"
-                  onClick={() => setSearchSoundEnabled((current) => !current)}
-                  className="inline-flex h-10 items-center gap-2 border border-zinc-800 bg-zinc-950 px-3 text-[10px] font-semibold uppercase tracking-[0.14em] text-zinc-300 transition-colors hover:border-purple-400 hover:text-white"
-                >
-                  {searchSoundEnabled ? (
-                    <Volume2 className="h-3.5 w-3.5" aria-hidden="true" />
-                  ) : (
-                    <VolumeX className="h-3.5 w-3.5" aria-hidden="true" />
-                  )}
-                  {searchSoundEnabled ? "Sound On" : "Sound Off"}
-                </button>
-              </div>
               <div className="text-[10px] font-semibold uppercase tracking-[0.18em] text-zinc-600">
                 Matchmaking
               </div>
@@ -3411,6 +3428,40 @@ function DuelModal({
                     </div>
                   </div>
                 ))}
+              </div>
+              <div className="mt-6 w-full max-w-md border border-zinc-800 bg-zinc-950 p-4 text-left">
+                <div className="flex items-center justify-between gap-3">
+                  <div className="flex items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.14em] text-zinc-400">
+                    {searchSoundEnabled ? (
+                      <Volume2 className="h-3.5 w-3.5 text-purple-300" aria-hidden="true" />
+                    ) : (
+                      <VolumeX className="h-3.5 w-3.5 text-zinc-500" aria-hidden="true" />
+                    )}
+                    Matchmaking Sound
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setSearchSoundEnabled((current) => !current)}
+                    className="inline-flex h-9 items-center justify-center border border-zinc-800 bg-black px-3 text-[10px] font-semibold uppercase tracking-[0.14em] text-zinc-300 transition-colors hover:border-purple-400 hover:text-white"
+                  >
+                    {searchSoundEnabled ? "Sound On" : "Sound Off"}
+                  </button>
+                </div>
+                <div className="mt-4">
+                  <div className="mb-2 flex items-center justify-between text-[10px] uppercase tracking-[0.12em] text-zinc-500">
+                    <span>Volume</span>
+                    <span className="text-zinc-300">{Math.round(searchVolume * 100)}%</span>
+                  </div>
+                  <input
+                    type="range"
+                    min="0"
+                    max="1"
+                    step="0.01"
+                    value={searchVolume}
+                    onChange={(event) => setSearchVolume(Number(event.target.value))}
+                    className="w-full accent-purple-400"
+                  />
+                </div>
               </div>
               {error && (
                 <div className="mt-6 border border-red-500/45 bg-red-950/35 px-3 py-2 text-[10px] font-semibold uppercase tracking-[0.12em] text-red-200">
