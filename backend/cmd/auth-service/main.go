@@ -2,11 +2,8 @@ package main
 
 import (
 	"bytes"
-	"crypto/hmac"
 	"crypto/rand"
 	"crypto/sha256"
-	"crypto/subtle"
-	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -18,6 +15,11 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+
+	"backend/internal/rateutil"
+
+	"github.com/golang-jwt/jwt/v5"
+	"golang.org/x/crypto/bcrypt"
 )
 
 const (
@@ -30,7 +32,6 @@ const (
 type User struct {
 	ID                 string    `json:"id"`
 	Nickname           string    `json:"nickname,omitempty"`
-	PasswordSalt       string    `json:"-"`
 	PasswordHash       string    `json:"-"`
 	Type               string    `json:"type"`
 	VerificationStatus string    `json:"verification_status"`
@@ -58,6 +59,8 @@ type Server struct {
 	accessKey           []byte
 	refreshKey          []byte
 	verificationBaseURL string
+	verificationSecret  string
+	limiter             *rateutil.Limiter
 }
 
 func main() {
@@ -70,15 +73,17 @@ func main() {
 		accessKey:           accessKey,
 		refreshKey:          refreshKey,
 		verificationBaseURL: verificationURL,
+		verificationSecret:  envOr("VERIFICATION_INTERNAL_SECRET", "dev-internal-secret-change-me"),
+		limiter:             rateutil.NewLimiter(),
 	}
 
 	mux := http.NewServeMux()
-	mux.HandleFunc("POST /auth/anonymous", s.handleAnonymous)
-	mux.HandleFunc("POST /auth/register", s.handleRegister)
-	mux.HandleFunc("POST /auth/login", s.handleLogin)
-	mux.HandleFunc("POST /auth/upgrade", s.withAuth(s.handleUpgrade))
-	mux.HandleFunc("POST /auth/refresh", s.handleRefresh)
-	mux.HandleFunc("POST /auth/logout", s.handleLogout)
+	mux.HandleFunc("POST /auth/anonymous", s.withRateLimit(10, time.Minute, s.handleAnonymous))
+	mux.HandleFunc("POST /auth/register", s.withRateLimit(10, time.Minute, s.handleRegister))
+	mux.HandleFunc("POST /auth/login", s.withRateLimit(20, time.Minute, s.handleLogin))
+	mux.HandleFunc("POST /auth/upgrade", s.withRateLimit(10, time.Minute, s.withAuth(s.handleUpgrade)))
+	mux.HandleFunc("POST /auth/refresh", s.withRateLimit(60, time.Minute, s.handleRefresh))
+	mux.HandleFunc("POST /auth/logout", s.withRateLimit(60, time.Minute, s.handleLogout))
 	mux.HandleFunc("GET /me", s.withAuth(s.handleMe))
 
 	addr := ":" + envOr("PORT", "8081")
@@ -162,9 +167,13 @@ func (s *Server) handleRegister(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	salt, hash, _ := hashPassword(req.Password)
+	hash, err := hashPassword(req.Password)
+	if err != nil {
+		writeErr(w, 500, "hash_failed")
+		return
+	}
 	now := time.Now().UTC()
-	user := &User{ID: s.store.nextUserID(), Nickname: nick, PasswordSalt: salt, PasswordHash: hash, Type: userTypeRegistered, VerificationStatus: "passed", CreatedAt: now, UpdatedAt: now}
+	user := &User{ID: s.store.nextUserID(), Nickname: nick, PasswordHash: hash, Type: userTypeRegistered, VerificationStatus: "passed", CreatedAt: now, UpdatedAt: now}
 
 	s.store.mu.Lock()
 	if _, ok := s.store.registeredByNick[nick]; ok {
@@ -197,7 +206,11 @@ func (s *Server) handleUpgrade(w http.ResponseWriter, r *http.Request, user *Use
 		writeErr(w, 400, err.Error())
 		return
 	}
-	salt, hash, _ := hashPassword(req.Password)
+	hash, err := hashPassword(req.Password)
+	if err != nil {
+		writeErr(w, 500, "hash_failed")
+		return
+	}
 
 	s.store.mu.Lock()
 	defer s.store.mu.Unlock()
@@ -205,7 +218,7 @@ func (s *Server) handleUpgrade(w http.ResponseWriter, r *http.Request, user *Use
 		writeErr(w, 409, "nickname_taken")
 		return
 	}
-	user.Nickname, user.PasswordSalt, user.PasswordHash = nick, salt, hash
+	user.Nickname, user.PasswordHash = nick, hash
 	user.Type, user.VerificationStatus, user.UpdatedAt = userTypeRegistered, "passed", time.Now().UTC()
 	s.store.registeredByNick[nick] = user.ID
 	t, err := s.issueTokensLocked(user.ID)
@@ -232,7 +245,7 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 	}
 	user := s.store.usersByID[uid]
 	s.store.mu.RUnlock()
-	if !verifyPassword(req.Password, user.PasswordSalt, user.PasswordHash) {
+	if !verifyPassword(req.Password, user.PasswordHash) {
 		writeErr(w, 401, "invalid_credentials")
 		return
 	}
@@ -291,7 +304,13 @@ func (s *Server) handleMe(w http.ResponseWriter, _ *http.Request, user *User) {
 
 func (s *Server) consumeVerificationToken(token string) error {
 	payload, _ := json.Marshal(map[string]string{"verification_token": token})
-	resp, err := http.Post(s.verificationBaseURL+"/verification/consume", "application/json", bytes.NewReader(payload))
+	req, err := http.NewRequest(http.MethodPost, s.verificationBaseURL+"/verification/consume", bytes.NewReader(payload))
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-Internal-Verification-Secret", s.verificationSecret)
+	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		return err
 	}
@@ -322,6 +341,17 @@ func (s *Server) withAuth(next func(http.ResponseWriter, *http.Request, *User)) 
 			return
 		}
 		next(w, r, user)
+	}
+}
+
+func (s *Server) withRateLimit(limit int, window time.Duration, next http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		key := r.Method + ":" + r.URL.Path + ":" + rateutil.ClientKey(r)
+		if !s.limiter.Allow(key, limit, window) {
+			writeErr(w, http.StatusTooManyRequests, "rate_limited")
+			return
+		}
+		next(w, r)
 	}
 }
 
@@ -405,73 +435,61 @@ func validatePassword(p string) error {
 	}
 	return nil
 }
-func hashPassword(password string) (string, string, error) {
-	s := make([]byte, 16)
-	if _, err := rand.Read(s); err != nil {
-		return "", "", err
-	}
-	h := derivePasswordHash(password, s)
-	return hex.EncodeToString(s), hex.EncodeToString(h), nil
-}
-func verifyPassword(password, saltHex, hashHex string) bool {
-	s, err := hex.DecodeString(saltHex)
+func hashPassword(password string) (string, error) {
+	hash, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
 	if err != nil {
-		return false
+		return "", err
 	}
-	e, err := hex.DecodeString(hashHex)
-	if err != nil {
-		return false
-	}
-	a := derivePasswordHash(password, s)
-	return subtle.ConstantTimeCompare(a, e) == 1
+	return string(hash), nil
 }
-func derivePasswordHash(password string, salt []byte) []byte {
-	d := append([]byte(password), salt...)
-	sum := sha256.Sum256(d)
-	out := sum[:]
-	for i := 0; i < 120000; i++ {
-		next := sha256.Sum256(append(out, salt...))
-		out = next[:]
-	}
-	return out
+func verifyPassword(password, hash string) bool {
+	return bcrypt.CompareHashAndPassword([]byte(hash), []byte(password)) == nil
 }
 func signToken(kind, uid string, exp time.Time, key []byte) (string, error) {
-	n := make([]byte, 16)
-	if _, err := rand.Read(n); err != nil {
-		return "", err
+	claims := jwt.MapClaims{
+		"sub": uid,
+		"typ": kind,
+		"iss": "auth-service",
+		"iat": time.Now().UTC().Unix(),
+		"exp": exp.Unix(),
+		"jti": randomTokenID(),
 	}
-	payload := fmt.Sprintf("%s|%s|%d|%s", kind, uid, exp.Unix(), hex.EncodeToString(n))
-	mac := hmac.New(sha256.New, key)
-	mac.Write([]byte(payload))
-	sig := hex.EncodeToString(mac.Sum(nil))
-	return base64.RawURLEncoding.EncodeToString([]byte(payload + "|" + sig)), nil
+	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
+	return token.SignedString(key)
 }
 func verifyToken(kind, token string, key []byte) (string, error) {
-	raw, err := base64.RawURLEncoding.DecodeString(token)
-	if err != nil {
-		return "", err
+	parsed, err := jwt.Parse(token, func(t *jwt.Token) (any, error) {
+		if t.Method == nil || t.Method.Alg() != jwt.SigningMethodHS256.Alg() {
+			return nil, errors.New("unexpected_signing_method")
+		}
+		return key, nil
+	})
+	if err != nil || !parsed.Valid {
+		return "", errors.New("invalid_token")
 	}
-	parts := strings.Split(string(raw), "|")
-	if len(parts) != 5 || parts[0] != kind || parts[1] == "" {
-		return "", errors.New("bad_token")
+
+	claims, ok := parsed.Claims.(jwt.MapClaims)
+	if !ok {
+		return "", errors.New("invalid_claims")
 	}
-	payload := strings.Join(parts[:4], "|")
-	mac := hmac.New(sha256.New, key)
-	mac.Write([]byte(payload))
-	expSig := hex.EncodeToString(mac.Sum(nil))
-	if subtle.ConstantTimeCompare([]byte(expSig), []byte(parts[4])) != 1 {
-		return "", errors.New("bad_sig")
+
+	claimType, ok := claims["typ"].(string)
+	if !ok || claimType != kind {
+		return "", errors.New("invalid_token_type")
 	}
-	var exp int64
-	if _, err := fmt.Sscanf(parts[2], "%d", &exp); err != nil {
-		return "", err
+	sub, ok := claims["sub"].(string)
+	if !ok || sub == "" {
+		return "", errors.New("missing_subject")
 	}
-	if time.Now().UTC().After(time.Unix(exp, 0).UTC()) {
-		return "", errors.New("expired")
-	}
-	return parts[1], nil
+	return sub, nil
 }
 func hexSHA256(v string) string { s := sha256.Sum256([]byte(v)); return hex.EncodeToString(s[:]) }
+
+func randomTokenID() string {
+	buf := make([]byte, 16)
+	_, _ = rand.Read(buf)
+	return hex.EncodeToString(buf)
+}
 
 func generateAnonymousNickname(userID string) string {
 	numeric := strings.TrimPrefix(userID, "u_")

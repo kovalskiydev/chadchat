@@ -13,12 +13,19 @@
 docker compose up --build
 ```
 
+Для продового запуска задайте:
+- `AUTH_ACCESS_TOKEN_SECRET`
+- `AUTH_REFRESH_TOKEN_SECRET`
+- `VERIFICATION_INTERNAL_SECRET`
+
 ## Flow верификации до регистрации
 
 1. `POST /verification/start`
 2. `POST /verification/submit` -> получить `verification_token`
 3. `POST /auth/anonymous` или `POST /auth/register` c `verification_token`
 4. `POST /auth/upgrade` не требует повторной верификации, если пользователь уже был создан как `anonymous`.
+
+Через gateway наружу доступны только `POST /verification/start` и `POST /verification/submit`. `POST /verification/consume` теперь внутренний и защищен `VERIFICATION_INTERNAL_SECRET`.
 
 ## Test Lab API (через gateway :8080)
 
@@ -92,6 +99,7 @@ Python API из `ml/api.py` используется как есть:
   - `joined`
   - `history`
   - `message`
+- На `POST /live-chat/messages` действует rate limit.
 
 ## Duel 1v1 API (через gateway :8080)
 
@@ -139,6 +147,7 @@ Python API из `ml/api.py` используется как есть:
 }
 ```
 - Принимается только в фазах `scoring` и `overtime`.
+- На `score-frame` действует rate limit примерно `3.5 кадра/сек`.
 
 ### Фазы матча
 - `pre_start` — 10 сек до старта (видео/голос).
@@ -147,3 +156,9 @@ Python API из `ml/api.py` используется как есть:
 - `result` — вычисление результата.
 - `post_chat` — 10 сек после результата.
 - `finished` — матч завершен.
+
+## Security Notes
+
+- `auth-service` использует `JWT` для access/refresh токенов и `bcrypt` для хранения паролей.
+- На критичных endpoints включен in-memory rate limit: `auth`, `verification`, `live-chat/messages`, `test-lab scan`, `duel score-frame`.
+- Для `test-lab scan` и `duel score-frame` лимит сейчас настроен примерно на `3.5 кадра/сек`.

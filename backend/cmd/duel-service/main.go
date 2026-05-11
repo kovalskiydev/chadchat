@@ -14,6 +14,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"backend/internal/rateutil"
 )
 
 const (
@@ -24,17 +26,19 @@ const (
 	phasePostChat = "post_chat"
 	phaseFinished = "finished"
 
-	preStartDuration = 10 * time.Second
-	scoringDuration  = 10 * time.Second
-	overtimeDuration = 5 * time.Second
-	postChatDuration = 10 * time.Second
-	tieThreshold     = 0.15
+	preStartDuration        = 10 * time.Second
+	scoringDuration         = 10 * time.Second
+	overtimeDuration        = 5 * time.Second
+	postChatDuration        = 10 * time.Second
+	tieThreshold            = 0.15
+	scoreRateLimitPerMinute = 210
 )
 
 type Server struct {
 	authServiceURL string
 	mlServiceURL   string
 	store          *Store
+	limiter        *rateutil.Limiter
 }
 
 type Store struct {
@@ -111,6 +115,7 @@ func main() {
 			matches:       map[string]*Match{},
 			userToMatchID: map[string]string{},
 		},
+		limiter: rateutil.NewLimiter(),
 	}
 
 	mux := http.NewServeMux()
@@ -120,11 +125,22 @@ func main() {
 	mux.HandleFunc("GET /duel/match/{matchID}", s.withAuth(s.handleGetMatch))
 	mux.HandleFunc("GET /duel/match/{matchID}/stream", s.withAuth(s.handleStream))
 	mux.HandleFunc("POST /duel/match/{matchID}/signal", s.withAuth(s.handleSignal))
-	mux.HandleFunc("POST /duel/match/{matchID}/score-frame", s.withAuth(s.handleScoreFrame))
+	mux.HandleFunc("POST /duel/match/{matchID}/score-frame", s.withRateLimit(scoreRateLimitPerMinute, time.Minute, s.withAuth(s.handleScoreFrame)))
 
 	addr := ":" + envOr("PORT", "8085")
 	log.Printf("duel-service on %s", addr)
 	log.Fatal(http.ListenAndServe(addr, withJSON(mux)))
+}
+
+func (s *Server) withRateLimit(limit int, window time.Duration, next http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		key := r.Method + ":" + r.URL.Path + ":" + rateutil.ClientKey(r)
+		if !s.limiter.Allow(key, limit, window) {
+			writeErr(w, http.StatusTooManyRequests, "rate_limited")
+			return
+		}
+		next(w, r)
+	}
 }
 
 func (s *Server) withAuth(next func(http.ResponseWriter, *http.Request, authUser)) http.HandlerFunc {

@@ -14,12 +14,15 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"backend/internal/rateutil"
 )
 
 type Server struct {
 	authServiceURL string
 	mlServiceURL   string
 	store          *Store
+	limiter        *rateutil.Limiter
 }
 
 type Store struct {
@@ -62,6 +65,7 @@ type mlPredictResponse struct {
 }
 
 const testLabSessionDuration = 10 * time.Second
+const scanRateLimitPerMinute = 210
 
 type sessionStateResponse struct {
 	RoomID         string     `json:"room_id"`
@@ -89,18 +93,30 @@ func main() {
 		authServiceURL: envOr("AUTH_SERVICE_URL", "http://localhost:8081"),
 		mlServiceURL:   envOr("ML_SERVICE_URL", "http://localhost:8090"),
 		store:          &Store{rooms: map[string]*Room{}},
+		limiter:        rateutil.NewLimiter(),
 	}
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("POST /test-lab/rooms", s.withAuth(s.handleCreateRoom))
 	mux.HandleFunc("GET /test-lab/rooms/{roomID}", s.withAuth(s.handleGetRoom))
 	mux.HandleFunc("POST /test-lab/rooms/{roomID}/sessions/start", s.withAuth(s.handleStartSession))
-	mux.HandleFunc("POST /test-lab/rooms/{roomID}/sessions/{sessionID}/scan", s.withAuth(s.handleScanFrame))
+	mux.HandleFunc("POST /test-lab/rooms/{roomID}/sessions/{sessionID}/scan", s.withRateLimit(scanRateLimitPerMinute, time.Minute, s.withAuth(s.handleScanFrame)))
 	mux.HandleFunc("GET /test-lab/rooms/{roomID}/sessions/{sessionID}", s.withAuth(s.handleGetSession))
 
 	addr := ":" + envOr("PORT", "8083")
 	log.Printf("test-lab-service on %s", addr)
 	log.Fatal(http.ListenAndServe(addr, withJSON(mux)))
+}
+
+func (s *Server) withRateLimit(limit int, window time.Duration, next http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		key := r.Method + ":" + r.URL.Path + ":" + rateutil.ClientKey(r)
+		if !s.limiter.Allow(key, limit, window) {
+			writeErr(w, http.StatusTooManyRequests, "rate_limited")
+			return
+		}
+		next(w, r)
+	}
 }
 
 func (s *Server) withAuth(next func(http.ResponseWriter, *http.Request, string)) http.HandlerFunc {

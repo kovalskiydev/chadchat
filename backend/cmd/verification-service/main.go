@@ -9,6 +9,8 @@ import (
 	"os"
 	"sync"
 	"time"
+
+	"backend/internal/rateutil"
 )
 
 type challengeSession struct {
@@ -27,17 +29,24 @@ type verificationToken struct {
 }
 
 type store struct {
-	mu       sync.Mutex
-	sessions map[string]*challengeSession
-	tokens   map[string]*verificationToken
+	mu             sync.Mutex
+	sessions       map[string]*challengeSession
+	tokens         map[string]*verificationToken
+	internalSecret string
+	limiter        *rateutil.Limiter
 }
 
 func main() {
-	s := &store{sessions: map[string]*challengeSession{}, tokens: map[string]*verificationToken{}}
+	s := &store{
+		sessions:       map[string]*challengeSession{},
+		tokens:         map[string]*verificationToken{},
+		internalSecret: envOr("VERIFICATION_INTERNAL_SECRET", "dev-internal-secret-change-me"),
+		limiter:        rateutil.NewLimiter(),
+	}
 
 	mux := http.NewServeMux()
-	mux.HandleFunc("POST /verification/start", s.handleStart)
-	mux.HandleFunc("POST /verification/submit", s.handleSubmit)
+	mux.HandleFunc("POST /verification/start", s.withRateLimit(10, time.Minute, s.handleStart))
+	mux.HandleFunc("POST /verification/submit", s.withRateLimit(20, time.Minute, s.handleSubmit))
 	mux.HandleFunc("POST /verification/consume", s.handleConsume)
 
 	addr := ":" + envOr("PORT", "8082")
@@ -118,6 +127,11 @@ type consumeRequest struct {
 }
 
 func (s *store) handleConsume(w http.ResponseWriter, r *http.Request) {
+	if r.Header.Get("X-Internal-Verification-Secret") != s.internalSecret {
+		writeErr(w, http.StatusForbidden, "forbidden")
+		return
+	}
+
 	var req consumeRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeErr(w, http.StatusBadRequest, "invalid_json")
@@ -134,6 +148,17 @@ func (s *store) handleConsume(w http.ResponseWriter, r *http.Request) {
 	}
 	tok.Used = true
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
+}
+
+func (s *store) withRateLimit(limit int, window time.Duration, next http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		key := r.Method + ":" + r.URL.Path + ":" + rateutil.ClientKey(r)
+		if !s.limiter.Allow(key, limit, window) {
+			writeErr(w, http.StatusTooManyRequests, "rate_limited")
+			return
+		}
+		next(w, r)
+	}
 }
 
 func withJSON(next http.Handler) http.Handler {

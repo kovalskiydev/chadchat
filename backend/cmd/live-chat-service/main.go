@@ -10,11 +10,14 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"backend/internal/rateutil"
 )
 
 type Server struct {
 	authServiceURL string
 	store          *Store
+	limiter        *rateutil.Limiter
 }
 
 type Store struct {
@@ -58,17 +61,29 @@ func main() {
 			messages:    make([]ChatMessage, 0, 200),
 			subscribers: map[string]chan []byte{},
 		},
+		limiter: rateutil.NewLimiter(),
 	}
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /live-chat/history", s.withAuth(s.handleHistory))
 	mux.HandleFunc("POST /live-chat/history", s.withAuth(s.handleHistoryWithLimit))
 	mux.HandleFunc("GET /live-chat/stream", s.withAuth(s.handleStream))
-	mux.HandleFunc("POST /live-chat/messages", s.withAuth(s.handlePostMessage))
+	mux.HandleFunc("POST /live-chat/messages", s.withRateLimit(30, time.Minute, s.withAuth(s.handlePostMessage)))
 
 	addr := ":" + envOr("PORT", "8084")
 	log.Printf("live-chat-service on %s", addr)
 	log.Fatal(http.ListenAndServe(addr, withJSON(mux)))
+}
+
+func (s *Server) withRateLimit(limit int, window time.Duration, next http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		key := r.Method + ":" + r.URL.Path + ":" + rateutil.ClientKey(r)
+		if !s.limiter.Allow(key, limit, window) {
+			writeErr(w, http.StatusTooManyRequests, "rate_limited")
+			return
+		}
+		next(w, r)
+	}
 }
 
 func (s *Server) withAuth(next func(http.ResponseWriter, *http.Request, authUser)) http.HandlerFunc {
