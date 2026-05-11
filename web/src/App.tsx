@@ -175,6 +175,7 @@ type ChatMessage = {
   user: string;
   text: string;
   mine?: boolean;
+  pending?: boolean;
 };
 
 type ChatCustomization = {
@@ -539,15 +540,22 @@ function MagicButton({
 function StatsPanel({
   onOpenDetails,
   stats,
+  loading,
 }: {
   onOpenDetails: () => void;
   stats: ReturnType<typeof buildStatsSnapshot>;
+  loading: boolean;
 }) {
   const progress = Math.max(0, Math.min(100, stats.progressPercent));
   const remaining = Math.max(0, stats.nextRankRating - stats.rating);
 
   return (
-    <div className="flex h-full flex-col justify-between border border-border bg-zinc-950/80 p-3 text-left sm:p-4">
+    <div
+      className={cn(
+        "flex h-full flex-col justify-between border border-border bg-zinc-950/80 p-3 text-left transition-opacity duration-300 sm:p-4",
+        loading && "opacity-90",
+      )}
+    >
       <div className="flex items-start justify-between gap-3">
         <div>
           <div className="text-[10px] font-semibold uppercase tracking-[0.16em] text-zinc-500">
@@ -560,14 +568,18 @@ function StatsPanel({
             </span>
           </div>
         </div>
-        <span
-          className={cn(
-            "border px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.12em]",
-            getRankClass(stats.rank),
-          )}
-        >
-          {stats.rank}
-        </span>
+        {loading ? (
+          <span className="h-7 w-20 animate-pulse border border-zinc-800 bg-zinc-900/80" />
+        ) : (
+          <span
+            className={cn(
+              "border px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.12em]",
+              getRankClass(stats.rank),
+            )}
+          >
+            {stats.rank}
+          </span>
+        )}
       </div>
 
       <div className="space-y-3">
@@ -575,9 +587,13 @@ function StatsPanel({
           <div className="text-[10px] font-semibold uppercase tracking-[0.14em] text-zinc-600">
             Current Rating
           </div>
-          <div className="mt-1 text-3xl font-black tabular-nums text-zinc-100">
-            {stats.rating}
-          </div>
+          {loading ? (
+            <div className="mt-2 h-10 w-28 animate-pulse bg-zinc-900/80" />
+          ) : (
+            <div className="mt-1 text-3xl font-black tabular-nums text-zinc-100 transition-all duration-300">
+              {stats.rating}
+            </div>
+          )}
         </div>
 
         <div>
@@ -585,19 +601,30 @@ function StatsPanel({
             <span className="text-[10px] font-semibold uppercase tracking-[0.14em] text-zinc-500">
               Progress to {stats.nextRank}
             </span>
-            <span className="text-[10px] font-semibold tabular-nums text-purple-200">
-              {progress}%
-            </span>
+            {loading ? (
+              <span className="h-4 w-10 animate-pulse bg-zinc-900/80" />
+            ) : (
+              <span className="text-[10px] font-semibold tabular-nums text-purple-200 transition-all duration-300">
+                {progress}%
+              </span>
+            )}
           </div>
           <div className="h-2 overflow-hidden bg-zinc-900">
             <div
-              className="h-full bg-purple-400 shadow-[0_0_14px_rgba(168,85,247,0.9)]"
-              style={{ width: `${progress}%` }}
+              className={cn(
+                "h-full bg-purple-400 shadow-[0_0_14px_rgba(168,85,247,0.9)] transition-[width] duration-500 ease-out",
+                loading && "animate-pulse bg-zinc-700 shadow-none",
+              )}
+              style={{ width: `${loading ? 38 : progress}%` }}
             />
           </div>
-          <div className="mt-2 text-[10px] uppercase tracking-[0.12em] text-zinc-600">
-            {remaining} rating left
-          </div>
+          {loading ? (
+            <div className="mt-2 h-4 w-24 animate-pulse bg-zinc-900/80" />
+          ) : (
+            <div className="mt-2 text-[10px] uppercase tracking-[0.12em] text-zinc-600 transition-all duration-300">
+              {remaining} rating left
+            </div>
+          )}
         </div>
       </div>
 
@@ -606,17 +633,25 @@ function StatsPanel({
           <div className="text-[10px] uppercase tracking-[0.12em] text-zinc-600">
             Wins
           </div>
-          <div className="mt-1 text-base font-black tabular-nums text-zinc-100">
-            {stats.wins}
-          </div>
+          {loading ? (
+            <div className="mt-2 h-5 w-10 animate-pulse bg-zinc-900/80" />
+          ) : (
+            <div className="mt-1 text-base font-black tabular-nums text-zinc-100 transition-all duration-300">
+              {stats.wins}
+            </div>
+          )}
         </div>
         <div className="border border-zinc-900 bg-black/70 p-2.5">
           <div className="text-[10px] uppercase tracking-[0.12em] text-zinc-600">
             Streak
           </div>
-          <div className="mt-1 text-base font-black tabular-nums text-zinc-100">
-            +{stats.streak}
-          </div>
+          {loading ? (
+            <div className="mt-2 h-5 w-10 animate-pulse bg-zinc-900/80" />
+          ) : (
+            <div className="mt-1 text-base font-black tabular-nums text-zinc-100 transition-all duration-300">
+              +{stats.streak}
+            </div>
+          )}
         </div>
         <button
           className="inline-flex h-full min-h-[50px] items-center justify-center border border-purple-500/45 bg-purple-950/35 px-3 text-[10px] font-semibold uppercase tracking-[0.14em] text-purple-200 transition-colors hover:border-purple-300 hover:bg-purple-900/45 hover:text-white"
@@ -625,6 +660,76 @@ function StatsPanel({
         >
           Details
         </button>
+      </div>
+    </div>
+  );
+}
+
+function ChatMessageItem({
+  message,
+  chatCustomization,
+}: {
+  message: ChatMessage;
+  chatCustomization: ChatCustomization;
+}) {
+  const [entered, setEntered] = useState(false);
+
+  useEffect(() => {
+    const id = window.requestAnimationFrame(() => setEntered(true));
+    return () => window.cancelAnimationFrame(id);
+  }, []);
+
+  return (
+    <div
+      className={cn(
+        "grid grid-cols-[28px_1fr] gap-2 border border-zinc-900 bg-black/72 p-2 text-left transition-all duration-300 ease-out",
+        entered ? "translate-y-0 opacity-100" : "translate-y-2 opacity-0",
+        message.mine && "border-purple-500/55 bg-purple-950/25",
+        message.pending && "animate-pulse border-purple-400/40",
+      )}
+    >
+      <Avatar user={message.user} className="h-7 w-7" />
+      <div className="min-w-0">
+        <div className="mb-1 flex items-center justify-between gap-2">
+          <div className="flex min-w-0 items-center gap-1.5">
+            {message.mine && (
+              <span
+                className={cn(
+                  "shrink-0 bg-purple-950/35 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-[0.1em]",
+                  getTitleBorderColorClass(chatCustomization.titleBorderColor),
+                  getTitleBorderShapeClass(chatCustomization.titleBorderShape),
+                  isAnimatedTitle(chatCustomization.title) && "animate-pulse",
+                )}
+              >
+                {chatCustomization.title}
+              </span>
+            )}
+            <span
+              className={cn(
+                "truncate text-[10px] font-semibold uppercase tracking-[0.14em] text-zinc-500",
+                message.mine && "bg-clip-text font-black text-transparent",
+                message.mine && getNickColorClass(chatCustomization.nameColor),
+              )}
+            >
+              {message.user}
+            </span>
+          </div>
+          <span
+            className={cn(
+              "h-1.5 w-1.5 shrink-0 rounded-full shadow-[0_0_10px_rgba(168,85,247,0.85)]",
+              message.pending ? "bg-zinc-300" : "bg-purple-400",
+            )}
+          />
+        </div>
+        <p
+          className={cn(
+            "break-words text-xs leading-5 transition-opacity duration-200",
+            message.mine ? getChatTextClass(chatCustomization.textStyle) : "text-zinc-300",
+            message.pending && "opacity-75",
+          )}
+        >
+          {message.text}
+        </p>
       </div>
     </div>
   );
@@ -1337,6 +1442,9 @@ function LiveChat({
     const messageKey = (msg: ChatMessage) =>
       String(msg.id ?? `${msg.user}|${msg.text}|${msg.createdAt ?? ""}`);
 
+    const messageSignature = (user: string, text: string) =>
+      `${user.trim().toLowerCase()}|${text.trim().toLowerCase()}`;
+
     const dedupeMessages = (list: ChatMessage[]) => {
       const seen = new Set<string>();
       const out: ChatMessage[] = [];
@@ -1391,8 +1499,21 @@ function LiveChat({
               const msg = (payload.message as LiveChatMessage | undefined) ??
                 (payload as unknown as LiveChatMessage);
               if (!msg?.text) return;
+              const incoming = mapIncoming(msg);
+              const incomingSignature = messageSignature(incoming.user, incoming.text);
               setMessages((current) =>
-                dedupeMessages([...current.slice(-39), mapIncoming(msg)]).slice(-40),
+                dedupeMessages([
+                  ...current
+                    .filter(
+                      (item) =>
+                        !(
+                          item.pending &&
+                          messageSignature(item.user, item.text) === incomingSignature
+                        ),
+                    )
+                    .slice(-39),
+                  incoming,
+                ]).slice(-40),
               );
             }
           },
@@ -1419,22 +1540,27 @@ function LiveChat({
     const text = draft.trim();
     if (!text || !accessToken || sending) return;
 
+    const optimisticId = `pending-${nextIdRef.current++}`;
+    setMessages((current) => [
+      ...current.slice(-39),
+      {
+        id: optimisticId,
+        user: currentUserName,
+        text,
+        mine: true,
+        pending: true,
+      },
+    ]);
+    setDraft("");
     setSending(true);
     try {
       await sendLiveChatMessage(accessToken, text);
-      setDraft("");
     } catch {
-      // optimistic fallback if stream/post fails
-      setMessages((current) => [
-        ...current.slice(-39),
-        {
-          id: nextIdRef.current++,
-          user: currentUserName,
-          text,
-          mine: true,
-        },
-      ]);
-      setDraft("");
+      setMessages((current) =>
+        current.map((item) =>
+          item.id === optimisticId ? { ...item, pending: false } : item,
+        ),
+      );
     } finally {
       setSending(false);
     }
@@ -1444,55 +1570,11 @@ function LiveChat({
     <div className="flex min-h-0 flex-1 flex-col">
       <div className="flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto overscroll-contain p-3">
         {messages.map((message) => (
-          <div
-            className={cn(
-              "grid grid-cols-[28px_1fr] gap-2 border border-zinc-900 bg-black/72 p-2 text-left",
-              message.mine && "border-purple-500/55 bg-purple-950/25",
-            )}
+          <ChatMessageItem
+            chatCustomization={chatCustomization}
             key={message.id}
-          >
-            <Avatar user={message.user} className="h-7 w-7" />
-            <div className="min-w-0">
-              <div className="mb-1 flex items-center justify-between gap-2">
-                <div className="flex min-w-0 items-center gap-1.5">
-                  {message.mine && (
-                    <span
-                      className={cn(
-                        "shrink-0 bg-purple-950/35 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-[0.1em]",
-                        getTitleBorderColorClass(chatCustomization.titleBorderColor),
-                        getTitleBorderShapeClass(chatCustomization.titleBorderShape),
-                        isAnimatedTitle(chatCustomization.title) &&
-                          "animate-pulse",
-                      )}
-                    >
-                      {chatCustomization.title}
-                    </span>
-                  )}
-                  <span
-                    className={cn(
-                      "truncate text-[10px] font-semibold uppercase tracking-[0.14em] text-zinc-500",
-                      message.mine &&
-                        "bg-clip-text font-black text-transparent",
-                      message.mine && getNickColorClass(chatCustomization.nameColor),
-                    )}
-                  >
-                    {message.user}
-                  </span>
-                </div>
-                <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-purple-400 shadow-[0_0_10px_rgba(168,85,247,0.85)]" />
-              </div>
-              <p
-                className={cn(
-                  "break-words text-xs leading-5",
-                  message.mine
-                    ? getChatTextClass(chatCustomization.textStyle)
-                    : "text-zinc-300",
-                )}
-              >
-                {message.text}
-              </p>
-            </div>
-          </div>
+            message={message}
+          />
         ))}
         <div ref={chatEndRef} />
       </div>
@@ -2193,9 +2275,22 @@ function TopsLeaderboard({
     <div className="flex min-h-0 flex-1 flex-col">
       <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto overscroll-contain p-4">
         {loading && (
-          <div className="border border-zinc-800 bg-black/60 p-3 text-[10px] font-semibold uppercase tracking-[0.12em] text-zinc-500">
-            Loading leaderboard...
-          </div>
+          Array.from({ length: leaderboardPageSize }).map((_, index) => (
+            <div
+              className="grid grid-cols-[40px_1fr_auto] items-center gap-3 border border-zinc-900 bg-black/60 p-3"
+              key={`leaderboard-skeleton-${index}`}
+            >
+              <div className="h-10 w-10 animate-pulse bg-zinc-900/80" />
+              <div className="space-y-2">
+                <div className="h-4 w-28 animate-pulse bg-zinc-900/80" />
+                <div className="h-6 w-20 animate-pulse bg-zinc-900/80" />
+              </div>
+              <div className="space-y-2 justify-self-end text-right">
+                <div className="h-4 w-14 animate-pulse bg-zinc-900/80" />
+                <div className="h-3 w-10 animate-pulse bg-zinc-900/80" />
+              </div>
+            </div>
+          ))
         )}
         {!loading && pagePlayers.length === 0 && (
           <div className="border border-zinc-800 bg-black/60 p-3 text-[10px] font-semibold uppercase tracking-[0.12em] text-zinc-500">
@@ -4012,6 +4107,7 @@ export default function App() {
     "register" | "anonymous" | null
   >(null);
   const [ratingProfile, setRatingProfile] = useState<RatingProfile | null>(null);
+  const [ratingDataLoading, setRatingDataLoading] = useState(false);
   const [leaderboardEntries, setLeaderboardEntries] = useState<LeaderboardEntry[]>([]);
   const [leaderboardLoading, setLeaderboardLoading] = useState(false);
   const [backendDownMessage, setBackendDownMessage] = useState<string | null>(null);
@@ -4127,6 +4223,7 @@ export default function App() {
 
   useEffect(() => {
     if (!tokens?.accessToken) {
+      setRatingDataLoading(false);
       setRatingProfile(null);
       setLeaderboardEntries([]);
       setLeaderboardLoading(false);
@@ -4136,6 +4233,7 @@ export default function App() {
     let cancelled = false;
 
     const loadRatingData = async () => {
+      setRatingDataLoading(true);
       setLeaderboardLoading(true);
       try {
         const [myRating, leaderboard] = await Promise.all([
@@ -4151,6 +4249,7 @@ export default function App() {
         setLeaderboardEntries([]);
       } finally {
         if (!cancelled) {
+          setRatingDataLoading(false);
           setLeaderboardLoading(false);
         }
       }
@@ -4367,6 +4466,7 @@ export default function App() {
       saveTokens(null);
       setTokens(null);
       setMe(null);
+      setRatingDataLoading(false);
       setRatingProfile(null);
       setLeaderboardEntries([]);
       setShowEntryChoice(true);
@@ -4570,6 +4670,7 @@ export default function App() {
                 <StatsPanel
                   onOpenDetails={() => setIsStatsOpen(true)}
                   stats={statsSnapshot}
+                  loading={ratingDataLoading}
                 />
               </MagicButton>
               <MagicButton className="h-20 w-full">
