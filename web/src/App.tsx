@@ -2978,6 +2978,7 @@ function TestLabModal({
   const [averageScore, setAverageScore] = useState<number | null>(null); // final
   const [secondsLeft, setSecondsLeft] = useState<number>(0);
   const completedRef = useRef(false);
+  const canClose = phase === "result";
 
   useEffect(() => {
     let mounted = true;
@@ -3310,7 +3311,9 @@ function TestLabModal({
       role="dialog"
       aria-modal="true"
       aria-labelledby="test-lab-title"
-      onMouseDown={() => onClose(completedRef.current)}
+      onMouseDown={() => {
+        if (canClose) onClose(completedRef.current);
+      }}
     >
       <div
         className="w-full max-w-6xl border border-purple-500/35 bg-zinc-950 shadow-[0_0_40px_rgba(132,0,255,0.22)]"
@@ -3329,10 +3332,18 @@ function TestLabModal({
             </h2>
           </div>
           <button
-            className="inline-flex h-10 w-10 items-center justify-center border border-zinc-800 bg-black/80 text-zinc-400 transition-colors hover:border-purple-400 hover:text-white"
-            onClick={() => onClose(completedRef.current)}
+            className={cn(
+              "inline-flex h-10 w-10 items-center justify-center border bg-black/80 transition-colors",
+              canClose
+                ? "border-zinc-800 text-zinc-400 hover:border-purple-400 hover:text-white"
+                : "cursor-not-allowed border-zinc-900 text-zinc-700",
+            )}
+            onClick={() => {
+              if (canClose) onClose(completedRef.current);
+            }}
             type="button"
             aria-label="Close test lab"
+            disabled={!canClose}
           >
             <X className="h-4 w-4" aria-hidden="true" />
           </button>
@@ -4024,10 +4035,12 @@ export default function App() {
 
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key === "Escape") {
+        if (isTestLabOpen) {
+          return;
+        }
         setIsStatsOpen(false);
         setIsCustomizeOpen(false);
         setIsStartModesOpen(false);
-        setIsTestLabOpen(false);
         setIsDuelOpen(false);
         setIsAuthOpen(false);
       }
