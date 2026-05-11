@@ -3,11 +3,11 @@ const API_BASE = import.meta.env.VITE_API_BASE_URL ?? "";
 type JsonRecord = Record<string, unknown>;
 
 function getMessage(payload: unknown, status: number, fallback: string) {
-  if (status === 429) return "Слишком много запросов, попробуйте позже";
+  if (status === 429) return "Too many requests, please try again later";
   if (!payload || typeof payload !== "object") return fallback;
   const p = payload as JsonRecord;
   const raw = p.message ?? p.error ?? p.detail;
-  if (raw === "rate_limited") return "Слишком много запросов, попробуйте позже";
+  if (raw === "rate_limited") return "Too many requests, please try again later";
   return typeof raw === "string" && raw.trim() ? raw : fallback;
 }
 
