@@ -2645,7 +2645,9 @@ function DuelModal({
   const [oppScore, setOppScore] = useState<number | null>(null);
   const finishedRef = useRef(false);
 
-  const pushDebug = useCallback(() => {}, []);
+  const pushDebug = useCallback((...args: unknown[]) => {
+    void args;
+  }, []);
   const isOfferer = Boolean(myUserId && opponentUserId && myUserId < opponentUserId);
   const isQueueScreen = queueing || !matchID || phase === "queue";
   const timerMax =
