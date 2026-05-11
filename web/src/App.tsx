@@ -16,6 +16,8 @@ import {
   LogOut,
   User,
   Camera,
+  Volume2,
+  VolumeX,
 } from "lucide-react";
 
 import Crosshair from "@/components/Crosshair";
@@ -23,6 +25,7 @@ import GradientText from "@/components/GradientText";
 import { GlobalSpotlight, ParticleCard } from "@/components/MagicBento";
 import PixelBlast from "@/components/PixelBlast";
 import Shuffle from "@/components/Shuffle";
+import looksmaxxingTrack from "@/looksmaxxing.mp3";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import {
@@ -2635,6 +2638,8 @@ function DuelModal({
   const makingOfferRef = useRef(false);
   const ignoreOfferRef = useRef(false);
   const mediaReadySentRef = useRef(false);
+  const searchAudioRef = useRef<HTMLAudioElement | null>(null);
+  const searchAudioFadeRef = useRef<number | null>(null);
   const [queueing, setQueueing] = useState(false);
   const [matchID, setMatchID] = useState("");
   const [phase, setPhase] = useState("queue");
@@ -2657,6 +2662,7 @@ function DuelModal({
   } | null>(null);
   const [mediaReadyMap, setMediaReadyMap] = useState<Record<string, boolean>>({});
   const [queueRunKey, setQueueRunKey] = useState(0);
+  const [searchSoundEnabled, setSearchSoundEnabled] = useState(true);
   const finishedRef = useRef(false);
 
   const pushDebug = useCallback((...args: unknown[]) => {
@@ -2843,6 +2849,44 @@ function DuelModal({
     }
     setQueueRunKey((current) => current + 1);
   }, []);
+
+  const stopSearchAudio = useCallback(() => {
+    if (searchAudioFadeRef.current) {
+      window.clearInterval(searchAudioFadeRef.current);
+      searchAudioFadeRef.current = null;
+    }
+    if (searchAudioRef.current) {
+      searchAudioRef.current.pause();
+      searchAudioRef.current.currentTime = 0;
+      searchAudioRef.current = null;
+    }
+  }, []);
+
+  const startSearchAudio = useCallback(async () => {
+    if (typeof window === "undefined") return;
+    if (searchAudioRef.current) return;
+
+    try {
+      const audio = new Audio(looksmaxxingTrack);
+      audio.loop = true;
+      audio.volume = 0.001;
+      searchAudioRef.current = audio;
+      await audio.play();
+
+      let currentVolume = 0.001;
+      searchAudioFadeRef.current = window.setInterval(() => {
+        if (!searchAudioRef.current) return;
+        currentVolume = Math.min(0.18, currentVolume + 0.016);
+        searchAudioRef.current.volume = currentVolume;
+        if (currentVolume >= 0.18 && searchAudioFadeRef.current) {
+          window.clearInterval(searchAudioFadeRef.current);
+          searchAudioFadeRef.current = null;
+        }
+      }, 90);
+    } catch {
+      stopSearchAudio();
+    }
+  }, [stopSearchAudio]);
 
   const extractUsersFromMatch = useCallback((payload: Record<string, unknown>) => {
     const match = (payload.match as Record<string, unknown> | undefined) ?? payload;
@@ -3085,6 +3129,14 @@ function DuelModal({
   }, [accessToken, queueRunKey, extractPhase, isTerminalPhase]);
 
   useEffect(() => {
+    if (isQueueScreen && searchSoundEnabled) {
+      void startSearchAudio();
+      return;
+    }
+    stopSearchAudio();
+  }, [isQueueScreen, searchSoundEnabled, startSearchAudio, stopSearchAudio]);
+
+  useEffect(() => {
     if (!accessToken || !matchID) return;
     const controller = new AbortController();
     let mounted = true;
@@ -3267,6 +3319,12 @@ function DuelModal({
     return () => window.clearInterval(id);
   }, [accessToken, matchID, phase, captureFrame]);
 
+  useEffect(() => {
+    return () => {
+      stopSearchAudio();
+    };
+  }, [stopSearchAudio]);
+
   return (
     <div
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/72 p-4 backdrop-blur-sm"
@@ -3295,6 +3353,20 @@ function DuelModal({
         <div className="p-5">
           {isQueueScreen ? (
             <div className="flex min-h-[72vh] flex-col items-center justify-center border border-zinc-800 bg-black/80 px-6 text-center">
+              <div className="absolute right-10 top-10">
+                <button
+                  type="button"
+                  onClick={() => setSearchSoundEnabled((current) => !current)}
+                  className="inline-flex h-10 items-center gap-2 border border-zinc-800 bg-zinc-950 px-3 text-[10px] font-semibold uppercase tracking-[0.14em] text-zinc-300 transition-colors hover:border-purple-400 hover:text-white"
+                >
+                  {searchSoundEnabled ? (
+                    <Volume2 className="h-3.5 w-3.5" aria-hidden="true" />
+                  ) : (
+                    <VolumeX className="h-3.5 w-3.5" aria-hidden="true" />
+                  )}
+                  {searchSoundEnabled ? "Sound On" : "Sound Off"}
+                </button>
+              </div>
               <div className="text-[10px] font-semibold uppercase tracking-[0.18em] text-zinc-600">
                 Matchmaking
               </div>
