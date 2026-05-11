@@ -23,10 +23,12 @@ export type VerificationStartResponse = {
 const API_BASE = import.meta.env.VITE_API_BASE_URL ?? "";
 const STORAGE_KEY = "chadchat_auth_tokens_v1";
 
-function getMessage(payload: unknown, fallback: string) {
+function getMessage(payload: unknown, status: number, fallback: string) {
+  if (status === 429) return "Слишком много запросов, попробуйте позже";
   if (!payload || typeof payload !== "object") return fallback;
   const p = payload as Record<string, unknown>;
   const raw = p.message ?? p.error ?? p.detail;
+  if (raw === "rate_limited") return "Слишком много запросов, попробуйте позже";
   return typeof raw === "string" && raw.trim() ? raw : fallback;
 }
 
@@ -43,7 +45,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   }
 
   if (!response.ok) {
-    throw new Error(getMessage(payload, `Request failed: ${response.status}`));
+    throw new Error(getMessage(payload, response.status, `Request failed: ${response.status}`));
   }
 
   return payload as T;

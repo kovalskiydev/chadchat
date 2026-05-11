@@ -2824,8 +2824,9 @@ function DuelModal({
       if (!frame) return;
       try {
         await duelScoreFrame(accessToken, matchID, frame);
-      } catch {
-        // ignore frame errors
+        setError(null);
+      } catch (error) {
+        setError(error instanceof Error ? error.message : "Frame upload failed");
       }
     }, 1000);
     return () => window.clearInterval(id);
@@ -3198,12 +3199,18 @@ function TestLabModal({
       return false;
     }
     setError(null);
-    const result = await scanTestLabSession(
-      accessToken,
-      roomID,
-      activeSessionID,
-      imageBase64,
-    );
+    let result;
+    try {
+      result = await scanTestLabSession(
+        accessToken,
+        roomID,
+        activeSessionID,
+        imageBase64,
+      );
+    } catch (error) {
+      setError(error instanceof Error ? error.message : "Session scan failed");
+      return false;
+    }
     if (typeof result.last_score === "number") {
       setLastScore(result.last_score);
       setBestScore((current) =>
