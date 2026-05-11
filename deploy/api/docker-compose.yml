@@ -117,6 +117,25 @@ services:
     expose:
       - "8085"
 
+  rating-service:
+    image: ${RATING_SERVICE_IMAGE:-chadchat/rating-service:latest}
+    build:
+      context: ../../backend
+      dockerfile: Dockerfile
+      args:
+        SERVICE_PATH: ./cmd/rating-service
+    restart: unless-stopped
+    environment:
+      MYSQL_DSN: ${MYSQL_DSN}
+      PORT: 8086
+      AUTH_SERVICE_URL: http://auth-service:8081
+      RATING_INTERNAL_SECRET: ${RATING_INTERNAL_SECRET}
+    depends_on:
+      - mysql
+      - auth-service
+    expose:
+      - "8086"
+
   api-gateway:
     image: ${API_GATEWAY_IMAGE:-chadchat/api-gateway:latest}
     build:
@@ -133,6 +152,7 @@ services:
       TEST_LAB_SERVICE_URL: ${TEST_LAB_SERVICE_URL:-http://test-lab-service:8083}
       LIVE_CHAT_SERVICE_URL: ${LIVE_CHAT_SERVICE_URL:-http://live-chat-service:8084}
       DUEL_SERVICE_URL: ${DUEL_SERVICE_URL:-http://duel-service:8085}
+      RATING_SERVICE_URL: ${RATING_SERVICE_URL:-http://rating-service:8086}
       ML_SERVICE_URL: ${ML_SERVICE_URL:-http://ml-service:8090}
     depends_on:
       - auth-service
@@ -140,6 +160,7 @@ services:
       - test-lab-service
       - live-chat-service
       - duel-service
+      - rating-service
     ports:
       - "${API_PUBLIC_PORT:-8080}:8080"
 

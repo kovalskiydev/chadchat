@@ -124,6 +124,11 @@ jobs:
             dockerfile: ./backend/Dockerfile
             build_args: |
               SERVICE_PATH=./cmd/duel-service
+          - image_name: rating-service
+            context: ./backend
+            dockerfile: ./backend/Dockerfile
+            build_args: |
+              SERVICE_PATH=./cmd/rating-service
           - image_name: ml-service
             context: ./ml
             dockerfile: ./ml/Dockerfile
@@ -206,6 +211,7 @@ jobs:
             AUTH_ACCESS_TOKEN_SECRET=${{ secrets.PROD_AUTH_ACCESS_TOKEN_SECRET }}
             AUTH_REFRESH_TOKEN_SECRET=${{ secrets.PROD_AUTH_REFRESH_TOKEN_SECRET }}
             VERIFICATION_INTERNAL_SECRET=${{ secrets.PROD_VERIFICATION_INTERNAL_SECRET }}
+            RATING_INTERNAL_SECRET=${{ secrets.PROD_RATING_INTERNAL_SECRET }}
             MYSQL_DATABASE=chadchat
             MYSQL_USER=app
             MYSQL_PASSWORD=${{ secrets.PROD_MYSQL_PASSWORD }}
@@ -217,6 +223,7 @@ jobs:
             TEST_LAB_SERVICE_IMAGE=${{ env.REGISTRY }}/${OWNER_LC}/chadchat-test-lab-service:main
             LIVE_CHAT_SERVICE_IMAGE=${{ env.REGISTRY }}/${OWNER_LC}/chadchat-live-chat-service:main
             DUEL_SERVICE_IMAGE=${{ env.REGISTRY }}/${OWNER_LC}/chadchat-duel-service:main
+            RATING_SERVICE_IMAGE=${{ env.REGISTRY }}/${OWNER_LC}/chadchat-rating-service:main
             ML_SERVICE_IMAGE=${{ env.REGISTRY }}/${OWNER_LC}/chadchat-ml-service:main
             EOF
             echo "${{ secrets.GHCR_TOKEN }}" | docker login ${{ env.REGISTRY }} -u "${{ secrets.GHCR_USERNAME }}" --password-stdin
