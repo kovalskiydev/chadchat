@@ -65,30 +65,16 @@ import {
   duelStream,
 } from "@/lib/duel";
 import { getApiHealth } from "@/lib/health";
+import {
+  getLeaderboard,
+  getMyRating,
+  type LeaderboardEntry,
+  type RatingProfile,
+} from "@/lib/rating";
 
 const magicBlockClass =
   "magic-bento-card magic-bento-wire magic-bento-card--border-glow";
 const magicGlow = "132, 0, 255";
-const topPlayers = [
-  { rank: "TRUE ADAM", user: "ADONIS", rating: 2814 },
-  { rank: "CHAD", user: "VANTAGE", rating: 2640 },
-  { rank: "CHADLITE", user: "MIRROR", rating: 2388 },
-  { rank: "HTN", user: "RIFT", rating: 2149 },
-  { rank: "LTN", user: "KANE", rating: 1875 },
-  { rank: "SUB5", user: "VOIDMAX", rating: 1420 },
-  { rank: "TRUE ADAM", user: "APEX", rating: 2792 },
-  { rank: "CHAD", user: "DANTE", rating: 2581 },
-  { rank: "CHADLITE", user: "HEX", rating: 2310 },
-  { rank: "HTN", user: "NX-09", rating: 2066 },
-  { rank: "LTN", user: "BLUR", rating: 1784 },
-  { rank: "SUB5", user: "NULL", rating: 1318 },
-  { rank: "CHAD", user: "SPECTER", rating: 2504 },
-  { rank: "CHADLITE", user: "KOVEN", rating: 2268 },
-  { rank: "HTN", user: "DRIFT", rating: 1992 },
-  { rank: "LTN", user: "VEX", rating: 1695 },
-  { rank: "SUB5", user: "NOFACE", rating: 1206 },
-  { rank: "SUB5", user: "LOWTIER", rating: 1094 },
-];
 const leaderboardPageSize = 6;
 const auraBalance = 12840;
 const currentStats = {
@@ -224,6 +210,84 @@ function getAvatarInitials(user: string) {
     .replace(/[^a-z0-9]/gi, "")
     .slice(0, 2)
     .toUpperCase();
+}
+
+function formatRankLabel(rank?: string | null) {
+  const normalized = (rank ?? "").toLowerCase();
+  switch (normalized) {
+    case "subhuman":
+      return "SUBHUMAN";
+    case "subfive":
+      return "SUB5";
+    case "ltn":
+      return "LTN";
+    case "mtn":
+      return "MTN";
+    case "htn":
+      return "HTN";
+    case "chadlite":
+      return "CHADLITE";
+    case "chad":
+      return "CHAD";
+    case "trueadam":
+      return "TRUE ADAM";
+    default:
+      return rank ? rank.toUpperCase() : "UNRANKED";
+  }
+}
+
+function buildStatsSnapshot(ratingProfile: RatingProfile | null) {
+  const fallbackProgress = Math.round(
+    ((currentStats.rating - currentStats.rankFloor) /
+      (currentStats.nextRankRating - currentStats.rankFloor)) *
+      100,
+  );
+
+  if (!ratingProfile) {
+    return {
+      ...currentStats,
+      progressPercent: fallbackProgress,
+    };
+  }
+
+  const rankFloor = ratingProfile.rank_floor ?? currentStats.rankFloor;
+  const nextRankRating = ratingProfile.next_rank_rating ?? currentStats.nextRankRating;
+  const progressPercent =
+    ratingProfile.progress_percent ??
+    Math.round(
+      ((ratingProfile.rating - rankFloor) / Math.max(1, nextRankRating - rankFloor)) * 100,
+    );
+
+  return {
+    ...currentStats,
+    rank: formatRankLabel(ratingProfile.rank),
+    nextRank: formatRankLabel(ratingProfile.next_rank),
+    rating: ratingProfile.rating,
+    rankFloor,
+    nextRankRating,
+    peakRating: ratingProfile.peak_rating,
+    progressPercent,
+  };
+}
+
+function buildPeriodStats(statsSnapshot: ReturnType<typeof buildStatsSnapshot>) {
+  return {
+    today: {
+      ...statsByPeriod.today,
+      rating: statsSnapshot.rating,
+      peakRating: statsSnapshot.peakRating,
+    },
+    week: {
+      ...statsByPeriod.week,
+      rating: statsSnapshot.rating,
+      peakRating: statsSnapshot.peakRating,
+    },
+    season: {
+      ...statsByPeriod.season,
+      rating: statsSnapshot.rating,
+      peakRating: statsSnapshot.peakRating,
+    },
+  };
 }
 
 function getAvatarClass(user: string) {
@@ -472,13 +536,15 @@ function MagicButton({
   );
 }
 
-function StatsPanel({ onOpenDetails }: { onOpenDetails: () => void }) {
-  const progress = Math.round(
-    ((currentStats.rating - currentStats.rankFloor) /
-      (currentStats.nextRankRating - currentStats.rankFloor)) *
-      100,
-  );
-  const remaining = currentStats.nextRankRating - currentStats.rating;
+function StatsPanel({
+  onOpenDetails,
+  stats,
+}: {
+  onOpenDetails: () => void;
+  stats: ReturnType<typeof buildStatsSnapshot>;
+}) {
+  const progress = Math.max(0, Math.min(100, stats.progressPercent));
+  const remaining = Math.max(0, stats.nextRankRating - stats.rating);
 
   return (
     <div className="flex h-full flex-col justify-between border border-border bg-zinc-950/80 p-3 text-left sm:p-4">
@@ -497,10 +563,10 @@ function StatsPanel({ onOpenDetails }: { onOpenDetails: () => void }) {
         <span
           className={cn(
             "border px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.12em]",
-            getRankClass(currentStats.rank),
+            getRankClass(stats.rank),
           )}
         >
-          {currentStats.rank}
+          {stats.rank}
         </span>
       </div>
 
@@ -510,14 +576,14 @@ function StatsPanel({ onOpenDetails }: { onOpenDetails: () => void }) {
             Current Rating
           </div>
           <div className="mt-1 text-3xl font-black tabular-nums text-zinc-100">
-            {currentStats.rating}
+            {stats.rating}
           </div>
         </div>
 
         <div>
           <div className="mb-2 flex items-center justify-between gap-3">
             <span className="text-[10px] font-semibold uppercase tracking-[0.14em] text-zinc-500">
-              Progress to {currentStats.nextRank}
+              Progress to {stats.nextRank}
             </span>
             <span className="text-[10px] font-semibold tabular-nums text-purple-200">
               {progress}%
@@ -541,7 +607,7 @@ function StatsPanel({ onOpenDetails }: { onOpenDetails: () => void }) {
             Wins
           </div>
           <div className="mt-1 text-base font-black tabular-nums text-zinc-100">
-            {currentStats.wins}
+            {stats.wins}
           </div>
         </div>
         <div className="border border-zinc-900 bg-black/70 p-2.5">
@@ -549,7 +615,7 @@ function StatsPanel({ onOpenDetails }: { onOpenDetails: () => void }) {
             Streak
           </div>
           <div className="mt-1 text-base font-black tabular-nums text-zinc-100">
-            +{currentStats.streak}
+            +{stats.streak}
           </div>
         </div>
         <button
@@ -564,15 +630,18 @@ function StatsPanel({ onOpenDetails }: { onOpenDetails: () => void }) {
   );
 }
 
-function StatsModal({ onClose }: { onClose: () => void }) {
+function StatsModal({
+  onClose,
+  stats,
+}: {
+  onClose: () => void;
+  stats: ReturnType<typeof buildStatsSnapshot>;
+}) {
   const [period, setPeriod] = useState<StatsPeriod>("today");
-  const periodStats = statsByPeriod[period];
-  const progress = Math.round(
-    ((periodStats.rating - currentStats.rankFloor) /
-      (currentStats.nextRankRating - currentStats.rankFloor)) *
-      100,
-  );
-  const remaining = currentStats.nextRankRating - periodStats.rating;
+  const periodStatsMap = buildPeriodStats(stats);
+  const periodStats = periodStatsMap[period];
+  const progress = Math.max(0, Math.min(100, stats.progressPercent));
+  const remaining = Math.max(0, stats.nextRankRating - periodStats.rating);
   const metrics = [
     { label: "Peak Rating", value: periodStats.peakRating, trend: periodStats.peakTrend },
     { label: "Matches", value: periodStats.matches, trend: periodStats.matchesTrend },
@@ -655,13 +724,13 @@ function StatsModal({ onClose }: { onClose: () => void }) {
                 <span
                   className={cn(
                     "border px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.12em]",
-                    getRankClass(currentStats.rank),
+                    getRankClass(stats.rank),
                   )}
                 >
-                  {currentStats.rank}
+                  {stats.rank}
                 </span>
                 <span className="text-[10px] uppercase tracking-[0.14em] text-zinc-600">
-                  Next: {currentStats.nextRank}
+                  Next: {stats.nextRank}
                 </span>
               </div>
               <div className="text-5xl font-black tabular-nums text-zinc-100">
@@ -679,7 +748,7 @@ function StatsModal({ onClose }: { onClose: () => void }) {
                   />
                 </div>
                 <div className="mt-2 text-[10px] uppercase tracking-[0.12em] text-zinc-600">
-                  {remaining} rating left to {currentStats.nextRank}
+                  {remaining} rating left to {stats.nextRank}
                 </div>
               </div>
             </div>
@@ -2050,8 +2119,14 @@ function getRankClass(rank: string) {
       return "border-sky-400/55 bg-sky-500/10 text-sky-200";
     case "HTN":
       return "border-emerald-400/55 bg-emerald-500/10 text-emerald-200";
+    case "MTN":
+      return "border-cyan-300/55 bg-cyan-500/10 text-cyan-200";
     case "LTN":
       return "border-yellow-400/55 bg-yellow-500/10 text-yellow-200";
+    case "SUB5":
+      return "border-orange-400/55 bg-orange-500/10 text-orange-200";
+    case "SUBHUMAN":
+      return "border-zinc-500/55 bg-zinc-800/70 text-zinc-200";
     default:
       return "border-zinc-600 bg-zinc-800/50 text-zinc-300";
   }
@@ -2097,9 +2172,15 @@ function getTopGradientColors(position: number) {
   return ["#e4e4e7", "#a1a1aa", "#f4f4f5"];
 }
 
-function TopsLeaderboard() {
+function TopsLeaderboard({
+  entries,
+  loading,
+}: {
+  entries: LeaderboardEntry[];
+  loading: boolean;
+}) {
   const [page, setPage] = useState(0);
-  const sortedPlayers = [...topPlayers].sort((a, b) => b.rating - a.rating);
+  const sortedPlayers = [...entries].sort((a, b) => b.rating - a.rating);
   const pageCount = Math.ceil(sortedPlayers.length / leaderboardPageSize);
   const pagePlayers = sortedPlayers.slice(
     page * leaderboardPageSize,
@@ -2111,13 +2192,23 @@ function TopsLeaderboard() {
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto overscroll-contain p-4">
+        {loading && (
+          <div className="border border-zinc-800 bg-black/60 p-3 text-[10px] font-semibold uppercase tracking-[0.12em] text-zinc-500">
+            Loading leaderboard...
+          </div>
+        )}
+        {!loading && pagePlayers.length === 0 && (
+          <div className="border border-zinc-800 bg-black/60 p-3 text-[10px] font-semibold uppercase tracking-[0.12em] text-zinc-500">
+            No leaderboard data yet.
+          </div>
+        )}
         {pagePlayers.map((player, index) => {
           const position = page * leaderboardPageSize + index + 1;
 
           return (
             <div
               className={cn("relative overflow-hidden border p-3", getTopClass(position))}
-              key={`${player.user}-${player.rating}`}
+              key={`${player.user_id}-${player.rating}`}
             >
               <span
                 className={cn(
@@ -2126,7 +2217,7 @@ function TopsLeaderboard() {
                 )}
               />
               <div className="grid grid-cols-[40px_1fr_auto] items-center gap-3">
-                <PositionAvatar position={position} user={player.user} />
+                <PositionAvatar position={position} user={player.nickname} />
                 <div className="min-w-0">
                   {position <= 3 ? (
                     <GradientText
@@ -2135,20 +2226,20 @@ function TopsLeaderboard() {
                       showBorder={false}
                       className="justify-start text-xs font-black uppercase tracking-[0.14em]"
                     >
-                      <span className="truncate">{player.user}</span>
+                      <span className="truncate">{player.nickname}</span>
                     </GradientText>
                   ) : (
                     <div className="truncate text-xs font-black uppercase tracking-[0.14em] text-zinc-200">
-                      {player.user}
+                      {player.nickname}
                     </div>
                   )}
                   <div
                     className={cn(
                       "mt-2 inline-flex border px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.12em]",
-                      getRankClass(player.rank),
+                      getRankClass(formatRankLabel(player.rank)),
                     )}
                   >
-                    {player.rank}
+                    {formatRankLabel(player.rank)}
                   </div>
                 </div>
                 <div className="text-right">
@@ -3920,6 +4011,9 @@ export default function App() {
   const [verifiedPurpose, setVerifiedPurpose] = useState<
     "register" | "anonymous" | null
   >(null);
+  const [ratingProfile, setRatingProfile] = useState<RatingProfile | null>(null);
+  const [leaderboardEntries, setLeaderboardEntries] = useState<LeaderboardEntry[]>([]);
+  const [leaderboardLoading, setLeaderboardLoading] = useState(false);
   const [backendDownMessage, setBackendDownMessage] = useState<string | null>(null);
   const [legalModal, setLegalModal] = useState<"rules" | "privacy" | null>(null);
   const [showEntryChoice, setShowEntryChoice] = useState(false);
@@ -3940,6 +4034,7 @@ export default function App() {
   const currentNickname =
     (me?.nickname && String(me.nickname)) ||
     (isAnonymousUser ? "ANONYMOUS" : "GUEST");
+  const statsSnapshot = buildStatsSnapshot(ratingProfile);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -4029,6 +4124,43 @@ export default function App() {
       cancelled = true;
     };
   }, []);
+
+  useEffect(() => {
+    if (!tokens?.accessToken) {
+      setRatingProfile(null);
+      setLeaderboardEntries([]);
+      setLeaderboardLoading(false);
+      return;
+    }
+
+    let cancelled = false;
+
+    const loadRatingData = async () => {
+      setLeaderboardLoading(true);
+      try {
+        const [myRating, leaderboard] = await Promise.all([
+          getMyRating(tokens.accessToken),
+          getLeaderboard(tokens.accessToken, 20),
+        ]);
+        if (cancelled) return;
+        setRatingProfile(myRating);
+        setLeaderboardEntries(leaderboard);
+      } catch {
+        if (cancelled) return;
+        setRatingProfile(null);
+        setLeaderboardEntries([]);
+      } finally {
+        if (!cancelled) {
+          setLeaderboardLoading(false);
+        }
+      }
+    };
+
+    void loadRatingData();
+    return () => {
+      cancelled = true;
+    };
+  }, [tokens?.accessToken]);
 
   useEffect(() => {
     if (!isStatsOpen && !isCustomizeOpen && !isStartModesOpen && !isTestLabOpen && !isDuelOpen && !isAuthOpen) return;
@@ -4235,6 +4367,8 @@ export default function App() {
       saveTokens(null);
       setTokens(null);
       setMe(null);
+      setRatingProfile(null);
+      setLeaderboardEntries([]);
       setShowEntryChoice(true);
       setAuthMode("login");
       setAuthNickname("");
@@ -4433,7 +4567,10 @@ export default function App() {
           >
             <section className="flex h-full min-h-0 flex-col justify-center gap-4 border border-border bg-black/82 p-4 sm:p-6">
               <MagicButton className="h-72 w-full sm:h-80">
-                <StatsPanel onOpenDetails={() => setIsStatsOpen(true)} />
+                <StatsPanel
+                  onOpenDetails={() => setIsStatsOpen(true)}
+                  stats={statsSnapshot}
+                />
               </MagicButton>
               <MagicButton className="h-20 w-full">
                 <Button
@@ -4468,11 +4605,19 @@ export default function App() {
           </ParticleCard>
 
           <Panel title="Tops" icon={<Trophy className="h-4 w-4" />}>
-            <TopsLeaderboard />
+            <TopsLeaderboard
+              entries={leaderboardEntries}
+              loading={leaderboardLoading}
+            />
           </Panel>
         </div>
       </div>
-      {isStatsOpen && <StatsModal onClose={() => setIsStatsOpen(false)} />}
+      {isStatsOpen && (
+        <StatsModal
+          onClose={() => setIsStatsOpen(false)}
+          stats={statsSnapshot}
+        />
+      )}
       {isCustomizeOpen && (
         <CustomizeModal
           chatCustomization={chatCustomization}
