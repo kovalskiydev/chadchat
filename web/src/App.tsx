@@ -2644,6 +2644,16 @@ function DuelModal({
   const [opponentUserId, setOpponentUserId] = useState<string | null>(null);
   const [myScore, setMyScore] = useState<number | null>(null);
   const [oppScore, setOppScore] = useState<number | null>(null);
+  const [resultSummary, setResultSummary] = useState<{
+    winnerId: string | null;
+    loserId: string | null;
+    reason: string | null;
+    myFinal: number | null;
+    oppFinal: number | null;
+    myNickname: string | null;
+    oppNickname: string | null;
+  } | null>(null);
+  const [queueRunKey, setQueueRunKey] = useState(0);
   const finishedRef = useRef(false);
 
   const pushDebug = useCallback((...args: unknown[]) => {
@@ -2675,6 +2685,38 @@ function DuelModal({
               : phase === "finished"
                 ? "Finished"
               : "Queue";
+  const phaseDescription =
+    phase === "pre_start"
+      ? "Camera check live. Scoring starts when the timer hits zero."
+      : phase === "scoring"
+        ? "Face the camera. Rating is being calculated right now."
+        : phase === "overtime"
+          ? "Close match. Extra time is active."
+          : phase === "result"
+            ? "Match complete. Final result is being prepared."
+            : phase === "post_chat"
+              ? "Short post-match window before the duel closes."
+              : phase === "finished"
+                ? "Duel finished."
+                : "Searching for an opponent.";
+  const stageSteps = [
+    { id: "pre_start", label: "Pre Start" },
+    { id: "scoring", label: "Scoring" },
+    { id: "overtime", label: "Overtime" },
+    { id: "finished", label: "Result" },
+  ];
+  const currentStepIndex =
+    phase === "pre_start"
+      ? 0
+      : phase === "scoring"
+        ? 1
+        : phase === "overtime"
+          ? 2
+          : phase === "result" || phase === "post_chat" || phase === "finished"
+            ? 3
+            : -1;
+  const isResultPhase =
+    phase === "result" || phase === "post_chat" || phase === "finished";
 
   const extractMatchRecord = useCallback((payload: Record<string, unknown>) => {
     return (payload.match as Record<string, unknown> | undefined) ?? payload;
@@ -2716,6 +2758,29 @@ function DuelModal({
         if (typeof opponentAvg === "number") setOppAvg(opponentAvg);
         if (typeof opponentScore === "number") setOppScore(opponentScore);
       }
+
+      const result = match.result as Record<string, unknown> | undefined;
+      if (result) {
+        setResultSummary({
+          winnerId: result.winner_id ? String(result.winner_id) : null,
+          loserId: result.loser_id ? String(result.loser_id) : null,
+          reason: result.reason ? String(result.reason) : null,
+          myFinal:
+            mine && typeof mine.final_avg === "number"
+              ? (mine.final_avg as number)
+              : mine && typeof mine.running_avg === "number"
+                ? (mine.running_avg as number)
+                : null,
+          oppFinal:
+            opponent && typeof opponent.final_avg === "number"
+              ? (opponent.final_avg as number)
+              : opponent && typeof opponent.running_avg === "number"
+                ? (opponent.running_avg as number)
+                : null,
+          myNickname: mine?.nickname ? String(mine.nickname) : null,
+          oppNickname: opponent?.nickname ? String(opponent.nickname) : null,
+        });
+      }
     }
 
     const directOpponent =
@@ -2728,6 +2793,27 @@ function DuelModal({
       setOpponentUserId(directOpponent);
     }
   }, [extractMatchRecord, extractPhase, myUserId]);
+
+  const resetMatchFlow = useCallback(() => {
+    finishedRef.current = false;
+    setQueueing(false);
+    setMatchID("");
+    setPhase("queue");
+    setSecondsLeft(null);
+    setMyAvg(null);
+    setOppAvg(null);
+    setMyScore(null);
+    setOppScore(null);
+    setOpponentUserId(null);
+    setResultSummary(null);
+    setStatus("Joining queue...");
+    setError(null);
+    remoteStreamRef.current = null;
+    if (remoteVideoRef.current) {
+      remoteVideoRef.current.srcObject = null;
+    }
+    setQueueRunKey((current) => current + 1);
+  }, []);
 
   const extractUsersFromMatch = useCallback((payload: Record<string, unknown>) => {
     const match = (payload.match as Record<string, unknown> | undefined) ?? payload;
@@ -2951,7 +3037,7 @@ function DuelModal({
         void duelQueueLeave(accessToken);
       }
     };
-  }, [accessToken]);
+  }, [accessToken, queueRunKey]);
 
   useEffect(() => {
     if (!accessToken || !matchID) return;
@@ -3254,11 +3340,36 @@ function DuelModal({
                 </div>
               </div>
 
+              <div className="absolute inset-x-6 top-6 z-20">
+                <div className="grid gap-2 sm:grid-cols-4">
+                  {stageSteps.map((step, index) => {
+                    const active = currentStepIndex === index;
+                    const complete = currentStepIndex > index;
+                    return (
+                      <div
+                        key={step.id}
+                        className={cn(
+                          "border px-3 py-2 text-center text-[10px] font-semibold uppercase tracking-[0.14em] backdrop-blur-sm",
+                          active && "border-purple-400/60 bg-purple-950/55 text-purple-100",
+                          complete && "border-emerald-400/35 bg-emerald-950/30 text-emerald-200",
+                          !active && !complete && "border-zinc-800 bg-black/70 text-zinc-500",
+                        )}
+                      >
+                        {step.label}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+
               <div className="absolute inset-x-6 bottom-6 z-20">
                 <div className="border border-zinc-800 bg-black/78 px-4 py-3 backdrop-blur-sm">
                   <div className="mb-2 flex items-center justify-between gap-4 text-[10px] font-semibold uppercase tracking-[0.14em] text-zinc-500">
                     <span>{status || "Live Match"}</span>
                     <span className="text-purple-200">{secondsLeft ?? 0}s</span>
+                  </div>
+                  <div className="mb-3 text-[11px] uppercase tracking-[0.1em] text-zinc-400">
+                    {phaseDescription}
                   </div>
                   <div className="h-2 overflow-hidden bg-zinc-900">
                     <div
@@ -3273,6 +3384,65 @@ function DuelModal({
                   </div>
                 )}
               </div>
+
+              {isResultPhase && resultSummary && (
+                <div className="absolute inset-0 z-30 flex items-center justify-center bg-black/62 p-6 backdrop-blur-sm">
+                  <div className="w-full max-w-xl border border-purple-500/35 bg-zinc-950/96 p-6 text-center shadow-[0_0_40px_rgba(132,0,255,0.22)]">
+                    <div className="text-[10px] font-semibold uppercase tracking-[0.18em] text-zinc-600">
+                      Match Result
+                    </div>
+                    <div className="mt-4 text-3xl font-black uppercase tracking-[0.14em] text-zinc-100">
+                      {resultSummary.winnerId && myUserId && resultSummary.winnerId === myUserId
+                        ? "Victory"
+                        : resultSummary.winnerId
+                          ? "Defeat"
+                          : "Finished"}
+                    </div>
+                    <div className="mt-3 text-xs uppercase tracking-[0.12em] text-zinc-500">
+                      {resultSummary.reason ? `Reason: ${resultSummary.reason}` : "Final scores"}
+                    </div>
+
+                    <div className="mt-6 grid gap-3 sm:grid-cols-[1fr_auto_1fr] sm:items-center">
+                      <div className="border border-zinc-800 bg-black/70 p-4">
+                        <div className="text-[10px] uppercase tracking-[0.12em] text-zinc-600">
+                          {resultSummary.myNickname ?? "You"}
+                        </div>
+                        <div className="mt-2 text-2xl font-black tabular-nums text-zinc-100">
+                          {formatScoreOutOfTen(resultSummary.myFinal)}
+                        </div>
+                      </div>
+                      <div className="text-lg font-black uppercase tracking-[0.16em] text-purple-200">
+                        VS
+                      </div>
+                      <div className="border border-zinc-800 bg-black/70 p-4">
+                        <div className="text-[10px] uppercase tracking-[0.12em] text-zinc-600">
+                          {resultSummary.oppNickname ?? "Opponent"}
+                        </div>
+                        <div className="mt-2 text-2xl font-black tabular-nums text-zinc-100">
+                          {formatScoreOutOfTen(resultSummary.oppFinal)}
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="mt-6 grid gap-2 sm:grid-cols-2">
+                      <button
+                        type="button"
+                        onClick={resetMatchFlow}
+                        className="inline-flex h-11 items-center justify-center border border-purple-500/50 bg-purple-950/35 px-4 text-[10px] font-semibold uppercase tracking-[0.14em] text-purple-100 transition-colors hover:border-purple-300 hover:text-white"
+                      >
+                        Find Another Match
+                      </button>
+                      <button
+                        type="button"
+                        onClick={onClose}
+                        className="inline-flex h-11 items-center justify-center border border-zinc-800 bg-black/70 px-4 text-[10px] font-semibold uppercase tracking-[0.14em] text-zinc-400 transition-colors hover:border-zinc-600 hover:text-zinc-200"
+                      >
+                        Close
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
             </div>
           )}
         </div>
