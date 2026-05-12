@@ -2912,8 +2912,7 @@ function DuelModal({
   const [phaseFlash, setPhaseFlash] = useState(false);
   const finishedRef = useRef(false);
   const resultRevealMatchRef = useRef<string | null>(null);
-  const lastPhaseCueRef = useRef<string | null>(null);
-  const lastCountdownCueRef = useRef<number | null>(null);
+  const lastPhaseRef = useRef<string | null>(null);
 
   const pushDebug = useCallback((...args: unknown[]) => {
     void args;
@@ -2953,22 +2952,6 @@ function DuelModal({
               : phase === "finished"
                 ? "Finished"
               : "Queue";
-  const phaseDescription =
-    phase === "awaiting_media"
-      ? "Waiting for both cameras."
-    : phase === "pre_start"
-      ? "Get ready."
-      : phase === "scoring"
-        ? "Scoring."
-        : phase === "overtime"
-          ? "Close match. Extra time is active."
-          : phase === "result"
-            ? "Match complete. Final result is being prepared."
-            : phase === "post_chat"
-              ? "Post chat."
-              : phase === "finished"
-                ? "Duel finished."
-              : "Searching for an opponent.";
   const phaseToneClass =
     phase === "awaiting_media"
       ? "border-sky-400/40 bg-sky-950/25 text-sky-200"
@@ -2993,22 +2976,6 @@ function DuelModal({
             : phase === "result" || phase === "post_chat" || phase === "finished"
               ? "FINAL JUDGMENT"
               : "QUEUE ACTIVE";
-  const stageSteps = [
-    { id: "awaiting_media", label: "Media" },
-    { id: "pre_start", label: "Pre Start" },
-    { id: "scoring", label: "Scoring" },
-    { id: "finished", label: "Result" },
-  ];
-  const currentStepIndex =
-    phase === "awaiting_media"
-      ? 0
-      : phase === "pre_start"
-        ? 1
-        : phase === "scoring" || phase === "overtime"
-          ? 2
-          : phase === "result" || phase === "post_chat" || phase === "finished"
-            ? 3
-            : -1;
   const isResultPhase =
     phase === "result" || phase === "post_chat" || phase === "finished";
   const hasResultSummary = Boolean(resultSummary);
@@ -3112,49 +3079,6 @@ function DuelModal({
     }
   }, []);
 
-  const playDuelCue = useCallback(
-    (kind: "tick" | "lock" | "start" | "overtime" | "result") => {
-      const audioContext = ensureDuelAudioContext();
-      if (!audioContext) return;
-      if (audioContext.state === "suspended") {
-        void audioContext.resume().catch(() => {});
-      }
-
-      const now = audioContext.currentTime;
-      const gain = audioContext.createGain();
-      gain.gain.setValueAtTime(0.0001, now);
-      gain.gain.exponentialRampToValueAtTime(
-        kind === "result" ? 0.18 : 0.09,
-        now + 0.015,
-      );
-      gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.18);
-      gain.connect(audioContext.destination);
-
-      const osc = audioContext.createOscillator();
-      osc.type = kind === "overtime" ? "sawtooth" : "square";
-      osc.frequency.setValueAtTime(
-        kind === "tick"
-          ? 720
-          : kind === "lock"
-            ? 440
-            : kind === "start"
-              ? 96
-              : kind === "overtime"
-                ? 180
-                : 260,
-        now,
-      );
-      osc.frequency.exponentialRampToValueAtTime(
-        kind === "start" ? 56 : kind === "result" ? 92 : 320,
-        now + 0.16,
-      );
-      osc.connect(gain);
-      osc.start(now);
-      osc.stop(now + 0.2);
-    },
-    [ensureDuelAudioContext],
-  );
-
   const applyMatchSnapshot = useCallback((payload: Record<string, unknown>) => {
     const match = extractMatchRecord(payload);
     const nextPhase = extractPhase(payload) ?? extractPhase(match);
@@ -3249,8 +3173,7 @@ function DuelModal({
     stopResultSound();
     finishedRef.current = false;
     resultRevealMatchRef.current = null;
-    lastPhaseCueRef.current = null;
-    lastCountdownCueRef.current = null;
+    lastPhaseRef.current = null;
     mediaReadySentRef.current = false;
     setQueueing(false);
     setMatchID("");
@@ -3322,7 +3245,7 @@ function DuelModal({
     const storedEnabled = window.localStorage.getItem(DUEL_SOUND_ENABLED_KEY);
     const storedVolume = window.localStorage.getItem(DUEL_SOUND_VOLUME_KEY);
     if (storedEnabled !== null) {
-    setSearchSoundEnabled(storedEnabled === "1");
+      setSearchSoundEnabled(storedEnabled === "1");
     }
     if (storedVolume !== null) {
       const parsed = Number(storedVolume);
@@ -3360,24 +3283,12 @@ function DuelModal({
   }, [oppScore]);
 
   useEffect(() => {
-    if (phase === "queue" || lastPhaseCueRef.current === phase) return;
-    lastPhaseCueRef.current = phase;
+    if (phase === "queue" || lastPhaseRef.current === phase) return;
+    lastPhaseRef.current = phase;
     setPhaseFlash(true);
     const timer = window.setTimeout(() => setPhaseFlash(false), 540);
-    if (phase === "pre_start") playDuelCue("lock");
-    if (phase === "scoring") playDuelCue("start");
-    if (phase === "overtime") playDuelCue("overtime");
-    if (phase === "result" || phase === "finished") playDuelCue("result");
     return () => window.clearTimeout(timer);
-  }, [phase, playDuelCue]);
-
-  useEffect(() => {
-    if (phase !== "pre_start" || typeof secondsLeft !== "number") return;
-    if (secondsLeft > 3 || secondsLeft < 1) return;
-    if (lastCountdownCueRef.current === secondsLeft) return;
-    lastCountdownCueRef.current = secondsLeft;
-    playDuelCue("tick");
-  }, [phase, playDuelCue, secondsLeft]);
+  }, [phase]);
 
   const extractUsersFromMatch = useCallback((payload: Record<string, unknown>) => {
     const match = (payload.match as Record<string, unknown> | undefined) ?? payload;
@@ -3874,14 +3785,14 @@ function DuelModal({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/72 p-4 backdrop-blur-sm"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/72 p-2 backdrop-blur-sm sm:p-3"
       role="dialog"
       aria-modal="true"
       aria-labelledby="duel-title"
       onMouseDown={onClose}
     >
       <div
-        className="w-full max-w-6xl border border-purple-500/35 bg-zinc-950 shadow-[0_0_40px_rgba(132,0,255,0.22)]"
+        className="flex max-h-[96vh] w-full max-w-[1680px] flex-col border border-purple-500/35 bg-zinc-950 shadow-[0_0_40px_rgba(132,0,255,0.22)]"
         onMouseDown={(event) => event.stopPropagation()}
       >
         <div className="flex items-center justify-between border-b border-border px-5 py-4">
@@ -3900,7 +3811,7 @@ function DuelModal({
             <X className="h-4 w-4" aria-hidden="true" />
           </button>
         </div>
-        <div className="p-5">
+        <div className="min-h-0 flex-1 overflow-y-auto p-3 sm:p-5">
           {isQueueScreen ? (
             <div className="flex min-h-[72vh] flex-col items-center justify-center border border-zinc-800 bg-black/80 px-6 text-center">
               <div className="text-[10px] font-semibold uppercase tracking-[0.18em] text-zinc-600">
@@ -3975,7 +3886,7 @@ function DuelModal({
           ) : (
             <div
               className={cn(
-                "relative grid min-h-[72vh] gap-3 overflow-hidden border bg-black p-3 lg:grid-cols-2",
+                "relative grid min-h-[78vh] gap-3 overflow-hidden border bg-black p-3 pb-28 lg:grid-cols-2 lg:pb-24",
                 phase === "awaiting_media" && "border-sky-500/35",
                 phase === "pre_start" && "border-purple-500/45",
                 phase === "scoring" && "border-red-500/55",
@@ -3987,7 +3898,7 @@ function DuelModal({
                 <div className="pointer-events-none absolute inset-0 z-40 bg-white/10 duel-flash" />
               )}
 
-              <div className="pointer-events-none absolute inset-x-4 top-4 z-30 grid gap-3 lg:grid-cols-[1fr_auto_1fr] lg:items-start">
+              <div className="z-30 grid gap-3 lg:col-span-2 lg:grid-cols-[1fr_auto_1fr] lg:items-start">
                 <div className="border border-purple-500/45 bg-zinc-950 px-4 py-2 shadow-[0_0_22px_rgba(168,85,247,0.18)]">
                   <div className="flex items-center justify-between gap-3">
                     <span className="text-[10px] font-black uppercase tracking-[0.16em] text-zinc-100">
@@ -4035,29 +3946,9 @@ function DuelModal({
                 </div>
               </div>
 
-              <div className="pointer-events-none absolute inset-x-6 top-[6.6rem] z-20 hidden grid-cols-4 gap-2 lg:grid">
-                {stageSteps.map((step, index) => {
-                  const active = currentStepIndex === index;
-                  const complete = currentStepIndex > index;
-                  return (
-                    <div
-                      key={step.id}
-                      className={cn(
-                        "border px-3 py-1.5 text-center text-[9px] font-black uppercase tracking-[0.14em]",
-                        active && phaseToneClass,
-                        complete && "border-emerald-400/35 bg-emerald-950/30 text-emerald-200",
-                        !active && !complete && "border-zinc-800 bg-zinc-950 text-zinc-600",
-                      )}
-                    >
-                      {step.label}
-                    </div>
-                  );
-                })}
-              </div>
-
               <div
                 className={cn(
-                  "group relative min-h-[520px] overflow-hidden border bg-black/90",
+                  "group relative min-h-[560px] overflow-hidden border bg-black/90",
                   myLeading && activeScoring
                     ? "border-emerald-300/80 shadow-[0_0_30px_rgba(110,231,183,0.18)]"
                     : "border-purple-500/45 shadow-[0_0_24px_rgba(168,85,247,0.12)]",
@@ -4078,20 +3969,13 @@ function DuelModal({
                     <div className="absolute inset-0 bg-[linear-gradient(rgba(255,255,255,0.035)_1px,transparent_1px)] bg-[length:100%_6px]" />
                   </div>
                 )}
-                {phase === "pre_start" && (
-                  <div className="pointer-events-none absolute inset-x-0 top-[34%] z-20 flex justify-center">
-                    <div className="border border-purple-400/65 bg-black/78 px-5 py-3 text-2xl font-black uppercase tracking-[0.2em] text-purple-100 shadow-[0_0_24px_rgba(168,85,247,0.34)]">
-                      FACE LOCK
-                    </div>
-                  </div>
-                )}
-                <div className="absolute bottom-5 left-5 border border-purple-500/55 bg-zinc-950 px-4 py-3 shadow-[0_0_24px_rgba(0,0,0,0.62)]">
+                <div className="absolute bottom-4 left-4 max-w-[calc(100%-2rem)] border border-purple-500/55 bg-zinc-950/95 px-4 py-3 shadow-[0_0_24px_rgba(0,0,0,0.62)]">
                   <div className="text-[10px] font-black uppercase tracking-[0.14em] text-purple-200">
                     Score
                   </div>
                   <div
                     className={cn(
-                      "mt-1 text-5xl font-black tabular-nums leading-none text-zinc-100 transition-transform duration-200",
+                      "mt-1 text-4xl font-black tabular-nums leading-none text-zinc-100 transition-transform duration-200 sm:text-5xl",
                       myScorePulse && "scale-110 text-purple-100",
                     )}
                   >
@@ -4100,20 +3984,6 @@ function DuelModal({
                   <div className="mt-2 text-[10px] font-semibold uppercase tracking-[0.12em] text-zinc-500">
                     Avg {myAvg === null ? "--" : `${(myAvg * 2).toFixed(1)}/10`}
                   </div>
-                  {activeScoring && (
-                    <div
-                      className={cn(
-                        "mt-2 border px-2 py-1 text-[9px] font-black uppercase tracking-[0.12em]",
-                        myLeading
-                          ? "border-emerald-400/45 bg-emerald-950/35 text-emerald-300"
-                          : oppLeading
-                            ? "border-red-400/45 bg-red-950/35 text-red-300"
-                            : "border-zinc-700 bg-black text-zinc-400",
-                      )}
-                    >
-                      {myLeading ? "DOMINATING" : oppLeading ? "UNDER PRESSURE" : "FACE CHECK"}
-                    </div>
-                  )}
                 </div>
                 {isResultPhase && resultSummary && !showFinalResult && myLost && (
                   <div className="pointer-events-none absolute inset-x-[12%] top-[30%] z-20 flex justify-center">
@@ -4126,7 +3996,7 @@ function DuelModal({
 
               <div
                 className={cn(
-                  "group relative min-h-[520px] overflow-hidden border bg-black/90",
+                  "group relative min-h-[560px] overflow-hidden border bg-black/90",
                   oppLeading && activeScoring
                     ? "border-emerald-300/80 shadow-[0_0_30px_rgba(110,231,183,0.18)]"
                     : "border-zinc-700 shadow-[0_0_24px_rgba(255,255,255,0.06)]",
@@ -4146,20 +4016,13 @@ function DuelModal({
                     <div className="absolute inset-0 bg-[linear-gradient(rgba(255,255,255,0.035)_1px,transparent_1px)] bg-[length:100%_6px]" />
                   </div>
                 )}
-                {phase === "pre_start" && (
-                  <div className="pointer-events-none absolute inset-x-0 top-[34%] z-20 flex justify-center">
-                    <div className="border border-purple-400/65 bg-black/78 px-5 py-3 text-2xl font-black uppercase tracking-[0.2em] text-purple-100 shadow-[0_0_24px_rgba(168,85,247,0.34)]">
-                      FACE LOCK
-                    </div>
-                  </div>
-                )}
-                <div className="absolute bottom-5 right-5 border border-zinc-600 bg-zinc-950 px-4 py-3 text-right shadow-[0_0_24px_rgba(0,0,0,0.62)]">
+                <div className="absolute bottom-4 right-4 max-w-[calc(100%-2rem)] border border-zinc-600 bg-zinc-950/95 px-4 py-3 text-right shadow-[0_0_24px_rgba(0,0,0,0.62)]">
                   <div className="text-[10px] font-black uppercase tracking-[0.14em] text-zinc-400">
                     Score
                   </div>
                   <div
                     className={cn(
-                      "mt-1 text-5xl font-black tabular-nums leading-none text-zinc-100 transition-transform duration-200",
+                      "mt-1 text-4xl font-black tabular-nums leading-none text-zinc-100 transition-transform duration-200 sm:text-5xl",
                       oppScorePulse && "scale-110 text-zinc-50",
                     )}
                   >
@@ -4168,20 +4031,6 @@ function DuelModal({
                   <div className="mt-2 text-[10px] font-semibold uppercase tracking-[0.12em] text-zinc-500">
                     Avg {oppAvg === null ? "--" : `${(oppAvg * 2).toFixed(1)}/10`}
                   </div>
-                  {activeScoring && (
-                    <div
-                      className={cn(
-                        "mt-2 border px-2 py-1 text-[9px] font-black uppercase tracking-[0.12em]",
-                        oppLeading
-                          ? "border-emerald-400/45 bg-emerald-950/35 text-emerald-300"
-                          : myLeading
-                            ? "border-red-400/45 bg-red-950/35 text-red-300"
-                            : "border-zinc-700 bg-black text-zinc-400",
-                      )}
-                    >
-                      {oppLeading ? "DOMINATING" : myLeading ? "UNDER PRESSURE" : "FACE CHECK"}
-                    </div>
-                  )}
                 </div>
                 {isResultPhase && resultSummary && !showFinalResult && opponentLost && (
                   <div className="pointer-events-none absolute inset-x-[12%] top-[30%] z-20 flex justify-center">
@@ -4192,14 +4041,11 @@ function DuelModal({
                 )}
               </div>
 
-              <div className="absolute inset-x-6 bottom-6 z-20">
-                <div className={cn("border bg-zinc-950 px-4 py-3 shadow-[0_0_24px_rgba(0,0,0,0.42)]", phaseToneClass)}>
+              <div className="absolute inset-x-3 bottom-3 z-20 lg:inset-x-6">
+                <div className={cn("border bg-zinc-950/95 px-4 py-3 shadow-[0_0_24px_rgba(0,0,0,0.42)]", phaseToneClass)}>
                   <div className="mb-2 flex items-center justify-between gap-4 text-[10px] font-semibold uppercase tracking-[0.14em] text-zinc-500">
                     <span>{status || "Live Match"}</span>
                     <span className="text-zinc-100">{secondsLeft ?? 0}s</span>
-                  </div>
-                  <div className="mb-3 text-[11px] font-semibold uppercase tracking-[0.1em] text-zinc-300">
-                    {phaseDescription}
                   </div>
                   {phase === "awaiting_media" && (
                     <div className="mb-3 grid gap-2 sm:grid-cols-2">
