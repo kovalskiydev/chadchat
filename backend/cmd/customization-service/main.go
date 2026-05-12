@@ -21,6 +21,7 @@ type Server struct {
 	db             *sql.DB
 	authServiceURL string
 	internalSecret string
+	adminSecret    string
 }
 
 type authUser struct {
@@ -49,6 +50,20 @@ type selectResultSoundRequest struct {
 	SoundID string `json:"sound_id"`
 }
 
+type adminUpsertSoundRequest struct {
+	ID        string `json:"id"`
+	Title     string `json:"title"`
+	AudioURL  string `json:"audio_url"`
+	IsDefault bool   `json:"is_default"`
+	IsActive  bool   `json:"is_active"`
+}
+
+type adminGrantSoundRequest struct {
+	UserID  string `json:"user_id"`
+	SoundID string `json:"sound_id"`
+	Source  string `json:"source"`
+}
+
 func main() {
 	db, err := mysqlutil.OpenFromEnv()
 	if err != nil {
@@ -62,6 +77,7 @@ func main() {
 		db:             db,
 		authServiceURL: envOr("AUTH_SERVICE_URL", "http://localhost:8081"),
 		internalSecret: envOr("CUSTOMIZATION_INTERNAL_SECRET", "dev-customization-secret-change-me"),
+		adminSecret:    envOr("ADMIN_API_SECRET", "dev-admin-secret-change-me"),
 	}
 	if err := s.seedDefaults(); err != nil {
 		log.Fatalf("seed defaults: %v", err)
@@ -71,6 +87,8 @@ func main() {
 	mux.HandleFunc("GET /health", s.handleHealth)
 	mux.HandleFunc("GET /result-sounds", s.withAuth(s.handleListResultSounds))
 	mux.HandleFunc("POST /result-sounds/select", s.withAuth(s.handleSelectResultSound))
+	mux.HandleFunc("POST /admin/result-sounds", s.withAdmin(s.handleAdminUpsertResultSound))
+	mux.HandleFunc("POST /admin/result-sounds/grant", s.withAdmin(s.handleAdminGrantResultSound))
 	mux.HandleFunc("GET /internal/users/{userID}/result-sound", s.handleInternalResultSound)
 
 	addr := ":" + envOr("PORT", "8087")
@@ -153,6 +171,16 @@ func (s *Server) withAuth(next func(http.ResponseWriter, *http.Request, authUser
 			return
 		}
 		next(w, r, user)
+	}
+}
+
+func (s *Server) withAdmin(next http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("X-Admin-Secret") != s.adminSecret {
+			writeErr(w, http.StatusForbidden, "forbidden")
+			return
+		}
+		next(w, r)
 	}
 }
 
@@ -261,6 +289,119 @@ func (s *Server) handleSelectResultSound(w http.ResponseWriter, r *http.Request,
 	writeJSON(w, http.StatusOK, map[string]any{"sound": sound})
 }
 
+func (s *Server) handleAdminUpsertResultSound(w http.ResponseWriter, r *http.Request) {
+	var req adminUpsertSoundRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeErr(w, http.StatusBadRequest, "invalid_json")
+		return
+	}
+	req.ID = strings.TrimSpace(req.ID)
+	req.Title = strings.TrimSpace(req.Title)
+	req.AudioURL = strings.TrimSpace(req.AudioURL)
+	if req.ID == "" {
+		writeErr(w, http.StatusBadRequest, "missing_id")
+		return
+	}
+	if req.Title == "" {
+		writeErr(w, http.StatusBadRequest, "missing_title")
+		return
+	}
+	if req.AudioURL == "" {
+		writeErr(w, http.StatusBadRequest, "missing_audio_url")
+		return
+	}
+
+	now := time.Now().UTC()
+	tx, err := s.db.Begin()
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, "db_error")
+		return
+	}
+	defer tx.Rollback()
+
+	if req.IsDefault {
+		if _, err := tx.Exec(`UPDATE result_sounds SET is_default = 0 WHERE is_default = 1`); err != nil {
+			writeErr(w, http.StatusInternalServerError, "db_error")
+			return
+		}
+	}
+
+	if _, err := tx.Exec(
+		`INSERT INTO result_sounds (id, title, audio_url, is_default, is_active, created_at)
+		 VALUES (?, ?, ?, ?, ?, ?)
+		 ON DUPLICATE KEY UPDATE
+		   title = VALUES(title),
+		   audio_url = VALUES(audio_url),
+		   is_default = VALUES(is_default),
+		   is_active = VALUES(is_active)`,
+		req.ID, req.Title, req.AudioURL, req.IsDefault, req.IsActive, now,
+	); err != nil {
+		writeErr(w, http.StatusInternalServerError, "db_error")
+		return
+	}
+
+	if err := tx.Commit(); err != nil {
+		writeErr(w, http.StatusInternalServerError, "db_error")
+		return
+	}
+
+	sound, err := s.loadSoundByID(req.ID)
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, "db_error")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"sound": sound})
+}
+
+func (s *Server) handleAdminGrantResultSound(w http.ResponseWriter, r *http.Request) {
+	var req adminGrantSoundRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeErr(w, http.StatusBadRequest, "invalid_json")
+		return
+	}
+	req.UserID = strings.TrimSpace(req.UserID)
+	req.SoundID = strings.TrimSpace(req.SoundID)
+	req.Source = strings.TrimSpace(req.Source)
+	if req.UserID == "" {
+		writeErr(w, http.StatusBadRequest, "missing_user_id")
+		return
+	}
+	if req.SoundID == "" {
+		writeErr(w, http.StatusBadRequest, "missing_sound_id")
+		return
+	}
+	if req.Source == "" {
+		req.Source = "admin"
+	}
+
+	if _, err := s.loadSoundByID(req.SoundID); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			writeErr(w, http.StatusNotFound, "sound_not_found")
+			return
+		}
+		writeErr(w, http.StatusInternalServerError, "db_error")
+		return
+	}
+
+	now := time.Now().UTC()
+	if _, err := s.db.Exec(
+		`INSERT INTO user_result_sounds (user_id, sound_id, unlocked_at, source)
+		 VALUES (?, ?, ?, ?)
+		 ON DUPLICATE KEY UPDATE unlocked_at = VALUES(unlocked_at), source = VALUES(source)`,
+		req.UserID, req.SoundID, now, req.Source,
+	); err != nil {
+		writeErr(w, http.StatusInternalServerError, "db_error")
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{
+		"status":   "granted",
+		"user_id":  req.UserID,
+		"sound_id": req.SoundID,
+		"source":   req.Source,
+	})
+}
+
 func (s *Server) handleInternalResultSound(w http.ResponseWriter, r *http.Request) {
 	if r.Header.Get("X-Customization-Internal-Secret") != s.internalSecret {
 		writeErr(w, http.StatusForbidden, "forbidden")
@@ -338,6 +479,20 @@ func (s *Server) loadDefaultSound() (*ResultSound, error) {
 	}
 	sound.Owned = true
 	sound.Selected = true
+	return &sound, nil
+}
+
+func (s *Server) loadSoundByID(soundID string) (*ResultSound, error) {
+	row := s.db.QueryRow(
+		`SELECT id, title, audio_url, is_default, created_at
+		 FROM result_sounds
+		 WHERE id = ?`,
+		soundID,
+	)
+	var sound ResultSound
+	if err := row.Scan(&sound.ID, &sound.Title, &sound.AudioURL, &sound.IsDefault, &sound.CreatedAt); err != nil {
+		return nil, err
+	}
 	return &sound, nil
 }
 

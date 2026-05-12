@@ -50,6 +50,8 @@ func main() {
 	mux.Handle("/leaderboard", ratingProxy)
 	mux.Handle("/result-sounds", customizationProxy)
 	mux.Handle("/result-sounds/", customizationProxy)
+	mux.Handle("/admin/result-sounds", customizationProxy)
+	mux.Handle("/admin/result-sounds/", customizationProxy)
 
 	addr := ":" + envOr("PORT", "8080")
 	log.Printf("api-gateway on %s", addr)

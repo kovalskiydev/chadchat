@@ -24,6 +24,7 @@ docker compose up --build
 - `VERIFICATION_INTERNAL_SECRET`
 - `MYSQL_DSN`
 - `CUSTOMIZATION_INTERNAL_SECRET`
+- `ADMIN_API_SECRET`
 
 ## Storage
 
@@ -236,6 +237,35 @@ Python API из `ml/api.py` используется как есть:
 }
 ```
 - Сервер разрешит выбрать только дефолтный или уже открытый пользователю звук.
+
+## Customization Admin API (через gateway :8080)
+
+Эндпоинты администрирования защищены заголовком:
+- `X-Admin-Secret: <ADMIN_API_SECRET>`
+
+1. `POST /admin/result-sounds`
+- Создать или обновить звук.
+- Body:
+```json
+{
+  "id": "sigma_bell",
+  "title": "Sigma Bell",
+  "audio_url": "https://cdn.example.com/sounds/sigma_bell.mp3",
+  "is_default": false,
+  "is_active": true
+}
+```
+
+2. `POST /admin/result-sounds/grant`
+- Выдать звук пользователю.
+- Body:
+```json
+{
+  "user_id": "u_1",
+  "sound_id": "sigma_bell",
+  "source": "admin"
+}
+```
 
 ## Security Notes
 
