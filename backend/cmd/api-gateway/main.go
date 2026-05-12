@@ -20,6 +20,7 @@ func main() {
 	duelURL := envOr("DUEL_SERVICE_URL", "http://localhost:8085")
 	ratingURL := envOr("RATING_SERVICE_URL", "http://localhost:8086")
 	customizationURL := envOr("CUSTOMIZATION_SERVICE_URL", "http://localhost:8087")
+	adminURL := envOr("ADMIN_SERVICE_URL", "http://localhost:8088")
 
 	authProxy := mustProxy(authURL)
 	verificationProxy := mustProxy(verificationURL)
@@ -28,6 +29,7 @@ func main() {
 	duelProxy := mustProxy(duelURL)
 	ratingProxy := mustProxy(ratingURL)
 	customizationProxy := mustProxy(customizationURL)
+	adminProxy := mustProxy(adminURL)
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /health", handleHealth(map[string]string{
@@ -38,6 +40,7 @@ func main() {
 		"duel":          duelURL,
 		"rating":        ratingURL,
 		"customization": customizationURL,
+		"admin":         adminURL,
 	}))
 	mux.Handle("/auth/", authProxy)
 	mux.Handle("/me", authProxy)
@@ -52,8 +55,28 @@ func main() {
 	mux.Handle("/leaderboard", ratingProxy)
 	mux.Handle("/result-sounds", customizationProxy)
 	mux.Handle("/result-sounds/", customizationProxy)
-	mux.Handle("/admin/result-sounds", customizationProxy)
-	mux.Handle("/admin/result-sounds/", customizationProxy)
+	mux.Handle("/admin/dashboard/", adminProxy)
+	mux.Handle("/admin/users/", adminProxy)
+	mux.Handle("/admin/ratings/", adminProxy)
+	mux.Handle("/admin/matches/", adminProxy)
+	mux.Handle("/admin/verification/", adminProxy)
+	mux.Handle("/admin/test-lab/", adminProxy)
+	mux.Handle("/admin/chat/", adminProxy)
+	mux.Handle("/admin/system/", adminProxy)
+	mux.HandleFunc("/admin/result-sounds", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodGet {
+			adminProxy.ServeHTTP(w, r)
+			return
+		}
+		customizationProxy.ServeHTTP(w, r)
+	})
+	mux.HandleFunc("/admin/result-sounds/", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodGet {
+			adminProxy.ServeHTTP(w, r)
+			return
+		}
+		customizationProxy.ServeHTTP(w, r)
+	})
 
 	addr := ":" + envOr("PORT", "8080")
 	log.Printf("api-gateway on %s", addr)

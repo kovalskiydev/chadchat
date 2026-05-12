@@ -141,6 +141,35 @@ services:
     ports:
       - "8087:8087"
 
+  admin-service:
+    image: golang:1.23
+    working_dir: /app
+    volumes:
+      - .:/app
+    command: go run ./cmd/admin-service
+    environment:
+      - MYSQL_DSN=app:app@tcp(mysql:3306)/chadchat?parseTime=true&multiStatements=true&charset=utf8mb4
+      - ADMIN_API_SECRET=dev-admin-secret-change-me
+      - AUTH_SERVICE_URL=http://auth-service:8081
+      - VERIFICATION_SERVICE_URL=http://verification-service:8082
+      - TEST_LAB_SERVICE_URL=http://test-lab-service:8083
+      - LIVE_CHAT_SERVICE_URL=http://live-chat-service:8084
+      - DUEL_SERVICE_URL=http://duel-service:8085
+      - RATING_SERVICE_URL=http://rating-service:8086
+      - CUSTOMIZATION_SERVICE_URL=http://customization-service:8087
+      - ML_SERVICE_URL=http://ml-service:8090
+    depends_on:
+      - mysql
+      - auth-service
+      - verification-service
+      - test-lab-service
+      - live-chat-service
+      - duel-service
+      - rating-service
+      - customization-service
+    ports:
+      - "8088:8088"
+
   api-gateway:
     image: golang:1.23
     working_dir: /app
@@ -155,6 +184,7 @@ services:
       - DUEL_SERVICE_URL=http://duel-service:8085
       - RATING_SERVICE_URL=http://rating-service:8086
       - CUSTOMIZATION_SERVICE_URL=http://customization-service:8087
+      - ADMIN_SERVICE_URL=http://admin-service:8088
       - ML_SERVICE_URL=http://ml-service:8090
     depends_on:
       - auth-service
@@ -164,6 +194,7 @@ services:
       - duel-service
       - rating-service
       - customization-service
+      - admin-service
     ports:
       - "8080:8080"
 

@@ -563,11 +563,13 @@ function PositionAvatar({
 function Panel({
   title,
   icon,
+  headerAction,
   children,
   className,
 }: {
   title: string;
   icon: React.ReactNode;
+  headerAction?: React.ReactNode;
   children: React.ReactNode;
   className?: string;
 }) {
@@ -589,7 +591,10 @@ function Panel({
       >
         <div className="flex h-12 items-center justify-between border-b border-border px-4 text-xs font-semibold uppercase tracking-[0.16em] text-zinc-300">
           <span>{title}</span>
-          <span className="text-zinc-600">{icon}</span>
+          <div className="flex items-center gap-2">
+            {headerAction}
+            <span className="text-zinc-600">{icon}</span>
+          </div>
         </div>
         {children}
       </aside>
@@ -1612,28 +1617,18 @@ function LiveChat({
   chatCustomization,
   currentUserName,
   accessToken,
+  chatBlurred,
 }: {
   chatCustomization: ChatCustomization;
   currentUserName: string;
   accessToken: string | null;
+  chatBlurred: boolean;
 }) {
-  const CHAT_BLUR_KEY = "chadchat_chat_blur_enabled_v1";
   const [messages, setMessages] = useState<ChatMessage[]>(initialChatMessages);
   const [draft, setDraft] = useState("");
   const [sending, setSending] = useState(false);
-  const [chatBlurred, setChatBlurred] = useState(false);
   const chatEndRef = useRef<HTMLDivElement>(null);
   const nextIdRef = useRef(initialChatMessages.length + 1);
-
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-    setChatBlurred(window.localStorage.getItem(CHAT_BLUR_KEY) === "1");
-  }, []);
-
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-    window.localStorage.setItem(CHAT_BLUR_KEY, chatBlurred ? "1" : "0");
-  }, [chatBlurred]);
 
   useEffect(() => {
     if (!accessToken) return;
@@ -1769,15 +1764,6 @@ function LiveChat({
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      <div className="flex items-center justify-end border-b border-zinc-900 px-3 py-2">
-        <button
-          type="button"
-          onClick={() => setChatBlurred((current) => !current)}
-          className="inline-flex h-8 items-center justify-center border border-zinc-800 bg-black/70 px-3 text-[10px] font-semibold uppercase tracking-[0.12em] text-zinc-300 transition-colors hover:border-purple-400 hover:text-white"
-        >
-          {chatBlurred ? "Unblur Chat" : "Blur Chat"}
-        </button>
-      </div>
       <div className="relative flex min-h-0 flex-1 overflow-hidden">
         <div
           className={cn(
@@ -5016,6 +5002,7 @@ export default function App() {
   const CONSENT_ACCEPTED_KEY = "chadchat_consent_accepted_v1";
   const RESULT_SOUND_ENABLED_KEY = "chadchat_result_sound_enabled_v1";
   const RESULT_SOUND_VOLUME_KEY = "chadchat_result_sound_volume_v1";
+  const CHAT_BLUR_KEY = "chadchat_chat_blur_enabled_v1";
   const startButtonRef = useRef<HTMLDivElement>(null);
   const bentoGridRef = useRef<HTMLDivElement>(null);
   const [isStatsOpen, setIsStatsOpen] = useState(false);
@@ -5077,6 +5064,7 @@ export default function App() {
   );
   const [resultSoundEnabled, setResultSoundEnabled] = useState(true);
   const [resultSoundVolume, setResultSoundVolume] = useState(0.8);
+  const [chatBlurred, setChatBlurred] = useState(false);
   const isAnonymousUser = Boolean(
     me?.is_anonymous || me?.type === "anonymous",
   );
@@ -5099,6 +5087,7 @@ export default function App() {
         setResultSoundVolume(Math.max(0, Math.min(1, parsed)));
       }
     }
+    setChatBlurred(window.localStorage.getItem(CHAT_BLUR_KEY) === "1");
   }, []);
 
   useEffect(() => {
@@ -5138,6 +5127,11 @@ export default function App() {
     if (typeof window === "undefined") return;
     window.localStorage.setItem(RESULT_SOUND_VOLUME_KEY, String(resultSoundVolume));
   }, [resultSoundVolume]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    window.localStorage.setItem(CHAT_BLUR_KEY, chatBlurred ? "1" : "0");
+  }, [chatBlurred]);
 
   useEffect(() => {
     let mounted = true;
@@ -5743,11 +5737,24 @@ export default function App() {
           ref={bentoGridRef}
           className="bento-section grid flex-1 gap-4 py-4 lg:grid-cols-[minmax(180px,1fr)_minmax(280px,420px)_minmax(180px,1fr)]"
         >
-          <Panel title="Live Chat" icon={<MessageSquare className="h-4 w-4" />}>
+          <Panel
+            title="Live Chat"
+            icon={<MessageSquare className="h-4 w-4" />}
+            headerAction={
+              <button
+                type="button"
+                onClick={() => setChatBlurred((current) => !current)}
+                className="inline-flex h-6 items-center justify-center border border-zinc-800 bg-black/70 px-2 text-[9px] font-semibold uppercase tracking-[0.12em] text-zinc-300 transition-colors hover:border-purple-400 hover:text-white"
+              >
+                {chatBlurred ? "Unblur" : "Blur"}
+              </button>
+            }
+          >
             <LiveChat
               chatCustomization={chatCustomization}
               currentUserName={currentNickname}
               accessToken={tokens?.accessToken ?? null}
+              chatBlurred={chatBlurred}
             />
           </Panel>
 
