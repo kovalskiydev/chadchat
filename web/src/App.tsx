@@ -949,22 +949,32 @@ function CustomizeModal({
   gameCustomization,
   resultSoundOptions,
   resultSoundLoading,
+  resultSoundEnabled,
+  resultSoundVolume,
   onChangeChatCustomization,
   onChangeGameCustomization,
   onSelectResultSound,
+  onToggleResultSoundEnabled,
+  onChangeResultSoundVolume,
   onClose,
 }: {
   chatCustomization: ChatCustomization;
   gameCustomization: GameCustomization;
   resultSoundOptions: ResultSoundOption[];
   resultSoundLoading: boolean;
+  resultSoundEnabled: boolean;
+  resultSoundVolume: number;
   onChangeChatCustomization: (next: Partial<ChatCustomization>) => void;
   onChangeGameCustomization: (next: Partial<GameCustomization>) => void;
   onSelectResultSound: (sound: ResultSoundOption) => void;
+  onToggleResultSoundEnabled: () => void;
+  onChangeResultSoundVolume: (value: number) => void;
   onClose: () => void;
 }) {
   const [view, setView] = useState<"menu" | "chat" | "game">("menu");
   const [category, setCategory] = useState<"titles" | "colors" | "text">("titles");
+  const [previewSoundId, setPreviewSoundId] = useState<string | null>(null);
+  const previewAudioRef = useRef<HTMLAudioElement | null>(null);
   const options = [
     {
       id: "chat" as const,
@@ -1041,6 +1051,59 @@ function CustomizeModal({
   const isGameView = view === "game";
   const selectedResultSound =
     resultSoundOptions.find((sound) => sound.selected) ?? null;
+
+  const stopPreview = useCallback(() => {
+    if (previewAudioRef.current) {
+      previewAudioRef.current.pause();
+      previewAudioRef.current.currentTime = 0;
+      previewAudioRef.current = null;
+    }
+    setPreviewSoundId(null);
+  }, []);
+
+  const handlePreviewSound = useCallback(
+    (sound: ResultSoundOption) => {
+      if (previewSoundId === sound.id) {
+        stopPreview();
+        return;
+      }
+      stopPreview();
+      if (!sound.audio_url || !resultSoundEnabled || resultSoundVolume <= 0) return;
+      const audio = new Audio(sound.audio_url);
+      audio.volume = Math.max(0, Math.min(1, resultSoundVolume));
+      audio.onended = () => {
+        if (previewAudioRef.current === audio) {
+          previewAudioRef.current = null;
+          setPreviewSoundId(null);
+        }
+      };
+      previewAudioRef.current = audio;
+      setPreviewSoundId(sound.id);
+      void audio.play().catch(() => {
+        if (previewAudioRef.current === audio) {
+          previewAudioRef.current = null;
+          setPreviewSoundId(null);
+        }
+      });
+    },
+    [previewSoundId, resultSoundEnabled, resultSoundVolume, stopPreview],
+  );
+
+  useEffect(() => {
+    if (!resultSoundEnabled || resultSoundVolume <= 0) {
+      stopPreview();
+      return;
+    }
+    if (previewAudioRef.current) {
+      previewAudioRef.current.volume = Math.max(0, Math.min(1, resultSoundVolume));
+    }
+  }, [resultSoundEnabled, resultSoundVolume, stopPreview]);
+
+  useEffect(() => {
+    return () => {
+      stopPreview();
+    };
+  }, [stopPreview]);
 
   return (
     <div
@@ -1343,6 +1406,45 @@ function CustomizeModal({
                     </div>
                   )}
                 </div>
+                <div className="border border-zinc-900 bg-black/50 p-3">
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="flex items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.14em] text-zinc-400">
+                      {resultSoundEnabled ? (
+                        <Volume2 className="h-3.5 w-3.5 text-purple-300" aria-hidden="true" />
+                      ) : (
+                        <VolumeX className="h-3.5 w-3.5 text-zinc-500" aria-hidden="true" />
+                      )}
+                      Result Sound
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (resultSoundEnabled) stopPreview();
+                        onToggleResultSoundEnabled();
+                      }}
+                      className="inline-flex h-9 items-center justify-center border border-zinc-800 bg-black px-3 text-[10px] font-semibold uppercase tracking-[0.14em] text-zinc-300 transition-colors hover:border-purple-400 hover:text-white"
+                    >
+                      {resultSoundEnabled ? "Sound On" : "Sound Off"}
+                    </button>
+                  </div>
+                  <div className="mt-4">
+                    <div className="mb-2 flex items-center justify-between text-[10px] uppercase tracking-[0.12em] text-zinc-500">
+                      <span>Volume</span>
+                      <span className="text-zinc-300">{Math.round(resultSoundVolume * 100)}%</span>
+                    </div>
+                    <input
+                      type="range"
+                      min="0"
+                      max="1"
+                      step="0.01"
+                      value={resultSoundVolume}
+                      onChange={(event) =>
+                        onChangeResultSoundVolume(Number(event.target.value))
+                      }
+                      className="w-full accent-purple-400"
+                    />
+                  </div>
+                </div>
                 <div className="max-h-[264px] space-y-2 overflow-y-auto pr-1">
                   {resultSoundOptions.map((sound) => {
                     const locked = !sound.owned;
@@ -1373,20 +1475,15 @@ function CustomizeModal({
                             "border px-3 text-[10px] font-semibold uppercase tracking-[0.12em] transition-colors",
                             !sound.audio_url
                               ? "cursor-not-allowed border-zinc-900 bg-black/60 text-zinc-700"
-                              : "border-zinc-700 bg-zinc-900/55 text-zinc-200 hover:border-purple-500/60",
+                              : !resultSoundEnabled
+                                ? "border-zinc-900 bg-black/60 text-zinc-600"
+                                : "border-zinc-700 bg-zinc-900/55 text-zinc-200 hover:border-purple-500/60",
                           )}
                           disabled={!sound.audio_url}
-                          onClick={() => {
-                            if (sound.audio_url) {
-                              const audio = new Audio(sound.audio_url);
-                              void audio.play().catch(() => {});
-                              return;
-                            }
-                            playVictoryPreview(sound.title);
-                          }}
+                          onClick={() => handlePreviewSound(sound)}
                           type="button"
                         >
-                          Play
+                          {previewSoundId === sound.id ? "Stop" : "Play"}
                         </button>
                       </div>
                     );
@@ -1424,14 +1521,18 @@ function CustomizeModal({
                   </span>
                   <button
                     className="border border-zinc-700 bg-zinc-900/55 px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-zinc-200 transition-colors hover:border-purple-500/60"
-                    onClick={() =>
-                      selectedResultSound?.audio_url
-                        ? void new Audio(selectedResultSound.audio_url).play().catch(() => {})
-                        : playVictoryPreview(gameCustomization.victorySound)
-                    }
+                    onClick={() => {
+                      if (selectedResultSound?.audio_url) {
+                        handlePreviewSound(selectedResultSound);
+                        return;
+                      }
+                      playVictoryPreview(gameCustomization.victorySound);
+                    }}
                     type="button"
                   >
-                    Preview Sound
+                    {selectedResultSound && previewSoundId === selectedResultSound.id
+                      ? "Stop Preview"
+                      : "Preview Sound"}
                   </button>
                 </div>
               </div>
@@ -2662,11 +2763,15 @@ function StartModesModal({
 function DuelModal({
   accessToken,
   myUserId,
+  resultSoundEnabled,
+  resultSoundVolume,
   onFinished,
   onClose,
 }: {
   accessToken: string | null;
   myUserId: string | null;
+  resultSoundEnabled: boolean;
+  resultSoundVolume: number;
   onFinished?: () => void;
   onClose: () => void;
 }) {
@@ -2896,6 +3001,7 @@ function DuelModal({
 
   const playPreloadedResultSound = useCallback(
     async (soundID: string | null | undefined, fallbackSound?: DuelResultSound | null) => {
+      if (!resultSoundEnabled || resultSoundVolume <= 0) return;
       if (!soundID) return;
       const audioContext = ensureDuelAudioContext();
       if (!audioContext) return;
@@ -2912,13 +3018,13 @@ function DuelModal({
 
       const source = audioContext.createBufferSource();
       const gain = audioContext.createGain();
-      gain.gain.value = 0.9;
+      gain.gain.value = Math.max(0, Math.min(1, resultSoundVolume));
       source.buffer = buffer;
       source.connect(gain);
       gain.connect(audioContext.destination);
       source.start(0);
     },
-    [ensureDuelAudioContext, preloadResultSound],
+    [ensureDuelAudioContext, preloadResultSound, resultSoundEnabled, resultSoundVolume],
   );
 
   const applyMatchSnapshot = useCallback((payload: Record<string, unknown>) => {
@@ -4820,6 +4926,8 @@ function VerificationSuccessModal({ onContinue }: { onContinue: () => void }) {
 export default function App() {
   const ENTRY_SEEN_KEY = "chadchat_entry_seen_v1";
   const CONSENT_ACCEPTED_KEY = "chadchat_consent_accepted_v1";
+  const RESULT_SOUND_ENABLED_KEY = "chadchat_result_sound_enabled_v1";
+  const RESULT_SOUND_VOLUME_KEY = "chadchat_result_sound_volume_v1";
   const startButtonRef = useRef<HTMLDivElement>(null);
   const bentoGridRef = useRef<HTMLDivElement>(null);
   const [isStatsOpen, setIsStatsOpen] = useState(false);
@@ -4873,6 +4981,8 @@ export default function App() {
   const [gameCustomization, setGameCustomization] = useState<GameCustomization>(
     defaultGameCustomization,
   );
+  const [resultSoundEnabled, setResultSoundEnabled] = useState(true);
+  const [resultSoundVolume, setResultSoundVolume] = useState(0.8);
   const isAnonymousUser = Boolean(
     me?.is_anonymous || me?.type === "anonymous",
   );
@@ -4884,6 +4994,17 @@ export default function App() {
   useEffect(() => {
     if (typeof window === "undefined") return;
     setConsentAccepted(window.localStorage.getItem(CONSENT_ACCEPTED_KEY) === "1");
+    const storedSoundEnabled = window.localStorage.getItem(RESULT_SOUND_ENABLED_KEY);
+    const storedSoundVolume = window.localStorage.getItem(RESULT_SOUND_VOLUME_KEY);
+    if (storedSoundEnabled !== null) {
+      setResultSoundEnabled(storedSoundEnabled === "1");
+    }
+    if (storedSoundVolume !== null) {
+      const parsed = Number(storedSoundVolume);
+      if (Number.isFinite(parsed)) {
+        setResultSoundVolume(Math.max(0, Math.min(1, parsed)));
+      }
+    }
   }, []);
 
   useEffect(() => {
@@ -4909,6 +5030,16 @@ export default function App() {
     if (typeof window === "undefined") return;
     window.localStorage.setItem(CONSENT_ACCEPTED_KEY, consentAccepted ? "1" : "0");
   }, [consentAccepted]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    window.localStorage.setItem(RESULT_SOUND_ENABLED_KEY, resultSoundEnabled ? "1" : "0");
+  }, [resultSoundEnabled]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    window.localStorage.setItem(RESULT_SOUND_VOLUME_KEY, String(resultSoundVolume));
+  }, [resultSoundVolume]);
 
   useEffect(() => {
     let mounted = true;
@@ -5562,6 +5693,8 @@ export default function App() {
           gameCustomization={gameCustomization}
           resultSoundOptions={resultSoundOptions}
           resultSoundLoading={resultSoundLoading}
+          resultSoundEnabled={resultSoundEnabled}
+          resultSoundVolume={resultSoundVolume}
           onChangeChatCustomization={(next) =>
             setChatCustomization((current) => ({ ...current, ...next }))
           }
@@ -5569,6 +5702,10 @@ export default function App() {
             setGameCustomization((current) => ({ ...current, ...next }))
           }
           onSelectResultSound={handleSelectResultSound}
+          onToggleResultSoundEnabled={() =>
+            setResultSoundEnabled((current) => !current)
+          }
+          onChangeResultSoundVolume={setResultSoundVolume}
           onClose={() => setIsCustomizeOpen(false)}
         />
       )}
@@ -5592,6 +5729,8 @@ export default function App() {
         <DuelModal
           accessToken={tokens?.accessToken ?? null}
           myUserId={me?.id ? String(me.id) : null}
+          resultSoundEnabled={resultSoundEnabled}
+          resultSoundVolume={resultSoundVolume}
           onFinished={handleAnonymousGameFinished}
           onClose={() => setIsDuelOpen(false)}
         />
