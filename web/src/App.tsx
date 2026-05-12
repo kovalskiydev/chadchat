@@ -2841,6 +2841,7 @@ function DuelModal({
   const peerRef = useRef<RTCPeerConnection | null>(null);
   const duelAudioContextRef = useRef<AudioContext | null>(null);
   const preloadedSoundBuffersRef = useRef<Map<string, AudioBuffer>>(new Map());
+  const activeResultSoundSourceRef = useRef<AudioBufferSourceNode | null>(null);
   const pendingCandidatesRef = useRef<RTCIceCandidateInit[]>([]);
   const makingOfferRef = useRef(false);
   const ignoreOfferRef = useRef(false);
@@ -3016,16 +3017,31 @@ function DuelModal({
       }
       if (!buffer) return;
 
+      activeResultSoundSourceRef.current?.stop();
+      activeResultSoundSourceRef.current = null;
       const source = audioContext.createBufferSource();
       const gain = audioContext.createGain();
       gain.gain.value = Math.max(0, Math.min(1, resultSoundVolume));
       source.buffer = buffer;
       source.connect(gain);
       gain.connect(audioContext.destination);
+      source.onended = () => {
+        if (activeResultSoundSourceRef.current === source) {
+          activeResultSoundSourceRef.current = null;
+        }
+      };
+      activeResultSoundSourceRef.current = source;
       source.start(0);
     },
     [ensureDuelAudioContext, preloadResultSound, resultSoundEnabled, resultSoundVolume],
   );
+
+  const stopResultSound = useCallback(() => {
+    if (activeResultSoundSourceRef.current) {
+      activeResultSoundSourceRef.current.stop();
+      activeResultSoundSourceRef.current = null;
+    }
+  }, []);
 
   const applyMatchSnapshot = useCallback((payload: Record<string, unknown>) => {
     const match = extractMatchRecord(payload);
@@ -3117,6 +3133,7 @@ function DuelModal({
   }, [extractMatchRecord, extractPhase, myUserId, preloadResultSoundsMap]);
 
   const resetMatchFlow = useCallback(() => {
+    stopResultSound();
     finishedRef.current = false;
     mediaReadySentRef.current = false;
     setQueueing(false);
@@ -3139,7 +3156,7 @@ function DuelModal({
       remoteVideoRef.current.srcObject = null;
     }
     setQueueRunKey((current) => current + 1);
-  }, []);
+  }, [stopResultSound]);
 
   const stopSearchAudio = useCallback(() => {
     if (searchAudioFadeRef.current) {
@@ -3674,13 +3691,14 @@ function DuelModal({
     const audioContext = duelAudioContextRef.current;
     return () => {
       stopSearchAudio();
+      stopResultSound();
       soundBuffers.clear();
       audioContext?.close().catch(() => {});
       if (duelAudioContextRef.current === audioContext) {
         duelAudioContextRef.current = null;
       }
     };
-  }, [stopSearchAudio]);
+  }, [stopSearchAudio, stopResultSound]);
 
   return (
     <div
@@ -3700,7 +3718,10 @@ function DuelModal({
           </h2>
           <button
             className="inline-flex h-10 w-10 items-center justify-center border border-zinc-800 bg-black/80 text-zinc-400 transition-colors hover:border-purple-400 hover:text-white"
-            onClick={onClose}
+            onClick={() => {
+              stopResultSound();
+              onClose();
+            }}
             type="button"
             aria-label="Close duel"
           >
@@ -3961,7 +3982,10 @@ function DuelModal({
                       </button>
                       <button
                         type="button"
-                        onClick={onClose}
+                        onClick={() => {
+                          stopResultSound();
+                          onClose();
+                        }}
                         className="inline-flex h-11 items-center justify-center border border-zinc-800 bg-black/70 px-4 text-[10px] font-semibold uppercase tracking-[0.14em] text-zinc-400 transition-colors hover:border-zinc-600 hover:text-zinc-200"
                       >
                         Close
