@@ -65,6 +65,20 @@ export type QueueInfo = {
   last_match_rating_delta?: number;
 };
 
+export type MatchHistoryEntry = {
+  match_id: string;
+  mode?: string;
+  started_at?: string;
+  finished_at?: string;
+  result?: "win" | "loss" | "draw" | string;
+  rating_delta?: number;
+  my_score?: number;
+  opponent_score?: number;
+  opponent_user_id?: string;
+  opponent_nickname?: string;
+  opponent_rank?: string;
+};
+
 export async function getMyRating(accessToken: string) {
   const payload = await authorizedRequest<{ rating?: RatingProfile }>(
     "/rating/me",
@@ -131,4 +145,20 @@ export async function getQueueInfo(accessToken: string) {
     accessToken,
   );
   return payload.queue_info ?? (payload as QueueInfo);
+}
+
+export async function getMyMatches(accessToken: string, limit = 20, cursor?: string) {
+  const normalizedLimit = Math.max(1, Math.min(100, limit));
+  const params = new URLSearchParams({ limit: String(normalizedLimit) });
+  if (cursor) params.set("cursor", cursor);
+  const payload = await authorizedRequest<{
+    matches?: MatchHistoryEntry[];
+    entries?: MatchHistoryEntry[];
+    next_cursor?: string;
+  }>(`/matches/me?${params.toString()}`, undefined, accessToken);
+
+  return {
+    matches: payload.matches ?? payload.entries ?? [],
+    nextCursor: payload.next_cursor ?? null,
+  };
 }
