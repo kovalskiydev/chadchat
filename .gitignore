@@ -1,2 +1,16 @@
 .DS_Store
+*.log
+
 deploy/**/.env
+
+web/node_modules/
+web/dist/
+
+admin-web/node_modules/
+admin-web/dist/
+
+ml/__pycache__/
+backend/ml/__pycache__/
+
+.idea/
+.vscode/
