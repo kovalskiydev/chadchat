@@ -1617,11 +1617,23 @@ function LiveChat({
   currentUserName: string;
   accessToken: string | null;
 }) {
+  const CHAT_BLUR_KEY = "chadchat_chat_blur_enabled_v1";
   const [messages, setMessages] = useState<ChatMessage[]>(initialChatMessages);
   const [draft, setDraft] = useState("");
   const [sending, setSending] = useState(false);
+  const [chatBlurred, setChatBlurred] = useState(false);
   const chatEndRef = useRef<HTMLDivElement>(null);
   const nextIdRef = useRef(initialChatMessages.length + 1);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    setChatBlurred(window.localStorage.getItem(CHAT_BLUR_KEY) === "1");
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    window.localStorage.setItem(CHAT_BLUR_KEY, chatBlurred ? "1" : "0");
+  }, [chatBlurred]);
 
   useEffect(() => {
     if (!accessToken) return;
@@ -1757,15 +1769,38 @@ function LiveChat({
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      <div className="flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto overscroll-contain p-3">
-        {messages.map((message) => (
-          <ChatMessageItem
-            chatCustomization={chatCustomization}
-            key={message.id}
-            message={message}
-          />
-        ))}
-        <div ref={chatEndRef} />
+      <div className="flex items-center justify-end border-b border-zinc-900 px-3 py-2">
+        <button
+          type="button"
+          onClick={() => setChatBlurred((current) => !current)}
+          className="inline-flex h-8 items-center justify-center border border-zinc-800 bg-black/70 px-3 text-[10px] font-semibold uppercase tracking-[0.12em] text-zinc-300 transition-colors hover:border-purple-400 hover:text-white"
+        >
+          {chatBlurred ? "Unblur Chat" : "Blur Chat"}
+        </button>
+      </div>
+      <div className="relative flex min-h-0 flex-1 overflow-hidden">
+        <div
+          className={cn(
+            "flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto overscroll-contain p-3 transition-[filter,opacity] duration-200",
+            chatBlurred && "pointer-events-none select-none blur-sm opacity-85",
+          )}
+        >
+          {messages.map((message) => (
+            <ChatMessageItem
+              chatCustomization={chatCustomization}
+              key={message.id}
+              message={message}
+            />
+          ))}
+          <div ref={chatEndRef} />
+        </div>
+        {chatBlurred && (
+          <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
+            <div className="border border-zinc-800 bg-black/75 px-3 py-2 text-[10px] font-semibold uppercase tracking-[0.14em] text-zinc-300">
+              Chat Blurred
+            </div>
+          </div>
+        )}
       </div>
 
       <form
