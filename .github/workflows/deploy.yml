@@ -220,6 +220,8 @@ jobs:
             CUSTOMIZATION_INTERNAL_SECRET=${{ secrets.PROD_CUSTOMIZATION_INTERNAL_SECRET }}
             ADMIN_API_SECRET=${{ secrets.PROD_ADMIN_API_SECRET }}
             DEFAULT_RESULT_SOUND_URL=${{ vars.PROD_DEFAULT_RESULT_SOUND_URL }}
+            DEFAULT_QUEUE_TYPE=${{ vars.PROD_DEFAULT_QUEUE_TYPE || 'duel' }}
+            DEFAULT_REGION=${{ vars.PROD_DEFAULT_REGION || 'global' }}
             MYSQL_DATABASE=chadchat
             MYSQL_USER=app
             MYSQL_PASSWORD=${{ secrets.PROD_MYSQL_PASSWORD }}

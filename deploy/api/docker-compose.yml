@@ -113,11 +113,14 @@ services:
       ML_SERVICE_URL: http://ml-service:8090
       CUSTOMIZATION_SERVICE_URL: http://customization-service:8087
       CUSTOMIZATION_INTERNAL_SECRET: ${CUSTOMIZATION_INTERNAL_SECRET}
+      RATING_SERVICE_URL: http://rating-service:8086
+      RATING_INTERNAL_SECRET: ${RATING_INTERNAL_SECRET}
       DEFAULT_RESULT_SOUND_URL: ${DEFAULT_RESULT_SOUND_URL}
     depends_on:
       - auth-service
       - ml-service
       - customization-service
+      - rating-service
     expose:
       - "8085"
 
@@ -155,6 +158,8 @@ services:
       PORT: 8086
       AUTH_SERVICE_URL: http://auth-service:8081
       RATING_INTERNAL_SECRET: ${RATING_INTERNAL_SECRET}
+      DEFAULT_QUEUE_TYPE: ${DEFAULT_QUEUE_TYPE}
+      DEFAULT_REGION: ${DEFAULT_REGION}
     depends_on:
       - mysql
       - auth-service
