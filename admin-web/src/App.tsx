@@ -1,21 +1,32 @@
 import { useMemo, useState } from "react";
-import { Activity, BarChart3, Shield, User, Users, Volume2 } from "lucide-react";
+import {
+  Activity,
+  BarChart3,
+  HeartPulse,
+  MessageSquare,
+  Search,
+  Shield,
+  User,
+  Users,
+  Volume2,
+} from "lucide-react";
 
 import { adminRequest, loadAdminSecret, saveAdminSecret } from "@/lib/api";
 
-type Json = Record<string, unknown>;
+type TabKey =
+  | "dashboard"
+  | "users"
+  | "ratings"
+  | "matches"
+  | "features"
+  | "sounds"
+  | "system";
 
-const navItems = [
-  { key: "dashboard", label: "Dashboard", icon: BarChart3 },
-  { key: "users", label: "Users", icon: Users },
-  { key: "ratings", label: "Ratings", icon: Activity },
-  { key: "matches", label: "Matches", icon: Shield },
-  { key: "features", label: "Verification/Test/Chat", icon: User },
-  { key: "sounds", label: "Result Sounds", icon: Volume2 },
-  { key: "system", label: "System Health", icon: Activity },
-] as const;
-
-type TabKey = (typeof navItems)[number]["key"];
+type Action = {
+  label: string;
+  description: string;
+  run: () => Promise<unknown>;
+};
 
 function cx(...values: Array<string | false | null | undefined>) {
   return values.filter(Boolean).join(" ");
@@ -23,8 +34,8 @@ function cx(...values: Array<string | false | null | undefined>) {
 
 function Card({ title, children }: { title: string; children: React.ReactNode }) {
   return (
-    <section className="rounded-none border border-border bg-zinc-950/70 shadow-wire">
-      <header className="border-b border-border px-4 py-3 text-xs font-semibold uppercase tracking-[0.16em] text-zinc-300">
+    <section className="rounded-lg border border-zinc-800 bg-zinc-950/75 shadow-[0_0_0_1px_rgba(255,255,255,0.04)]">
+      <header className="border-b border-zinc-800 px-4 py-3 text-xs font-semibold uppercase tracking-[0.12em] text-zinc-300">
         {title}
       </header>
       <div className="p-4">{children}</div>
@@ -32,35 +43,34 @@ function Card({ title, children }: { title: string; children: React.ReactNode })
   );
 }
 
-function DataBlock({ data }: { data: unknown }) {
+function Field({
+  label,
+  value,
+  onChange,
+  placeholder,
+}: {
+  label: string;
+  value: string;
+  onChange: (value: string) => void;
+  placeholder?: string;
+}) {
   return (
-    <pre className="max-h-[520px] overflow-auto border border-border bg-black/40 p-3 text-xs leading-5 text-zinc-200">
-      {JSON.stringify(data, null, 2)}
-    </pre>
+    <label className="block text-xs text-zinc-400">
+      {label}
+      <input
+        className="mt-1 w-full rounded-md border border-zinc-700 bg-black/30 px-2.5 py-2 text-sm text-zinc-100 outline-none transition focus:border-sky-400/60"
+        value={value}
+        onChange={(event) => onChange(event.target.value)}
+        placeholder={placeholder}
+      />
+    </label>
   );
-}
-
-async function run<T>(
-  exec: () => Promise<T>,
-  setData: (value: T | null) => void,
-  setError: (value: string) => void,
-  setLoading: (value: boolean) => void,
-) {
-  try {
-    setLoading(true);
-    setError("");
-    const payload = await exec();
-    setData(payload);
-  } catch (error) {
-    setError(error instanceof Error ? error.message : "Unknown error");
-  } finally {
-    setLoading(false);
-  }
 }
 
 export default function App() {
   const [tab, setTab] = useState<TabKey>("dashboard");
   const [secret, setSecret] = useState(loadAdminSecret());
+
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [data, setData] = useState<unknown>(null);
@@ -74,97 +84,200 @@ export default function App() {
   const [limit, setLimit] = useState("20");
   const [cursor, setCursor] = useState("");
   const [period, setPeriod] = useState("today");
-
   const [grantUserID, setGrantUserID] = useState("");
   const [createTitle, setCreateTitle] = useState("");
   const [createAudioUrl, setCreateAudioUrl] = useState("");
 
-  const headerActions = useMemo(
-    () => [
-      { label: "Summary", call: () => adminRequest("/admin/dashboard/summary", { secret }) },
-      {
-        label: "Users",
-        call: () =>
-          adminRequest("/admin/users", {
-            secret,
-            query: { query, type, verified, limit, cursor },
-          }),
-      },
-      { label: "User by ID", call: () => adminRequest(`/admin/users/${userID}`, { secret }) },
-      {
-        label: "User Matches",
-        call: () =>
-          adminRequest(`/admin/users/${userID}/matches`, {
-            secret,
-            query: { limit, cursor },
-          }),
-      },
-      {
-        label: "User Rating History",
-        call: () =>
-          adminRequest(`/admin/users/${userID}/rating-history`, {
-            secret,
-            query: { limit },
-          }),
-      },
-      {
-        label: "Leaderboard",
-        call: () => adminRequest("/admin/ratings/leaderboard", { secret, query: { limit, cursor } }),
-      },
-      { label: "Rating by User", call: () => adminRequest(`/admin/ratings/${userID}`, { secret }) },
-      {
-        label: "Rating History by User",
-        call: () => adminRequest(`/admin/ratings/${userID}/history`, { secret, query: { limit } }),
-      },
-      {
-        label: "Matches",
-        call: () => adminRequest("/admin/matches", { secret, query: { limit, cursor } }),
-      },
-      { label: "Match by ID", call: () => adminRequest(`/admin/matches/${matchID}`, { secret }) },
-      {
-        label: "Match Stats",
-        call: () => adminRequest("/admin/matches/stats", { secret, query: { period } }),
-      },
-      { label: "Verification Stats", call: () => adminRequest("/admin/verification/stats", { secret }) },
-      {
-        label: "Verification Sessions",
-        call: () => adminRequest("/admin/verification/sessions", { secret, query: { limit } }),
-      },
-      { label: "Test-Lab Stats", call: () => adminRequest("/admin/test-lab/stats", { secret }) },
-      {
-        label: "Test-Lab Sessions",
-        call: () => adminRequest("/admin/test-lab/sessions", { secret, query: { limit } }),
-      },
-      { label: "Chat Stats", call: () => adminRequest("/admin/chat/stats", { secret }) },
-      {
-        label: "Chat Messages",
-        call: () => adminRequest("/admin/chat/messages", { secret, query: { limit } }),
-      },
-      { label: "Result Sounds", call: () => adminRequest("/admin/result-sounds", { secret }) },
-      {
-        label: "Sound Owners",
-        call: () => adminRequest(`/admin/result-sounds/${soundID}/owners`, { secret }),
-      },
-      { label: "Health", call: () => adminRequest("/admin/system/health", { secret }) },
-      {
-        label: "Create Sound",
-        call: () =>
-          adminRequest("/admin/result-sounds", {
-            secret,
-            method: "POST",
-            body: { title: createTitle, audio_url: createAudioUrl },
-          }),
-      },
-      {
-        label: "Grant Sound",
-        call: () =>
-          adminRequest("/admin/result-sounds/grant", {
-            secret,
-            method: "POST",
-            body: { sound_id: soundID, user_id: grantUserID },
-          }),
-      },
-    ],
+  const call = async (runAction: () => Promise<unknown>) => {
+    try {
+      setLoading(true);
+      setError("");
+      const payload = await runAction();
+      setData(payload);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Unknown error");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const actionsByTab = useMemo<Record<TabKey, Action[]>>(
+    () => ({
+      dashboard: [
+        {
+          label: "Load Dashboard Summary",
+          description: "Общая сводка по продукту",
+          run: () => adminRequest("/admin/dashboard/summary", { secret }),
+        },
+      ],
+      users: [
+        {
+          label: "Search Users",
+          description: "Поиск + фильтры + пагинация",
+          run: () =>
+            adminRequest("/admin/users", {
+              secret,
+              query: { query, type, verified, limit, cursor },
+            }),
+        },
+        {
+          label: "Get User Card",
+          description: "Карточка пользователя по userID",
+          run: () => adminRequest(`/admin/users/${userID}`, { secret }),
+        },
+        {
+          label: "Get User Matches",
+          description: "Матчи пользователя",
+          run: () =>
+            adminRequest(`/admin/users/${userID}/matches`, {
+              secret,
+              query: { limit, cursor },
+            }),
+        },
+        {
+          label: "Get User Rating History",
+          description: "История рейтинга пользователя",
+          run: () =>
+            adminRequest(`/admin/users/${userID}/rating-history`, {
+              secret,
+              query: { limit },
+            }),
+        },
+      ],
+      ratings: [
+        {
+          label: "Leaderboard",
+          description: "Таблица лидеров",
+          run: () =>
+            adminRequest("/admin/ratings/leaderboard", {
+              secret,
+              query: { limit, cursor },
+            }),
+        },
+        {
+          label: "User Rating",
+          description: "Текущий рейтинг по userID",
+          run: () => adminRequest(`/admin/ratings/${userID}`, { secret }),
+        },
+        {
+          label: "User Rating History",
+          description: "История рейтинга по userID",
+          run: () =>
+            adminRequest(`/admin/ratings/${userID}/history`, {
+              secret,
+              query: { limit },
+            }),
+        },
+      ],
+      matches: [
+        {
+          label: "List Matches",
+          description: "Список матчей",
+          run: () =>
+            adminRequest("/admin/matches", {
+              secret,
+              query: { limit, cursor },
+            }),
+        },
+        {
+          label: "Match Details",
+          description: "Матч по matchID",
+          run: () => adminRequest(`/admin/matches/${matchID}`, { secret }),
+        },
+        {
+          label: "Match Stats",
+          description: "Статистика матчей: today | week | season",
+          run: () =>
+            adminRequest("/admin/matches/stats", {
+              secret,
+              query: { period },
+            }),
+        },
+      ],
+      features: [
+        {
+          label: "Verification Stats",
+          description: "Общая статистика верификации",
+          run: () => adminRequest("/admin/verification/stats", { secret }),
+        },
+        {
+          label: "Verification Sessions",
+          description: "Последние сессии верификации",
+          run: () =>
+            adminRequest("/admin/verification/sessions", {
+              secret,
+              query: { limit },
+            }),
+        },
+        {
+          label: "Test-Lab Stats",
+          description: "Сводка test-lab",
+          run: () => adminRequest("/admin/test-lab/stats", { secret }),
+        },
+        {
+          label: "Test-Lab Sessions",
+          description: "Сессии test-lab",
+          run: () =>
+            adminRequest("/admin/test-lab/sessions", {
+              secret,
+              query: { limit },
+            }),
+        },
+        {
+          label: "Chat Stats",
+          description: "Сводка по чату",
+          run: () => adminRequest("/admin/chat/stats", { secret }),
+        },
+        {
+          label: "Chat Messages",
+          description: "Последние сообщения чата",
+          run: () =>
+            adminRequest("/admin/chat/messages", {
+              secret,
+              query: { limit },
+            }),
+        },
+      ],
+      sounds: [
+        {
+          label: "List Result Sounds",
+          description: "Список звуков",
+          run: () => adminRequest("/admin/result-sounds", { secret }),
+        },
+        {
+          label: "Sound Owners",
+          description: "Кому выдан soundID",
+          run: () => adminRequest(`/admin/result-sounds/${soundID}/owners`, { secret }),
+        },
+        {
+          label: "Create Sound (POST)",
+          description: "Создать звук (title + audio_url)",
+          run: () =>
+            adminRequest("/admin/result-sounds", {
+              secret,
+              method: "POST",
+              body: { title: createTitle, audio_url: createAudioUrl },
+            }),
+        },
+        {
+          label: "Grant Sound (POST)",
+          description: "Выдать soundID пользователю",
+          run: () =>
+            adminRequest("/admin/result-sounds/grant", {
+              secret,
+              method: "POST",
+              body: { sound_id: soundID, user_id: grantUserID },
+            }),
+        },
+      ],
+      system: [
+        {
+          label: "System Health",
+          description: "Состояние сервисов",
+          run: () => adminRequest("/admin/system/health", { secret }),
+        },
+      ],
+    }),
     [
       createAudioUrl,
       createTitle,
@@ -182,120 +295,149 @@ export default function App() {
     ],
   );
 
-  const call = (label: string) => {
-    const action = headerActions.find((item) => item.label === label);
-    if (!action) return;
-    run(action.call, setData, setError, setLoading);
-  };
+  const tabs: Array<{ key: TabKey; label: string; icon: React.ElementType }> = [
+    { key: "dashboard", label: "Dashboard", icon: BarChart3 },
+    { key: "users", label: "Users", icon: Users },
+    { key: "ratings", label: "Ratings", icon: Activity },
+    { key: "matches", label: "Matches", icon: Shield },
+    { key: "features", label: "Features", icon: MessageSquare },
+    { key: "sounds", label: "Sounds", icon: Volume2 },
+    { key: "system", label: "Health", icon: HeartPulse },
+  ];
 
   return (
-    <div className="min-h-screen bg-[radial-gradient(circle_at_top_right,rgba(132,0,255,0.15),transparent_40%),radial-gradient(circle_at_left,rgba(56,189,248,0.08),transparent_45%),#050505] text-foreground">
-      <header className="border-b border-border px-6 py-4">
-        <h1 className="font-['Press_Start_2P'] text-sm tracking-[0.2em] text-zinc-100">CHADCHAT ADMIN PANEL</h1>
+    <div className="min-h-screen bg-[radial-gradient(circle_at_top_right,rgba(56,189,248,0.16),transparent_38%),radial-gradient(circle_at_left,rgba(244,63,94,0.08),transparent_42%),#050505] text-zinc-100">
+      <header className="sticky top-0 z-10 border-b border-zinc-800 bg-black/60 backdrop-blur">
+        <div className="mx-auto flex w-full max-w-[1500px] items-center justify-between px-4 py-3 md:px-6">
+          <div>
+            <h1 className="text-sm font-semibold uppercase tracking-[0.18em] text-zinc-100">Chadchat Admin</h1>
+            <p className="mt-1 text-xs text-zinc-500">Управление метриками, пользователями и сервисами</p>
+          </div>
+          <div className="w-full max-w-[420px]">
+            <label className="block text-[11px] uppercase tracking-[0.1em] text-zinc-400">X-Admin-Secret</label>
+            <div className="mt-1 flex gap-2">
+              <input
+                className="w-full rounded-md border border-zinc-700 bg-black/40 px-2.5 py-2 text-sm outline-none focus:border-sky-400/60"
+                value={secret}
+                onChange={(event) => setSecret(event.target.value)}
+                placeholder="ADMIN_API_SECRET"
+              />
+              <button
+                className="rounded-md border border-sky-500/50 bg-sky-500/10 px-3 text-xs font-semibold uppercase tracking-[0.12em] text-sky-200"
+                onClick={() => saveAdminSecret(secret)}
+              >
+                Save
+              </button>
+            </div>
+          </div>
+        </div>
       </header>
 
-      <div className="grid gap-4 p-4 lg:grid-cols-[240px_1fr]">
-        <aside className="space-y-2 border border-border bg-zinc-950/70 p-3">
-          {navItems.map((item) => {
+      <div className="mx-auto grid w-full max-w-[1500px] gap-4 p-4 md:grid-cols-[220px_1fr] md:p-6">
+        <aside className="h-fit rounded-lg border border-zinc-800 bg-zinc-950/75 p-2">
+          {tabs.map((item) => {
             const Icon = item.icon;
             return (
               <button
                 key={item.key}
                 className={cx(
-                  "flex w-full items-center gap-2 border px-3 py-2 text-left text-xs uppercase tracking-[0.14em]",
+                  "mb-1 flex w-full items-center gap-2 rounded-md border px-3 py-2 text-left text-sm",
                   tab === item.key
-                    ? "border-purple-400/60 bg-purple-500/10 text-purple-200"
-                    : "border-border bg-black/20 text-zinc-300 hover:bg-zinc-900",
+                    ? "border-sky-500/50 bg-sky-500/10 text-sky-200"
+                    : "border-transparent text-zinc-300 hover:border-zinc-700 hover:bg-zinc-900/70",
                 )}
                 onClick={() => setTab(item.key)}
               >
-                <Icon className="h-3.5 w-3.5" />
+                <Icon className="h-4 w-4" />
                 {item.label}
               </button>
             );
           })}
         </aside>
 
-        <main className="space-y-4">
-          <Card title="Auth">
-            <div className="flex flex-col gap-3 lg:flex-row lg:items-end">
-              <label className="flex-1 text-xs text-zinc-400">
-                X-Admin-Secret
-                <input
-                  className="mt-1 w-full border border-border bg-black/30 px-2 py-2 text-sm text-zinc-100 outline-none focus:border-purple-400/70"
-                  value={secret}
-                  onChange={(event) => setSecret(event.target.value)}
-                  placeholder="ADMIN_API_SECRET"
-                />
-              </label>
-              <button
-                className="border border-purple-400/60 bg-purple-500/15 px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-purple-100"
-                onClick={() => saveAdminSecret(secret)}
-              >
-                Save Secret
-              </button>
-            </div>
-          </Card>
+        <main className="grid gap-4 xl:grid-cols-[420px_1fr]">
+          <div className="space-y-4">
+            <Card title="Parameters">
+              <div className="grid gap-3">
+                <Field label="User ID" value={userID} onChange={setUserID} placeholder="Для user endpoints" />
+                <Field label="Match ID" value={matchID} onChange={setMatchID} placeholder="Для /admin/matches/{id}" />
+                <Field label="Sound ID" value={soundID} onChange={setSoundID} placeholder="Для sound owners / grant" />
+                <Field label="Search Query" value={query} onChange={setQuery} placeholder="query" />
+                <div className="grid grid-cols-3 gap-2">
+                  <Field label="Type" value={type} onChange={setType} placeholder="type" />
+                  <Field label="Verified" value={verified} onChange={setVerified} placeholder="true/false" />
+                  <Field label="Limit" value={limit} onChange={setLimit} placeholder="20" />
+                </div>
+                <Field label="Cursor" value={cursor} onChange={setCursor} placeholder="cursor" />
 
-          <Card title="Filters">
-            <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-              <input className="border border-border bg-black/30 px-2 py-2 text-sm" placeholder="userID" value={userID} onChange={(e) => setUserID(e.target.value)} />
-              <input className="border border-border bg-black/30 px-2 py-2 text-sm" placeholder="matchID" value={matchID} onChange={(e) => setMatchID(e.target.value)} />
-              <input className="border border-border bg-black/30 px-2 py-2 text-sm" placeholder="soundID" value={soundID} onChange={(e) => setSoundID(e.target.value)} />
-              <input className="border border-border bg-black/30 px-2 py-2 text-sm" placeholder="query" value={query} onChange={(e) => setQuery(e.target.value)} />
-              <input className="border border-border bg-black/30 px-2 py-2 text-sm" placeholder="type" value={type} onChange={(e) => setType(e.target.value)} />
-              <input className="border border-border bg-black/30 px-2 py-2 text-sm" placeholder="verified" value={verified} onChange={(e) => setVerified(e.target.value)} />
-              <input className="border border-border bg-black/30 px-2 py-2 text-sm" placeholder="limit" value={limit} onChange={(e) => setLimit(e.target.value)} />
-              <input className="border border-border bg-black/30 px-2 py-2 text-sm" placeholder="cursor" value={cursor} onChange={(e) => setCursor(e.target.value)} />
-              <select className="border border-border bg-black/30 px-2 py-2 text-sm" value={period} onChange={(e) => setPeriod(e.target.value)}>
-                <option value="today">today</option>
-                <option value="week">week</option>
-                <option value="season">season</option>
-              </select>
-              <input className="border border-border bg-black/30 px-2 py-2 text-sm" placeholder="grant userID" value={grantUserID} onChange={(e) => setGrantUserID(e.target.value)} />
-              <input className="border border-border bg-black/30 px-2 py-2 text-sm" placeholder="new sound title" value={createTitle} onChange={(e) => setCreateTitle(e.target.value)} />
-              <input className="border border-border bg-black/30 px-2 py-2 text-sm" placeholder="new sound audio_url" value={createAudioUrl} onChange={(e) => setCreateAudioUrl(e.target.value)} />
-            </div>
-          </Card>
+                <label className="block text-xs text-zinc-400">
+                  Match Stats Period
+                  <select
+                    className="mt-1 w-full rounded-md border border-zinc-700 bg-black/30 px-2.5 py-2 text-sm"
+                    value={period}
+                    onChange={(event) => setPeriod(event.target.value)}
+                  >
+                    <option value="today">today</option>
+                    <option value="week">week</option>
+                    <option value="season">season</option>
+                  </select>
+                </label>
 
-          <Card title="Actions">
-            <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-4">
-              {(tab === "dashboard"
-                ? ["Summary"]
-                : tab === "users"
-                  ? ["Users", "User by ID", "User Matches", "User Rating History"]
-                  : tab === "ratings"
-                    ? ["Leaderboard", "Rating by User", "Rating History by User"]
-                    : tab === "matches"
-                      ? ["Matches", "Match by ID", "Match Stats"]
-                      : tab === "features"
-                        ? [
-                            "Verification Stats",
-                            "Verification Sessions",
-                            "Test-Lab Stats",
-                            "Test-Lab Sessions",
-                            "Chat Stats",
-                            "Chat Messages",
-                          ]
-                        : tab === "sounds"
-                          ? ["Result Sounds", "Sound Owners", "Create Sound", "Grant Sound"]
-                          : ["Health"]
-              ).map((label) => (
-                <button
-                  key={label}
-                  className="border border-border bg-black/30 px-3 py-2 text-left text-xs uppercase tracking-[0.12em] text-zinc-200 hover:border-purple-400/60 hover:bg-purple-500/10"
-                  onClick={() => call(label)}
-                >
-                  {label}
-                </button>
-              ))}
-            </div>
-          </Card>
+                <div className="rounded-md border border-zinc-800 bg-black/25 p-3">
+                  <p className="mb-2 text-xs uppercase tracking-[0.1em] text-zinc-500">POST: Create Sound</p>
+                  <div className="space-y-2">
+                    <Field label="Title" value={createTitle} onChange={setCreateTitle} placeholder="sound title" />
+                    <Field
+                      label="Audio URL"
+                      value={createAudioUrl}
+                      onChange={setCreateAudioUrl}
+                      placeholder="https://..."
+                    />
+                  </div>
+                </div>
 
-          <Card title="Response">
-            {loading && <div className="mb-3 text-xs uppercase tracking-[0.14em] text-zinc-400">Loading...</div>}
-            {error ? <div className="mb-3 border border-red-500/40 bg-red-500/10 p-2 text-sm text-red-200">{error}</div> : null}
-            <DataBlock data={data ?? { message: "No data yet" }} />
+                <div className="rounded-md border border-zinc-800 bg-black/25 p-3">
+                  <p className="mb-2 text-xs uppercase tracking-[0.1em] text-zinc-500">POST: Grant Sound</p>
+                  <Field
+                    label="Grant User ID"
+                    value={grantUserID}
+                    onChange={setGrantUserID}
+                    placeholder="user id"
+                  />
+                </div>
+              </div>
+            </Card>
+
+            <Card title="Actions">
+              <div className="space-y-2">
+                {actionsByTab[tab].map((action) => (
+                  <button
+                    key={action.label}
+                    className="w-full rounded-md border border-zinc-700 bg-black/30 px-3 py-2 text-left transition hover:border-sky-500/60 hover:bg-sky-500/10"
+                    onClick={() => call(action.run)}
+                  >
+                    <div className="text-sm font-medium text-zinc-100">{action.label}</div>
+                    <div className="mt-1 text-xs text-zinc-500">{action.description}</div>
+                  </button>
+                ))}
+              </div>
+            </Card>
+          </div>
+
+          <Card title="Response Viewer">
+            <div className="mb-3 flex items-center gap-2 text-xs text-zinc-400">
+              <Search className="h-3.5 w-3.5" />
+              <span>Последний ответ API в JSON</span>
+            </div>
+            {loading ? (
+              <div className="mb-3 rounded-md border border-zinc-700 bg-zinc-900/60 px-3 py-2 text-sm text-zinc-300">Loading...</div>
+            ) : null}
+            {error ? (
+              <div className="mb-3 rounded-md border border-rose-500/40 bg-rose-500/10 px-3 py-2 text-sm text-rose-200">{error}</div>
+            ) : null}
+            <pre className="max-h-[760px] overflow-auto rounded-md border border-zinc-800 bg-black/40 p-3 text-xs leading-5 text-zinc-200">
+              {JSON.stringify(data ?? { message: "No requests yet" }, null, 2)}
+            </pre>
           </Card>
         </main>
       </div>
