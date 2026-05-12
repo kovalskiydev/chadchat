@@ -113,6 +113,7 @@ services:
       ML_SERVICE_URL: http://ml-service:8090
       CUSTOMIZATION_SERVICE_URL: http://customization-service:8087
       CUSTOMIZATION_INTERNAL_SECRET: ${CUSTOMIZATION_INTERNAL_SECRET}
+      DEFAULT_RESULT_SOUND_URL: ${DEFAULT_RESULT_SOUND_URL}
     depends_on:
       - auth-service
       - ml-service
@@ -133,6 +134,8 @@ services:
       PORT: 8087
       AUTH_SERVICE_URL: http://auth-service:8081
       CUSTOMIZATION_INTERNAL_SECRET: ${CUSTOMIZATION_INTERNAL_SECRET}
+      ADMIN_API_SECRET: ${ADMIN_API_SECRET}
+      DEFAULT_RESULT_SOUND_URL: ${DEFAULT_RESULT_SOUND_URL}
     depends_on:
       - mysql
       - auth-service
