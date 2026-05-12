@@ -3785,14 +3785,14 @@ function DuelModal({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/72 p-2 backdrop-blur-sm sm:p-3"
+      className="fixed inset-0 z-50 flex items-center justify-center overflow-hidden bg-black/72 p-2 backdrop-blur-sm sm:p-3"
       role="dialog"
       aria-modal="true"
       aria-labelledby="duel-title"
       onMouseDown={onClose}
     >
       <div
-        className="flex max-h-[96vh] w-full max-w-[1680px] flex-col border border-purple-500/35 bg-zinc-950 shadow-[0_0_40px_rgba(132,0,255,0.22)]"
+        className="flex h-[calc(100vh-1rem)] w-full max-w-[1500px] flex-col overflow-hidden border border-purple-500/35 bg-zinc-950 shadow-[0_0_40px_rgba(132,0,255,0.22)] sm:h-[calc(100vh-1.5rem)]"
         onMouseDown={(event) => event.stopPropagation()}
       >
         <div className="flex items-center justify-between border-b border-border px-5 py-4">
@@ -3811,7 +3811,7 @@ function DuelModal({
             <X className="h-4 w-4" aria-hidden="true" />
           </button>
         </div>
-        <div className="min-h-0 flex-1 overflow-y-auto p-3 sm:p-5">
+        <div className="min-h-0 flex-1 overflow-hidden p-3 sm:p-4">
           {isQueueScreen ? (
             <div className="flex min-h-[72vh] flex-col items-center justify-center border border-zinc-800 bg-black/80 px-6 text-center">
               <div className="text-[10px] font-semibold uppercase tracking-[0.18em] text-zinc-600">
@@ -3886,7 +3886,7 @@ function DuelModal({
           ) : (
             <div
               className={cn(
-                "relative grid min-h-[78vh] gap-3 overflow-hidden border bg-black p-3 pb-28 lg:grid-cols-2 lg:pb-24",
+                "relative grid h-full min-h-0 grid-rows-[auto_minmax(0,1fr)_minmax(0,1fr)] gap-3 overflow-hidden border bg-black p-3 pb-24 lg:grid-cols-2 lg:grid-rows-[auto_minmax(0,1fr)]",
                 phase === "awaiting_media" && "border-sky-500/35",
                 phase === "pre_start" && "border-purple-500/45",
                 phase === "scoring" && "border-red-500/55",
@@ -3948,7 +3948,7 @@ function DuelModal({
 
               <div
                 className={cn(
-                  "group relative min-h-[560px] overflow-hidden border bg-black/90",
+                  "group relative min-h-0 overflow-hidden border bg-black/90",
                   myLeading && activeScoring
                     ? "border-emerald-300/80 shadow-[0_0_30px_rgba(110,231,183,0.18)]"
                     : "border-purple-500/45 shadow-[0_0_24px_rgba(168,85,247,0.12)]",
@@ -3957,7 +3957,7 @@ function DuelModal({
               >
                 <video
                   ref={videoRef}
-                  className="h-full min-h-[320px] w-full object-cover"
+                  className="h-full w-full object-cover"
                   muted
                   playsInline
                   autoPlay
@@ -3996,7 +3996,7 @@ function DuelModal({
 
               <div
                 className={cn(
-                  "group relative min-h-[560px] overflow-hidden border bg-black/90",
+                  "group relative min-h-0 overflow-hidden border bg-black/90",
                   oppLeading && activeScoring
                     ? "border-emerald-300/80 shadow-[0_0_30px_rgba(110,231,183,0.18)]"
                     : "border-zinc-700 shadow-[0_0_24px_rgba(255,255,255,0.06)]",
@@ -4005,7 +4005,7 @@ function DuelModal({
               >
                 <video
                   ref={remoteVideoRef}
-                  className="h-full min-h-[320px] w-full object-cover"
+                  className="h-full w-full object-cover"
                   playsInline
                   autoPlay
                 />
