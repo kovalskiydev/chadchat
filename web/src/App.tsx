@@ -74,9 +74,16 @@ import {
 import { getApiHealth } from "@/lib/health";
 import {
   getLeaderboard,
+  getQueueInfo,
+  getRecentForm,
   getMyRating,
+  getStatsPeriod,
+  getStatsSummary,
   type LeaderboardEntry,
   type RatingProfile,
+  type QueueInfo,
+  type StatsPeriod,
+  type StatsSummary,
 } from "@/lib/rating";
 import {
   getResultSounds,
@@ -180,7 +187,7 @@ const statsByPeriod = {
     avgLossTrend: -3,
   },
 };
-type StatsPeriod = keyof typeof statsByPeriod;
+type StatsPeriodKey = keyof typeof statsByPeriod;
 
 type ChatMessage = {
   id: number | string;
@@ -256,12 +263,36 @@ function formatRankLabel(rank?: string | null) {
   }
 }
 
-function buildStatsSnapshot(ratingProfile: RatingProfile | null) {
+function buildStatsSnapshot(
+  ratingProfile: RatingProfile | null,
+  statsSummary: StatsSummary | null,
+) {
   const fallbackProgress = Math.round(
     ((currentStats.rating - currentStats.rankFloor) /
       (currentStats.nextRankRating - currentStats.rankFloor)) *
       100,
   );
+
+  if (statsSummary) {
+    return {
+      ...currentStats,
+      rank: formatRankLabel(statsSummary.rank),
+      nextRank: formatRankLabel(statsSummary.next_rank),
+      rating: statsSummary.rating,
+      rankFloor: statsSummary.rank_floor ?? currentStats.rankFloor,
+      nextRankRating: statsSummary.next_rank_rating ?? currentStats.nextRankRating,
+      wins: statsSummary.wins,
+      streak: statsSummary.streak,
+      losses: statsSummary.losses,
+      winRate: Math.round(statsSummary.win_rate),
+      peakRating: statsSummary.peak_rating,
+      matches: statsSummary.matches,
+      avgGain: Math.round(statsSummary.avg_gain),
+      avgLoss: Math.round(statsSummary.avg_loss),
+      averageScore: Math.round(statsSummary.average_score),
+      progressPercent: statsSummary.progress_percent ?? fallbackProgress,
+    };
+  }
 
   if (!ratingProfile) {
     return {
@@ -290,22 +321,83 @@ function buildStatsSnapshot(ratingProfile: RatingProfile | null) {
   };
 }
 
-function buildPeriodStats(statsSnapshot: ReturnType<typeof buildStatsSnapshot>) {
+function buildPeriodStats(
+  statsSnapshot: ReturnType<typeof buildStatsSnapshot>,
+  periodApiData: Partial<Record<StatsPeriodKey, StatsPeriod>>,
+) {
+  const todayApi = periodApiData.today;
+  const weekApi = periodApiData.week;
+  const seasonApi = periodApiData.season;
+
   return {
     today: {
       ...statsByPeriod.today,
-      rating: statsSnapshot.rating,
-      peakRating: statsSnapshot.peakRating,
+      rating: todayApi?.rating ?? statsSnapshot.rating,
+      peakRating: todayApi?.peak_rating ?? statsSnapshot.peakRating,
+      matches: todayApi?.matches ?? statsByPeriod.today.matches,
+      wins: todayApi?.wins ?? statsByPeriod.today.wins,
+      losses: todayApi?.losses ?? statsByPeriod.today.losses,
+      winRate: Math.round(todayApi?.win_rate ?? statsByPeriod.today.winRate),
+      averageScore: Math.round(todayApi?.average_score ?? statsByPeriod.today.averageScore),
+      avgGain: Math.round(todayApi?.avg_gain ?? statsByPeriod.today.avgGain),
+      avgLoss: Math.round(todayApi?.avg_loss ?? statsByPeriod.today.avgLoss),
+      ratingTrend: Math.round(todayApi?.rating_trend ?? statsByPeriod.today.ratingTrend),
+      peakTrend: Math.round(todayApi?.peak_trend ?? statsByPeriod.today.peakTrend),
+      matchesTrend: Math.round(todayApi?.matches_trend ?? statsByPeriod.today.matchesTrend),
+      winsTrend: Math.round(todayApi?.wins_trend ?? statsByPeriod.today.winsTrend),
+      lossesTrend: Math.round(todayApi?.losses_trend ?? statsByPeriod.today.lossesTrend),
+      winRateTrend: Math.round(todayApi?.win_rate_trend ?? statsByPeriod.today.winRateTrend),
+      averageScoreTrend: Math.round(
+        todayApi?.average_score_trend ?? statsByPeriod.today.averageScoreTrend,
+      ),
+      avgGainTrend: Math.round(todayApi?.avg_gain_trend ?? statsByPeriod.today.avgGainTrend),
+      avgLossTrend: Math.round(todayApi?.avg_loss_trend ?? statsByPeriod.today.avgLossTrend),
     },
     week: {
       ...statsByPeriod.week,
-      rating: statsSnapshot.rating,
-      peakRating: statsSnapshot.peakRating,
+      rating: weekApi?.rating ?? statsSnapshot.rating,
+      peakRating: weekApi?.peak_rating ?? statsSnapshot.peakRating,
+      matches: weekApi?.matches ?? statsByPeriod.week.matches,
+      wins: weekApi?.wins ?? statsByPeriod.week.wins,
+      losses: weekApi?.losses ?? statsByPeriod.week.losses,
+      winRate: Math.round(weekApi?.win_rate ?? statsByPeriod.week.winRate),
+      averageScore: Math.round(weekApi?.average_score ?? statsByPeriod.week.averageScore),
+      avgGain: Math.round(weekApi?.avg_gain ?? statsByPeriod.week.avgGain),
+      avgLoss: Math.round(weekApi?.avg_loss ?? statsByPeriod.week.avgLoss),
+      ratingTrend: Math.round(weekApi?.rating_trend ?? statsByPeriod.week.ratingTrend),
+      peakTrend: Math.round(weekApi?.peak_trend ?? statsByPeriod.week.peakTrend),
+      matchesTrend: Math.round(weekApi?.matches_trend ?? statsByPeriod.week.matchesTrend),
+      winsTrend: Math.round(weekApi?.wins_trend ?? statsByPeriod.week.winsTrend),
+      lossesTrend: Math.round(weekApi?.losses_trend ?? statsByPeriod.week.lossesTrend),
+      winRateTrend: Math.round(weekApi?.win_rate_trend ?? statsByPeriod.week.winRateTrend),
+      averageScoreTrend: Math.round(
+        weekApi?.average_score_trend ?? statsByPeriod.week.averageScoreTrend,
+      ),
+      avgGainTrend: Math.round(weekApi?.avg_gain_trend ?? statsByPeriod.week.avgGainTrend),
+      avgLossTrend: Math.round(weekApi?.avg_loss_trend ?? statsByPeriod.week.avgLossTrend),
     },
     season: {
       ...statsByPeriod.season,
-      rating: statsSnapshot.rating,
-      peakRating: statsSnapshot.peakRating,
+      rating: seasonApi?.rating ?? statsSnapshot.rating,
+      peakRating: seasonApi?.peak_rating ?? statsSnapshot.peakRating,
+      matches: seasonApi?.matches ?? statsByPeriod.season.matches,
+      wins: seasonApi?.wins ?? statsByPeriod.season.wins,
+      losses: seasonApi?.losses ?? statsByPeriod.season.losses,
+      winRate: Math.round(seasonApi?.win_rate ?? statsByPeriod.season.winRate),
+      averageScore: Math.round(seasonApi?.average_score ?? statsByPeriod.season.averageScore),
+      avgGain: Math.round(seasonApi?.avg_gain ?? statsByPeriod.season.avgGain),
+      avgLoss: Math.round(seasonApi?.avg_loss ?? statsByPeriod.season.avgLoss),
+      ratingTrend: Math.round(seasonApi?.rating_trend ?? statsByPeriod.season.ratingTrend),
+      peakTrend: Math.round(seasonApi?.peak_trend ?? statsByPeriod.season.peakTrend),
+      matchesTrend: Math.round(seasonApi?.matches_trend ?? statsByPeriod.season.matchesTrend),
+      winsTrend: Math.round(seasonApi?.wins_trend ?? statsByPeriod.season.winsTrend),
+      lossesTrend: Math.round(seasonApi?.losses_trend ?? statsByPeriod.season.lossesTrend),
+      winRateTrend: Math.round(seasonApi?.win_rate_trend ?? statsByPeriod.season.winRateTrend),
+      averageScoreTrend: Math.round(
+        seasonApi?.average_score_trend ?? statsByPeriod.season.averageScoreTrend,
+      ),
+      avgGainTrend: Math.round(seasonApi?.avg_gain_trend ?? statsByPeriod.season.avgGainTrend),
+      avgLossTrend: Math.round(seasonApi?.avg_loss_trend ?? statsByPeriod.season.avgLossTrend),
     },
   };
 }
@@ -727,12 +819,18 @@ function ChatMessageItem({
 function StatsModal({
   onClose,
   stats,
+  periodApiData,
+  recentForm,
+  queueInfo,
 }: {
   onClose: () => void;
   stats: ReturnType<typeof buildStatsSnapshot>;
+  periodApiData: Partial<Record<StatsPeriodKey, StatsPeriod>>;
+  recentForm: string[];
+  queueInfo: QueueInfo | null;
 }) {
-  const [period, setPeriod] = useState<StatsPeriod>("today");
-  const periodStatsMap = buildPeriodStats(stats);
+  const [period, setPeriod] = useState<StatsPeriodKey>("today");
+  const periodStatsMap = buildPeriodStats(stats, periodApiData);
   const periodStats = periodStatsMap[period];
   const progress = Math.max(0, Math.min(100, stats.progressPercent));
   const remaining = Math.max(0, stats.nextRankRating - periodStats.rating);
@@ -798,7 +896,7 @@ function StatsModal({
         <div className="grid gap-4 p-5 lg:grid-cols-[1fr_220px]">
           <div className="space-y-4">
             <div className="grid grid-cols-3 border border-zinc-900 bg-black/60 p-1">
-              {(Object.keys(statsByPeriod) as StatsPeriod[]).map((key) => (
+              {(Object.keys(statsByPeriod) as StatsPeriodKey[]).map((key) => (
                 <button
                   className={cn(
                     "h-9 text-[10px] font-semibold uppercase tracking-[0.14em] text-zinc-500 transition-colors hover:text-zinc-100",
@@ -879,10 +977,17 @@ function StatsModal({
 
           <div className="space-y-3">
             {[
-              ["Recent Form", "W W L W W"],
-              ["Best Streak", "+9"],
-              ["Queue", "Ranked"],
-              ["Last Match", "+21 rating"],
+              ["Recent Form", recentForm.length ? recentForm.join(" ") : "N/A"],
+              ["Best Streak", `+${stats.streak}`],
+              ["Queue", queueInfo?.queue_type ?? "Ranked"],
+              [
+                "Last Match",
+                typeof queueInfo?.last_match_rating_delta === "number"
+                  ? `${queueInfo.last_match_rating_delta > 0 ? "+" : ""}${Math.round(
+                      queueInfo.last_match_rating_delta,
+                    )} rating`
+                  : "N/A",
+              ],
             ].map(([label, value]) => (
               <div className="border border-zinc-900 bg-black/60 p-3" key={label}>
                 <div className="text-[10px] uppercase tracking-[0.12em] text-zinc-600">
@@ -4910,6 +5015,12 @@ export default function App() {
     "register" | "anonymous" | null
   >(null);
   const [ratingProfile, setRatingProfile] = useState<RatingProfile | null>(null);
+  const [statsSummary, setStatsSummary] = useState<StatsSummary | null>(null);
+  const [statsPeriodData, setStatsPeriodData] = useState<
+    Partial<Record<StatsPeriodKey, StatsPeriod>>
+  >({});
+  const [recentForm, setRecentForm] = useState<string[]>([]);
+  const [queueInfo, setQueueInfo] = useState<QueueInfo | null>(null);
   const [ratingDataLoading, setRatingDataLoading] = useState(false);
   const [leaderboardEntries, setLeaderboardEntries] = useState<LeaderboardEntry[]>([]);
   const [leaderboardLoading, setLeaderboardLoading] = useState(false);
@@ -4937,7 +5048,7 @@ export default function App() {
   const currentNickname =
     (me?.nickname && String(me.nickname)) ||
     (isAnonymousUser ? "ANONYMOUS" : "GUEST");
-  const statsSnapshot = buildStatsSnapshot(ratingProfile);
+  const statsSnapshot = buildStatsSnapshot(ratingProfile, statsSummary);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -4964,6 +5075,10 @@ export default function App() {
       if (!nextTokens) {
         setMe(null);
         setRatingProfile(null);
+        setStatsSummary(null);
+        setStatsPeriodData({});
+        setRecentForm([]);
+        setQueueInfo(null);
         setLeaderboardEntries([]);
       }
     };
@@ -5072,6 +5187,10 @@ export default function App() {
     if (!tokens?.accessToken) {
       setRatingDataLoading(false);
       setRatingProfile(null);
+      setStatsSummary(null);
+      setStatsPeriodData({});
+      setRecentForm([]);
+      setQueueInfo(null);
       setLeaderboardEntries([]);
       setLeaderboardLoading(false);
       setResultSoundOptions([]);
@@ -5085,16 +5204,43 @@ export default function App() {
       setRatingDataLoading(true);
       setLeaderboardLoading(true);
       try {
-        const [myRating, leaderboard] = await Promise.all([
+        const [
+          myRating,
+          summary,
+          todayPeriod,
+          weekPeriod,
+          seasonPeriod,
+          recentFormData,
+          queueInfoData,
+          leaderboard,
+        ] = await Promise.all([
           getMyRating(tokens.accessToken),
+          getStatsSummary(tokens.accessToken),
+          getStatsPeriod(tokens.accessToken, "today"),
+          getStatsPeriod(tokens.accessToken, "week"),
+          getStatsPeriod(tokens.accessToken, "season"),
+          getRecentForm(tokens.accessToken, 5),
+          getQueueInfo(tokens.accessToken),
           getLeaderboard(tokens.accessToken, 20),
         ]);
         if (cancelled) return;
         setRatingProfile(myRating);
+        setStatsSummary(summary);
+        setStatsPeriodData({
+          today: todayPeriod ?? undefined,
+          week: weekPeriod ?? undefined,
+          season: seasonPeriod ?? undefined,
+        });
+        setRecentForm(recentFormData);
+        setQueueInfo(queueInfoData);
         setLeaderboardEntries(leaderboard);
       } catch {
         if (cancelled) return;
         setRatingProfile(null);
+        setStatsSummary(null);
+        setStatsPeriodData({});
+        setRecentForm([]);
+        setQueueInfo(null);
         setLeaderboardEntries([]);
       } finally {
         if (!cancelled) {
@@ -5633,6 +5779,9 @@ export default function App() {
         <StatsModal
           onClose={() => setIsStatsOpen(false)}
           stats={statsSnapshot}
+          periodApiData={statsPeriodData}
+          recentForm={recentForm}
+          queueInfo={queueInfo}
         />
       )}
       {isCustomizeOpen && (

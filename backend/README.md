@@ -53,8 +53,16 @@ docker compose up --build
 - `GET /rating/me`
 - `GET /rating/{userID}`
 - `GET /leaderboard`
+- `GET /stats/me/summary`
+- `GET /stats/me/period`
+- `GET /stats/me/history`
+- `GET /stats/me/recent-form`
+- `GET /stats/me/queue-info`
+- `GET /matches/me`
 
 `/me`, `login`, `register`, `anonymous`, `upgrade`, `refresh` больше не должны считаться источником рейтинга. Фронт должен получать рейтинг отдельно через `rating-service`.
+
+`rating-service` теперь также хранит историю завершенных `duel` матчей и на её основе отдает статистику и пагинируемый match history.
 
 ## Flow верификации до регистрации
 

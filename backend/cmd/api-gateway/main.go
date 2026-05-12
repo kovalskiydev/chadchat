@@ -47,6 +47,8 @@ func main() {
 	mux.Handle("/live-chat/", liveChatProxy)
 	mux.Handle("/duel/", duelProxy)
 	mux.Handle("/rating/", ratingProxy)
+	mux.Handle("/stats/", ratingProxy)
+	mux.Handle("/matches/", ratingProxy)
 	mux.Handle("/leaderboard", ratingProxy)
 	mux.Handle("/result-sounds", customizationProxy)
 	mux.Handle("/result-sounds/", customizationProxy)

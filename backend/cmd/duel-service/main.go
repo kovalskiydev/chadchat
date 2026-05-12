@@ -40,6 +40,8 @@ type Server struct {
 	mlServiceURL            string
 	customizationServiceURL string
 	customizationSecret     string
+	ratingServiceURL        string
+	ratingInternalSecret    string
 	defaultResultSoundURL   string
 	store                   *Store
 	limiter                 *rateutil.Limiter
@@ -65,6 +67,7 @@ type Match struct {
 	MediaReady   map[string]bool            `json:"-"`
 	Subscribers  map[string]chan []byte     `json:"-"`
 	Connections  map[string]int             `json:"-"`
+	Recorded     bool                       `json:"-"`
 }
 
 type PlayerProgress struct {
@@ -93,6 +96,21 @@ type ResultSound struct {
 
 type customizationSoundResponse struct {
 	Sound ResultSound `json:"sound"`
+}
+
+type duelRecordRequest struct {
+	MatchID         string    `json:"match_id"`
+	Mode            string    `json:"mode"`
+	StartedAt       time.Time `json:"started_at"`
+	FinishedAt      time.Time `json:"finished_at"`
+	PlayerAID       string    `json:"player_a_id"`
+	PlayerANickname string    `json:"player_a_nickname"`
+	PlayerAScore    float64   `json:"player_a_score"`
+	PlayerBID       string    `json:"player_b_id"`
+	PlayerBNickname string    `json:"player_b_nickname"`
+	PlayerBScore    float64   `json:"player_b_score"`
+	WinnerID        string    `json:"winner_id,omitempty"`
+	Reason          string    `json:"reason"`
 }
 
 type meResponse struct {
@@ -129,6 +147,8 @@ func main() {
 		mlServiceURL:            envOr("ML_SERVICE_URL", "http://localhost:8090"),
 		customizationServiceURL: envOr("CUSTOMIZATION_SERVICE_URL", "http://localhost:8087"),
 		customizationSecret:     envOr("CUSTOMIZATION_INTERNAL_SECRET", "dev-customization-secret-change-me"),
+		ratingServiceURL:        envOr("RATING_SERVICE_URL", "http://localhost:8086"),
+		ratingInternalSecret:    envOr("RATING_INTERNAL_SECRET", "dev-rating-secret-change-me"),
 		defaultResultSoundURL:   envOr("DEFAULT_RESULT_SOUND_URL", "https://cdn.chadchat.example/sounds/default_win.mp3"),
 		store: &Store{
 			queue:         []authUser{},
@@ -573,7 +593,17 @@ func (s *Server) runMatchLifecycle(matchID string) {
 			s.broadcastLocked(m, map[string]any{"type": "phase_changed", "phase": m.Phase, "match": snapshotMatch(m)})
 		}
 		if m.Phase == phaseFinished {
+			var recordReq duelRecordRequest
+			shouldRecord := false
+			if !m.Recorded {
+				m.Recorded = true
+				recordReq = buildDuelRecord(m)
+				shouldRecord = true
+			}
 			s.store.mu.Unlock()
+			if shouldRecord {
+				go s.recordFinishedMatch(recordReq)
+			}
 			return
 		}
 		s.store.mu.Unlock()
@@ -849,6 +879,49 @@ func (s *Server) finishedEventLocked(m *Match) map[string]any {
 		}
 	}
 	return payload
+}
+
+func buildDuelRecord(m *Match) duelRecordRequest {
+	req := duelRecordRequest{
+		MatchID:         m.ID,
+		Mode:            "duel",
+		StartedAt:       m.StartedAt,
+		FinishedAt:      m.PhaseEndsAt,
+		PlayerAID:       m.PlayerA,
+		PlayerANickname: m.Players[m.PlayerA].Nickname,
+		PlayerAScore:    m.Players[m.PlayerA].FinalAvg,
+		PlayerBID:       m.PlayerB,
+		PlayerBNickname: m.Players[m.PlayerB].Nickname,
+		PlayerBScore:    m.Players[m.PlayerB].FinalAvg,
+	}
+	if m.Result != nil {
+		req.WinnerID = m.Result.WinnerID
+		req.Reason = m.Result.Reason
+		if req.PlayerAScore == 0 && req.PlayerBScore == 0 {
+			req.PlayerAScore = m.Result.ScoreA
+			req.PlayerBScore = m.Result.ScoreB
+		}
+	}
+	return req
+}
+
+func (s *Server) recordFinishedMatch(req duelRecordRequest) {
+	payload, _ := json.Marshal(req)
+	httpReq, err := http.NewRequest(
+		http.MethodPost,
+		strings.TrimRight(s.ratingServiceURL, "/")+"/rating/internal/record-duel",
+		bytes.NewReader(payload),
+	)
+	if err != nil {
+		return
+	}
+	httpReq.Header.Set("Content-Type", "application/json")
+	httpReq.Header.Set("X-Rating-Internal-Secret", s.ratingInternalSecret)
+	resp, err := http.DefaultClient.Do(httpReq)
+	if err != nil {
+		return
+	}
+	defer resp.Body.Close()
 }
 
 func (s *Server) predictScore(imageBase64 string) (float64, error) {

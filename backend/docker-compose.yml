@@ -95,10 +95,13 @@ services:
       - ML_SERVICE_URL=http://ml-service:8090
       - CUSTOMIZATION_SERVICE_URL=http://customization-service:8087
       - CUSTOMIZATION_INTERNAL_SECRET=dev-customization-secret-change-me
+      - RATING_SERVICE_URL=http://rating-service:8086
+      - RATING_INTERNAL_SECRET=dev-rating-secret-change-me
     depends_on:
       - auth-service
       - ml-service
       - customization-service
+      - rating-service
     ports:
       - "8085:8085"
 
@@ -112,6 +115,8 @@ services:
       - MYSQL_DSN=app:app@tcp(mysql:3306)/chadchat?parseTime=true&multiStatements=true&charset=utf8mb4
       - AUTH_SERVICE_URL=http://auth-service:8081
       - RATING_INTERNAL_SECRET=dev-rating-secret-change-me
+      - DEFAULT_QUEUE_TYPE=duel
+      - DEFAULT_REGION=global
     depends_on:
       - mysql
       - auth-service
