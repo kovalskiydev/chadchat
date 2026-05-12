@@ -9,3 +9,14 @@ services:
     restart: unless-stopped
     ports:
       - "${WEB_PUBLIC_PORT:-80}:80"
+
+  admin-web:
+    image: ${ADMIN_WEB_IMAGE:-chadchat/admin-web:latest}
+    build:
+      context: ../../admin-web
+      dockerfile: Dockerfile
+      args:
+        VITE_API_BASE_URL: ${VITE_API_BASE_URL}
+    restart: unless-stopped
+    ports:
+      - "${ADMIN_WEB_PUBLIC_PORT:-8082}:80"

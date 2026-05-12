@@ -2,8 +2,8 @@
 
 ## Recommended layout
 
-- `VPS 1` (`web`) - only the static frontend from `web/`
-- `VPS 2` (`api`) - `api-gateway`, `auth-service`, `verification-service`, `test-lab-service`, `live-chat-service`, `duel-service`, `ml-service`, `mysql`
+- `VPS 1` (`web`) - static frontend from `web/` and admin frontend from `admin-web/`
+- `VPS 2` (`api`) - `api-gateway`, `auth-service`, `verification-service`, `test-lab-service`, `live-chat-service`, `duel-service`, `rating-service`, `customization-service`, `admin-service`, `ml-service`, `mysql`
 
 This layout fits the current codebase:
 
@@ -103,6 +103,7 @@ Flow:
 - `PROD_API_BASE_URL`
 - `PROD_API_PUBLIC_PORT` optional, default `8080`
 - `PROD_WEB_PUBLIC_PORT` optional, default `80`
+- `PROD_ADMIN_WEB_PUBLIC_PORT` optional, default `8082`
 - `PROD_DEFAULT_RESULT_SOUND_URL`
 
 ### VPS prerequisites
@@ -116,6 +117,17 @@ Flow:
 
 - API stack: `/opt/chadchat/api`
 - Web stack: `/opt/chadchat/web`
+
+## Admin Web
+
+`admin-web/` is deployed on the same web VPS as a separate container.
+
+Recommended Caddy routing:
+
+- `chadchat.fun` -> `127.0.0.1:8081`
+- `admin.chadchat.fun` -> `127.0.0.1:8082`
+
+The current `admin-web` talks to the public API base URL via `VITE_API_BASE_URL`.
 
 If you want different paths, edit the workflow env block.
 

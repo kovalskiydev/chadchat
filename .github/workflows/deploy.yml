@@ -35,6 +35,7 @@ jobs:
           filters: |
             web:
               - 'web/**'
+              - 'admin-web/**'
               - 'deploy/web/**'
               - '.github/workflows/deploy.yml'
             api:
@@ -82,6 +83,21 @@ jobs:
           tags: |
             ${{ env.REGISTRY }}/${{ steps.vars.outputs.owner_lc }}/chadchat-web:main
             ${{ env.REGISTRY }}/${{ steps.vars.outputs.owner_lc }}/chadchat-web:${{ github.sha }}
+
+      - name: Build and push admin-web
+        uses: docker/build-push-action@v6
+        with:
+          context: ./admin-web
+          file: ./admin-web/Dockerfile
+          push: true
+          provenance: false
+          cache-from: type=gha,scope=admin-web
+          cache-to: type=gha,scope=admin-web,mode=max
+          build-args: |
+            VITE_API_BASE_URL=${{ vars.PROD_API_BASE_URL }}
+          tags: |
+            ${{ env.REGISTRY }}/${{ steps.vars.outputs.owner_lc }}/chadchat-admin-web:main
+            ${{ env.REGISTRY }}/${{ steps.vars.outputs.owner_lc }}/chadchat-admin-web:${{ github.sha }}
 
   build-and-push-api:
     runs-on: ubuntu-latest
@@ -134,6 +150,11 @@ jobs:
             dockerfile: ./backend/Dockerfile
             build_args: |
               SERVICE_PATH=./cmd/customization-service
+          - image_name: admin-service
+            context: ./backend
+            dockerfile: ./backend/Dockerfile
+            build_args: |
+              SERVICE_PATH=./cmd/admin-service
           - image_name: ml-service
             context: ./ml
             dockerfile: ./ml/Dockerfile
@@ -235,6 +256,7 @@ jobs:
             DUEL_SERVICE_IMAGE=${{ env.REGISTRY }}/${OWNER_LC}/chadchat-duel-service:main
             RATING_SERVICE_IMAGE=${{ env.REGISTRY }}/${OWNER_LC}/chadchat-rating-service:main
             CUSTOMIZATION_SERVICE_IMAGE=${{ env.REGISTRY }}/${OWNER_LC}/chadchat-customization-service:main
+            ADMIN_SERVICE_IMAGE=${{ env.REGISTRY }}/${OWNER_LC}/chadchat-admin-service:main
             ML_SERVICE_IMAGE=${{ env.REGISTRY }}/${OWNER_LC}/chadchat-ml-service:main
             EOF
             echo "${{ secrets.GHCR_TOKEN }}" | docker login ${{ env.REGISTRY }} -u "${{ secrets.GHCR_USERNAME }}" --password-stdin
@@ -285,7 +307,9 @@ jobs:
             cat > "${{ env.WEB_DEPLOY_PATH }}/.env" <<EOF
             VITE_API_BASE_URL=${{ vars.PROD_API_BASE_URL }}
             WEB_PUBLIC_PORT=${{ vars.PROD_WEB_PUBLIC_PORT || '80' }}
+            ADMIN_WEB_PUBLIC_PORT=${{ vars.PROD_ADMIN_WEB_PUBLIC_PORT || '8082' }}
             WEB_IMAGE=${{ env.REGISTRY }}/${OWNER_LC}/chadchat-web:main
+            ADMIN_WEB_IMAGE=${{ env.REGISTRY }}/${OWNER_LC}/chadchat-admin-web:main
             EOF
             echo "${{ secrets.GHCR_TOKEN }}" | docker login ${{ env.REGISTRY }} -u "${{ secrets.GHCR_USERNAME }}" --password-stdin
             cd "${{ env.WEB_DEPLOY_PATH }}"

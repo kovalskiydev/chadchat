@@ -166,6 +166,39 @@ services:
     expose:
       - "8086"
 
+  admin-service:
+    image: ${ADMIN_SERVICE_IMAGE:-chadchat/admin-service:latest}
+    build:
+      context: ../../backend
+      dockerfile: Dockerfile
+      args:
+        SERVICE_PATH: ./cmd/admin-service
+    restart: unless-stopped
+    environment:
+      MYSQL_DSN: ${MYSQL_DSN}
+      PORT: 8088
+      ADMIN_API_SECRET: ${ADMIN_API_SECRET}
+      AUTH_SERVICE_URL: http://auth-service:8081
+      VERIFICATION_SERVICE_URL: http://verification-service:8082
+      TEST_LAB_SERVICE_URL: http://test-lab-service:8083
+      LIVE_CHAT_SERVICE_URL: http://live-chat-service:8084
+      DUEL_SERVICE_URL: http://duel-service:8085
+      RATING_SERVICE_URL: http://rating-service:8086
+      CUSTOMIZATION_SERVICE_URL: http://customization-service:8087
+      ML_SERVICE_URL: http://ml-service:8090
+    depends_on:
+      - mysql
+      - auth-service
+      - verification-service
+      - test-lab-service
+      - live-chat-service
+      - duel-service
+      - rating-service
+      - customization-service
+      - ml-service
+    expose:
+      - "8088"
+
   api-gateway:
     image: ${API_GATEWAY_IMAGE:-chadchat/api-gateway:latest}
     build:
@@ -184,6 +217,7 @@ services:
       DUEL_SERVICE_URL: ${DUEL_SERVICE_URL:-http://duel-service:8085}
       CUSTOMIZATION_SERVICE_URL: ${CUSTOMIZATION_SERVICE_URL:-http://customization-service:8087}
       RATING_SERVICE_URL: ${RATING_SERVICE_URL:-http://rating-service:8086}
+      ADMIN_SERVICE_URL: ${ADMIN_SERVICE_URL:-http://admin-service:8088}
       ML_SERVICE_URL: ${ML_SERVICE_URL:-http://ml-service:8090}
     depends_on:
       - auth-service
@@ -193,6 +227,7 @@ services:
       - duel-service
       - customization-service
       - rating-service
+      - admin-service
     ports:
       - "${API_PUBLIC_PORT:-8080}:8080"
 
