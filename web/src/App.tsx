@@ -10,8 +10,6 @@ import {
   Signal,
   Trophy,
   UserRoundCog,
-  Gem,
-  Plus,
   CircleHelp,
   LogOut,
   User,
@@ -74,12 +72,14 @@ import {
 import { getApiHealth } from "@/lib/health";
 import {
   getLeaderboard,
+  getMyMatches,
   getQueueInfo,
   getRecentForm,
   getMyRating,
   getStatsPeriod,
   getStatsSummary,
   type LeaderboardEntry,
+  type MatchHistoryEntry,
   type RatingProfile,
   type QueueInfo,
   type StatsPeriod,
@@ -96,98 +96,58 @@ const magicBlockClass =
 const magicGlow = "132, 0, 255";
 const duelQueueTracks = [track1, track2, track3];
 const leaderboardPageSize = 6;
-const auraBalance = 12840;
-const currentStats = {
-  rank: "HTN",
-  nextRank: "CHADLITE",
-  rating: 2149,
-  rankFloor: 2000,
-  nextRankRating: 2300,
-  wins: 42,
-  streak: 5,
-  losses: 18,
-  winRate: 70,
-  peakRating: 2212,
-  matches: 60,
-  avgGain: 18,
-  avgLoss: 11,
-  averageScore: 86,
-  ratingTrend: 37,
-  peakTrend: 12,
-  matchesTrend: 8,
-  winsTrend: 4,
-  lossesTrend: -1,
-  winRateTrend: 3,
-  averageScoreTrend: 6,
-  avgGainTrend: 2,
-  avgLossTrend: -2,
-};
 const statsByPeriod = {
   today: {
     label: "Today",
-    rating: 2149,
-    peakRating: 2162,
-    matches: 7,
-    wins: 5,
-    losses: 2,
-    winRate: 71,
-    averageScore: 89,
-    avgGain: 21,
-    avgLoss: 9,
-    ratingTrend: 37,
-    peakTrend: 18,
-    matchesTrend: 7,
-    winsTrend: 5,
-    lossesTrend: -2,
-    winRateTrend: 8,
-    averageScoreTrend: 6,
-    avgGainTrend: 4,
-    avgLossTrend: -2,
   },
   week: {
     label: "Week",
-    rating: 2149,
-    peakRating: 2212,
-    matches: 34,
-    wins: 24,
-    losses: 10,
-    winRate: 71,
-    averageScore: 86,
-    avgGain: 18,
-    avgLoss: 11,
-    ratingTrend: 112,
-    peakTrend: 76,
-    matchesTrend: 11,
-    winsTrend: 6,
-    lossesTrend: 1,
-    winRateTrend: 3,
-    averageScoreTrend: 4,
-    avgGainTrend: 2,
-    avgLossTrend: -1,
   },
   season: {
     label: "Season",
-    rating: 2149,
-    peakRating: 2212,
-    matches: 60,
-    wins: 42,
-    losses: 18,
-    winRate: 70,
-    averageScore: 82,
-    avgGain: 16,
-    avgLoss: 12,
-    ratingTrend: 384,
-    peakTrend: 412,
-    matchesTrend: 60,
-    winsTrend: 42,
-    lossesTrend: 18,
-    winRateTrend: 12,
-    averageScoreTrend: 9,
-    avgGainTrend: 5,
-    avgLossTrend: -3,
   },
 };
 type StatsPeriodKey = keyof typeof statsByPeriod;
+
+type StatsSnapshot = {
+  rank: string;
+  nextRank: string;
+  rating: number;
+  rankFloor: number;
+  nextRankRating: number;
+  wins: number;
+  streak: number;
+  losses: number;
+  winRate: number;
+  peakRating: number;
+  matches: number;
+  avgGain: number;
+  avgLoss: number;
+  averageScore: number;
+  progressPercent: number;
+};
+
+type UiPeriodStats = {
+  label: string;
+  rating: number;
+  peakRating: number;
+  matches: number;
+  wins: number;
+  losses: number;
+  winRate: number;
+  averageScore: number;
+  avgGain: number;
+  avgLoss: number;
+  ratingTrend: number;
+  peakTrend: number;
+  matchesTrend: number;
+  winsTrend: number;
+  lossesTrend: number;
+  winRateTrend: number;
+  averageScoreTrend: number;
+  avgGainTrend: number;
+  avgLossTrend: number;
+};
 
 type ChatMessage = {
   id: number | string;
@@ -266,21 +226,24 @@ function formatRankLabel(rank?: string | null) {
 function buildStatsSnapshot(
   ratingProfile: RatingProfile | null,
   statsSummary: StatsSummary | null,
-) {
-  const fallbackProgress = Math.round(
-    ((currentStats.rating - currentStats.rankFloor) /
-      (currentStats.nextRankRating - currentStats.rankFloor)) *
-      100,
-  );
-
+): StatsSnapshot | null {
   if (statsSummary) {
+    const rankFloor = statsSummary.rank_floor ?? 0;
+    const nextRankRating = statsSummary.next_rank_rating ?? statsSummary.rating;
+    const progressPercent =
+      statsSummary.progress_percent ??
+      Math.round(
+        ((statsSummary.rating - rankFloor) /
+          Math.max(1, nextRankRating - rankFloor)) *
+          100,
+      );
+
     return {
-      ...currentStats,
       rank: formatRankLabel(statsSummary.rank),
       nextRank: formatRankLabel(statsSummary.next_rank),
       rating: statsSummary.rating,
-      rankFloor: statsSummary.rank_floor ?? currentStats.rankFloor,
-      nextRankRating: statsSummary.next_rank_rating ?? currentStats.nextRankRating,
+      rankFloor,
+      nextRankRating,
       wins: statsSummary.wins,
       streak: statsSummary.streak,
       losses: statsSummary.losses,
@@ -290,19 +253,16 @@ function buildStatsSnapshot(
       avgGain: Math.round(statsSummary.avg_gain),
       avgLoss: Math.round(statsSummary.avg_loss),
       averageScore: Math.round(statsSummary.average_score),
-      progressPercent: statsSummary.progress_percent ?? fallbackProgress,
+      progressPercent,
     };
   }
 
   if (!ratingProfile) {
-    return {
-      ...currentStats,
-      progressPercent: fallbackProgress,
-    };
+    return null;
   }
 
-  const rankFloor = ratingProfile.rank_floor ?? currentStats.rankFloor;
-  const nextRankRating = ratingProfile.next_rank_rating ?? currentStats.nextRankRating;
+  const rankFloor = ratingProfile.rank_floor ?? 0;
+  const nextRankRating = ratingProfile.next_rank_rating ?? ratingProfile.rating;
   const progressPercent =
     ratingProfile.progress_percent ??
     Math.round(
@@ -310,95 +270,64 @@ function buildStatsSnapshot(
     );
 
   return {
-    ...currentStats,
     rank: formatRankLabel(ratingProfile.rank),
     nextRank: formatRankLabel(ratingProfile.next_rank),
     rating: ratingProfile.rating,
     rankFloor,
     nextRankRating,
+    wins: 0,
+    streak: 0,
+    losses: 0,
+    winRate: 0,
     peakRating: ratingProfile.peak_rating,
+    matches: 0,
+    avgGain: 0,
+    avgLoss: 0,
+    averageScore: 0,
     progressPercent,
   };
 }
 
 function buildPeriodStats(
-  statsSnapshot: ReturnType<typeof buildStatsSnapshot>,
+  statsSnapshot: StatsSnapshot,
   periodApiData: Partial<Record<StatsPeriodKey, StatsPeriod>>,
-) {
+): Partial<Record<StatsPeriodKey, UiPeriodStats>> {
   const todayApi = periodApiData.today;
   const weekApi = periodApiData.week;
   const seasonApi = periodApiData.season;
 
   return {
-    today: {
-      ...statsByPeriod.today,
-      rating: todayApi?.rating ?? statsSnapshot.rating,
-      peakRating: todayApi?.peak_rating ?? statsSnapshot.peakRating,
-      matches: todayApi?.matches ?? statsByPeriod.today.matches,
-      wins: todayApi?.wins ?? statsByPeriod.today.wins,
-      losses: todayApi?.losses ?? statsByPeriod.today.losses,
-      winRate: Math.round(todayApi?.win_rate ?? statsByPeriod.today.winRate),
-      averageScore: Math.round(todayApi?.average_score ?? statsByPeriod.today.averageScore),
-      avgGain: Math.round(todayApi?.avg_gain ?? statsByPeriod.today.avgGain),
-      avgLoss: Math.round(todayApi?.avg_loss ?? statsByPeriod.today.avgLoss),
-      ratingTrend: Math.round(todayApi?.rating_trend ?? statsByPeriod.today.ratingTrend),
-      peakTrend: Math.round(todayApi?.peak_trend ?? statsByPeriod.today.peakTrend),
-      matchesTrend: Math.round(todayApi?.matches_trend ?? statsByPeriod.today.matchesTrend),
-      winsTrend: Math.round(todayApi?.wins_trend ?? statsByPeriod.today.winsTrend),
-      lossesTrend: Math.round(todayApi?.losses_trend ?? statsByPeriod.today.lossesTrend),
-      winRateTrend: Math.round(todayApi?.win_rate_trend ?? statsByPeriod.today.winRateTrend),
-      averageScoreTrend: Math.round(
-        todayApi?.average_score_trend ?? statsByPeriod.today.averageScoreTrend,
-      ),
-      avgGainTrend: Math.round(todayApi?.avg_gain_trend ?? statsByPeriod.today.avgGainTrend),
-      avgLossTrend: Math.round(todayApi?.avg_loss_trend ?? statsByPeriod.today.avgLossTrend),
-    },
-    week: {
-      ...statsByPeriod.week,
-      rating: weekApi?.rating ?? statsSnapshot.rating,
-      peakRating: weekApi?.peak_rating ?? statsSnapshot.peakRating,
-      matches: weekApi?.matches ?? statsByPeriod.week.matches,
-      wins: weekApi?.wins ?? statsByPeriod.week.wins,
-      losses: weekApi?.losses ?? statsByPeriod.week.losses,
-      winRate: Math.round(weekApi?.win_rate ?? statsByPeriod.week.winRate),
-      averageScore: Math.round(weekApi?.average_score ?? statsByPeriod.week.averageScore),
-      avgGain: Math.round(weekApi?.avg_gain ?? statsByPeriod.week.avgGain),
-      avgLoss: Math.round(weekApi?.avg_loss ?? statsByPeriod.week.avgLoss),
-      ratingTrend: Math.round(weekApi?.rating_trend ?? statsByPeriod.week.ratingTrend),
-      peakTrend: Math.round(weekApi?.peak_trend ?? statsByPeriod.week.peakTrend),
-      matchesTrend: Math.round(weekApi?.matches_trend ?? statsByPeriod.week.matchesTrend),
-      winsTrend: Math.round(weekApi?.wins_trend ?? statsByPeriod.week.winsTrend),
-      lossesTrend: Math.round(weekApi?.losses_trend ?? statsByPeriod.week.lossesTrend),
-      winRateTrend: Math.round(weekApi?.win_rate_trend ?? statsByPeriod.week.winRateTrend),
-      averageScoreTrend: Math.round(
-        weekApi?.average_score_trend ?? statsByPeriod.week.averageScoreTrend,
-      ),
-      avgGainTrend: Math.round(weekApi?.avg_gain_trend ?? statsByPeriod.week.avgGainTrend),
-      avgLossTrend: Math.round(weekApi?.avg_loss_trend ?? statsByPeriod.week.avgLossTrend),
-    },
-    season: {
-      ...statsByPeriod.season,
-      rating: seasonApi?.rating ?? statsSnapshot.rating,
-      peakRating: seasonApi?.peak_rating ?? statsSnapshot.peakRating,
-      matches: seasonApi?.matches ?? statsByPeriod.season.matches,
-      wins: seasonApi?.wins ?? statsByPeriod.season.wins,
-      losses: seasonApi?.losses ?? statsByPeriod.season.losses,
-      winRate: Math.round(seasonApi?.win_rate ?? statsByPeriod.season.winRate),
-      averageScore: Math.round(seasonApi?.average_score ?? statsByPeriod.season.averageScore),
-      avgGain: Math.round(seasonApi?.avg_gain ?? statsByPeriod.season.avgGain),
-      avgLoss: Math.round(seasonApi?.avg_loss ?? statsByPeriod.season.avgLoss),
-      ratingTrend: Math.round(seasonApi?.rating_trend ?? statsByPeriod.season.ratingTrend),
-      peakTrend: Math.round(seasonApi?.peak_trend ?? statsByPeriod.season.peakTrend),
-      matchesTrend: Math.round(seasonApi?.matches_trend ?? statsByPeriod.season.matchesTrend),
-      winsTrend: Math.round(seasonApi?.wins_trend ?? statsByPeriod.season.winsTrend),
-      lossesTrend: Math.round(seasonApi?.losses_trend ?? statsByPeriod.season.lossesTrend),
-      winRateTrend: Math.round(seasonApi?.win_rate_trend ?? statsByPeriod.season.winRateTrend),
-      averageScoreTrend: Math.round(
-        seasonApi?.average_score_trend ?? statsByPeriod.season.averageScoreTrend,
-      ),
-      avgGainTrend: Math.round(seasonApi?.avg_gain_trend ?? statsByPeriod.season.avgGainTrend),
-      avgLossTrend: Math.round(seasonApi?.avg_loss_trend ?? statsByPeriod.season.avgLossTrend),
-    },
+    today: todayApi ? mapPeriodStats(statsSnapshot, "today", todayApi) : undefined,
+    week: weekApi ? mapPeriodStats(statsSnapshot, "week", weekApi) : undefined,
+    season: seasonApi ? mapPeriodStats(statsSnapshot, "season", seasonApi) : undefined,
+  };
+}
+
+function mapPeriodStats(
+  statsSnapshot: StatsSnapshot,
+  key: StatsPeriodKey,
+  api: StatsPeriod,
+): UiPeriodStats {
+  return {
+    label: statsByPeriod[key].label,
+    rating: api.rating ?? statsSnapshot.rating,
+    peakRating: api.peak_rating ?? statsSnapshot.peakRating,
+    matches: api.matches,
+    wins: api.wins,
+    losses: api.losses,
+    winRate: Math.round(api.win_rate),
+    averageScore: Math.round(api.average_score),
+    avgGain: Math.round(api.avg_gain),
+    avgLoss: Math.round(api.avg_loss),
+    ratingTrend: Math.round(api.rating_trend),
+    peakTrend: Math.round(api.peak_trend),
+    matchesTrend: Math.round(api.matches_trend),
+    winsTrend: Math.round(api.wins_trend),
+    lossesTrend: Math.round(api.losses_trend),
+    winRateTrend: Math.round(api.win_rate_trend),
+    averageScoreTrend: Math.round(api.average_score_trend),
+    avgGainTrend: Math.round(api.avg_gain_trend),
+    avgLossTrend: Math.round(api.avg_loss_trend),
   };
 }
 
@@ -629,11 +558,11 @@ function StatsPanel({
   loading,
 }: {
   onOpenDetails: () => void;
-  stats: ReturnType<typeof buildStatsSnapshot>;
+  stats: StatsSnapshot | null;
   loading: boolean;
 }) {
-  const progress = Math.max(0, Math.min(100, stats.progressPercent));
-  const remaining = Math.max(0, stats.nextRankRating - stats.rating);
+  const progress = stats ? Math.max(0, Math.min(100, stats.progressPercent)) : 0;
+  const remaining = stats ? Math.max(0, stats.nextRankRating - stats.rating) : 0;
 
   return (
     <div
@@ -656,6 +585,10 @@ function StatsPanel({
         </div>
         {loading ? (
           <span className="h-7 w-20 animate-pulse border border-zinc-800 bg-zinc-900/80" />
+        ) : !stats ? (
+          <span className="border border-zinc-800 bg-black/60 px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-zinc-500">
+            No Data
+          </span>
         ) : (
           <span
             className={cn(
@@ -675,6 +608,10 @@ function StatsPanel({
           </div>
           {loading ? (
             <div className="mt-2 h-10 w-28 animate-pulse bg-zinc-900/80" />
+          ) : !stats ? (
+            <div className="mt-2 text-xl font-black uppercase tracking-[0.12em] text-zinc-600">
+              Unavailable
+            </div>
           ) : (
             <div className="mt-1 text-3xl font-black tabular-nums text-zinc-100 transition-all duration-300">
               {stats.rating}
@@ -685,11 +622,15 @@ function StatsPanel({
         <div>
           <div className="mb-2 flex items-center justify-between gap-3">
             <span className="text-[10px] font-semibold uppercase tracking-[0.14em] text-zinc-500">
-              Progress to {stats.nextRank}
+              Progress to {stats?.nextRank ?? "Next Rank"}
             </span>
             {loading ? (
               <span className="h-4 w-10 animate-pulse bg-zinc-900/80" />
-            ) : (
+          ) : !stats ? (
+            <span className="text-[10px] font-semibold tabular-nums text-zinc-600">
+              --
+            </span>
+          ) : (
               <span className="text-[10px] font-semibold tabular-nums text-purple-200 transition-all duration-300">
                 {progress}%
               </span>
@@ -706,6 +647,10 @@ function StatsPanel({
           </div>
           {loading ? (
             <div className="mt-2 h-4 w-24 animate-pulse bg-zinc-900/80" />
+          ) : !stats ? (
+            <div className="mt-2 text-[10px] uppercase tracking-[0.12em] text-zinc-600">
+              Stats did not load
+            </div>
           ) : (
             <div className="mt-2 text-[10px] uppercase tracking-[0.12em] text-zinc-600 transition-all duration-300">
               {remaining} rating left
@@ -721,6 +666,10 @@ function StatsPanel({
           </div>
           {loading ? (
             <div className="mt-2 h-5 w-10 animate-pulse bg-zinc-900/80" />
+          ) : !stats ? (
+            <div className="mt-1 text-base font-black tabular-nums text-zinc-600">
+              --
+            </div>
           ) : (
             <div className="mt-1 text-base font-black tabular-nums text-zinc-100 transition-all duration-300">
               {stats.wins}
@@ -733,6 +682,10 @@ function StatsPanel({
           </div>
           {loading ? (
             <div className="mt-2 h-5 w-10 animate-pulse bg-zinc-900/80" />
+          ) : !stats ? (
+            <div className="mt-1 text-base font-black tabular-nums text-zinc-600">
+              --
+            </div>
           ) : (
             <div className="mt-1 text-base font-black tabular-nums text-zinc-100 transition-all duration-300">
               +{stats.streak}
@@ -743,6 +696,7 @@ function StatsPanel({
           className="inline-flex h-full min-h-[50px] items-center justify-center border border-purple-500/45 bg-purple-950/35 px-3 text-[10px] font-semibold uppercase tracking-[0.14em] text-purple-200 transition-colors hover:border-purple-300 hover:bg-purple-900/45 hover:text-white"
           onClick={onOpenDetails}
           type="button"
+          disabled={!stats && !loading}
         >
           Details
         </button>
@@ -829,7 +783,7 @@ function StatsModal({
   queueInfo,
 }: {
   onClose: () => void;
-  stats: ReturnType<typeof buildStatsSnapshot>;
+  stats: StatsSnapshot;
   periodApiData: Partial<Record<StatsPeriodKey, StatsPeriod>>;
   recentForm: string[];
   queueInfo: QueueInfo | null;
@@ -837,29 +791,52 @@ function StatsModal({
   const [period, setPeriod] = useState<StatsPeriodKey>("today");
   const periodStatsMap = buildPeriodStats(stats, periodApiData);
   const periodStats = periodStatsMap[period];
+  const hasPeriodStats = Boolean(periodStats);
   const progress = Math.max(0, Math.min(100, stats.progressPercent));
-  const remaining = Math.max(0, stats.nextRankRating - periodStats.rating);
+  const remaining = Math.max(
+    0,
+    stats.nextRankRating - (periodStats?.rating ?? stats.rating),
+  );
   const metrics = [
-    { label: "Peak Rating", value: periodStats.peakRating, trend: periodStats.peakTrend },
-    { label: "Matches", value: periodStats.matches, trend: periodStats.matchesTrend },
-    { label: "Wins", value: periodStats.wins, trend: periodStats.winsTrend },
-    { label: "Losses", value: periodStats.losses, trend: periodStats.lossesTrend },
-    { label: "Win Rate", value: `${periodStats.winRate}%`, trend: periodStats.winRateTrend },
-    { label: "Average Score", value: periodStats.averageScore, trend: periodStats.averageScoreTrend },
-    { label: "Avg Gain", value: `+${periodStats.avgGain}`, trend: periodStats.avgGainTrend },
-    { label: "Avg Loss", value: `-${periodStats.avgLoss}`, trend: periodStats.avgLossTrend },
+    { label: "Peak Rating", value: periodStats?.peakRating, trend: periodStats?.peakTrend },
+    { label: "Matches", value: periodStats?.matches, trend: periodStats?.matchesTrend },
+    { label: "Wins", value: periodStats?.wins, trend: periodStats?.winsTrend },
+    { label: "Losses", value: periodStats?.losses, trend: periodStats?.lossesTrend },
+    {
+      label: "Win Rate",
+      value: typeof periodStats?.winRate === "number" ? `${periodStats.winRate}%` : undefined,
+      trend: periodStats?.winRateTrend,
+    },
+    {
+      label: "Average Score",
+      value: periodStats?.averageScore,
+      trend: periodStats?.averageScoreTrend,
+    },
+    {
+      label: "Avg Gain",
+      value: typeof periodStats?.avgGain === "number" ? `+${periodStats.avgGain}` : undefined,
+      trend: periodStats?.avgGainTrend,
+    },
+    {
+      label: "Avg Loss",
+      value: typeof periodStats?.avgLoss === "number" ? `-${periodStats.avgLoss}` : undefined,
+      trend: periodStats?.avgLossTrend,
+    },
   ];
-  const getTrendClass = (trend: number) => {
+  const getTrendClass = (trend?: number) => {
+    if (typeof trend !== "number") return "border-zinc-800 bg-zinc-950 text-zinc-600";
     if (trend > 0) return "border-emerald-400/45 bg-emerald-950/40 text-emerald-300";
     if (trend < 0) return "border-red-400/45 bg-red-950/40 text-red-300";
     return "border-zinc-700 bg-zinc-900 text-zinc-400";
   };
-  const getTrendLabel = (trend: number) => {
+  const getTrendLabel = (trend?: number) => {
+    if (typeof trend !== "number") return "no data";
     if (trend > 0) return "up";
     if (trend < 0) return "down";
     return "flat";
   };
-  const formatTrend = (trend: number) => {
+  const formatTrend = (trend?: number) => {
+    if (typeof trend !== "number") return "--";
     if (trend > 0) return `+${trend}`;
     return String(trend);
   };
@@ -931,8 +908,13 @@ function StatsModal({
                 </span>
               </div>
               <div className="text-5xl font-black tabular-nums text-zinc-100">
-                {periodStats.rating}
+                {periodStats?.rating ?? stats.rating}
               </div>
+              {!hasPeriodStats && (
+                <div className="mt-2 border border-zinc-900 bg-black/50 px-3 py-2 text-[10px] font-semibold uppercase tracking-[0.12em] text-zinc-500">
+                  Period data did not load
+                </div>
+              )}
               <div className="mt-4">
                 <div className="mb-2 flex items-center justify-between text-[10px] uppercase tracking-[0.14em] text-zinc-500">
                   <span>Rank Progress</span>
@@ -960,7 +942,7 @@ function StatsModal({
                     {metric.label}
                   </div>
                   <div className="mt-2 text-xl font-black tabular-nums text-zinc-100">
-                      {metric.value}
+                    {metric.value ?? "--"}
                   </div>
                   <div
                     className={cn(
@@ -2822,7 +2804,7 @@ function DuelModal({
   myUserId: string | null;
   resultSoundEnabled: boolean;
   resultSoundVolume: number;
-  onFinished?: () => void;
+  onFinished?: () => Promise<MatchHistoryEntry | null> | MatchHistoryEntry | null;
   onClose: () => void;
 }) {
   const DUEL_SOUND_ENABLED_KEY = "chadchat_duel_sound_enabled_v1";
@@ -2918,6 +2900,7 @@ function DuelModal({
     oppFinal: number | null;
     myNickname: string | null;
     oppNickname: string | null;
+    ratingDelta: number | null;
   } | null>(null);
   const [mediaReadyMap, setMediaReadyMap] = useState<Record<string, boolean>>({});
   const [queueRunKey, setQueueRunKey] = useState(0);
@@ -2925,6 +2908,7 @@ function DuelModal({
   const [searchVolume, setSearchVolume] = useState(0.18);
   const [showFinalResult, setShowFinalResult] = useState(false);
   const finishedRef = useRef(false);
+  const resultRevealMatchRef = useRef<string | null>(null);
 
   const pushDebug = useCallback((...args: unknown[]) => {
     void args;
@@ -2998,6 +2982,7 @@ function DuelModal({
             : -1;
   const isResultPhase =
     phase === "result" || phase === "post_chat" || phase === "finished";
+  const hasResultSummary = Boolean(resultSummary);
   const isTerminalPhase = useCallback((value: string | null | undefined) => {
     return value === "result" || value === "post_chat" || value === "finished";
   }, []);
@@ -3167,6 +3152,7 @@ function DuelModal({
                 : null,
           myNickname: mine?.nickname ? String(mine.nickname) : null,
           oppNickname: opponent?.nickname ? String(opponent.nickname) : null,
+          ratingDelta: null,
         });
       }
     }
@@ -3185,6 +3171,7 @@ function DuelModal({
   const resetMatchFlow = useCallback(() => {
     stopResultSound();
     finishedRef.current = false;
+    resultRevealMatchRef.current = null;
     mediaReadySentRef.current = false;
     setQueueing(false);
     setMatchID("");
@@ -3600,7 +3587,26 @@ function DuelModal({
           void playPreloadedResultSound(winnerSoundId, winnerSound);
           if (!finishedRef.current) {
             finishedRef.current = true;
-            onFinished?.();
+            void Promise.resolve(onFinished?.()).then((latestMatch) => {
+              if (!latestMatch || typeof latestMatch.rating_delta !== "number") return;
+              setResultSummary((current) =>
+                current
+                  ? {
+                      ...current,
+                      ratingDelta: latestMatch.rating_delta ?? null,
+                      myFinal:
+                        typeof latestMatch.my_score === "number"
+                          ? latestMatch.my_score
+                          : current.myFinal,
+                      oppFinal:
+                        typeof latestMatch.opponent_score === "number"
+                          ? latestMatch.opponent_score
+                          : current.oppFinal,
+                      oppNickname: latestMatch.opponent_nickname ?? current.oppNickname,
+                    }
+                  : current,
+              );
+            });
           }
         }
         const signalPayload =
@@ -3725,16 +3731,19 @@ function DuelModal({
   }, [accessToken, matchID, phase, captureFrame]);
 
   useEffect(() => {
-    if (!isResultPhase || !resultSummary) {
+    if (!isResultPhase || !hasResultSummary) {
+      resultRevealMatchRef.current = null;
       setShowFinalResult(false);
       return;
     }
+    if (resultRevealMatchRef.current === matchID) return;
+    resultRevealMatchRef.current = matchID;
     setShowFinalResult(false);
     const timer = window.setTimeout(() => {
       setShowFinalResult(true);
-    }, 1600);
+    }, 5000);
     return () => window.clearTimeout(timer);
-  }, [isResultPhase, resultSummary, matchID]);
+  }, [isResultPhase, hasResultSummary, matchID]);
 
   useEffect(() => {
     const soundBuffers = preloadedSoundBuffersRef.current;
@@ -3998,6 +4007,25 @@ function DuelModal({
                     </div>
                     <div className="mt-3 text-xs uppercase tracking-[0.12em] text-zinc-500">
                       {resultSummary.reason ? `Reason: ${resultSummary.reason}` : "Final scores"}
+                    </div>
+                    <div
+                      className={cn(
+                        "mx-auto mt-4 inline-flex border px-3 py-2 text-[10px] font-black uppercase tracking-[0.14em]",
+                        typeof resultSummary.ratingDelta !== "number"
+                          ? "border-zinc-800 bg-black/70 text-zinc-500"
+                          : resultSummary.ratingDelta > 0
+                            ? "border-emerald-400/45 bg-emerald-950/35 text-emerald-300"
+                            : resultSummary.ratingDelta < 0
+                              ? "border-red-400/45 bg-red-950/35 text-red-300"
+                              : "border-zinc-700 bg-zinc-900 text-zinc-300",
+                      )}
+                    >
+                      Rating{" "}
+                      {typeof resultSummary.ratingDelta === "number"
+                        ? `${resultSummary.ratingDelta > 0 ? "+" : ""}${Math.round(
+                            resultSummary.ratingDelta,
+                          )}`
+                        : "syncing"}
                     </div>
 
                     <div className="mt-6 grid gap-3 sm:grid-cols-[1fr_auto_1fr] sm:items-center">
@@ -5055,7 +5083,6 @@ export default function App() {
   const [consentAccepted, setConsentAccepted] = useState(false);
   const [tokens, setTokens] = useState<AuthTokens | null>(null);
   const [me, setMe] = useState<AuthUser | null>(null);
-  const [auraPulse, setAuraPulse] = useState(false);
   const [chatCustomization, setChatCustomization] = useState<ChatCustomization>(
     defaultChatCustomization,
   );
@@ -5217,6 +5244,91 @@ export default function App() {
     };
   }, []);
 
+  const refreshRatingData = useCallback(
+    async (
+      accessToken: string,
+      options?: {
+        includePeriods?: boolean;
+        includeLeaderboard?: boolean;
+        setLoading?: boolean;
+        isCancelled?: () => boolean;
+      },
+    ) => {
+      const includePeriods = options?.includePeriods ?? false;
+      const includeLeaderboard = options?.includeLeaderboard ?? true;
+      const shouldCancel = options?.isCancelled ?? (() => false);
+      if (options?.setLoading) {
+        setRatingDataLoading(true);
+        if (includeLeaderboard) setLeaderboardLoading(true);
+      }
+
+      try {
+        const [
+          myRating,
+          summary,
+          recentFormData,
+          matchesData,
+          queueInfoData,
+          leaderboard,
+          todayPeriod,
+          weekPeriod,
+          seasonPeriod,
+        ] = await Promise.all([
+          getMyRating(accessToken),
+          getStatsSummary(accessToken),
+          getRecentForm(accessToken, 5),
+          getMyMatches(accessToken, 1),
+          getQueueInfo(accessToken),
+          includeLeaderboard
+            ? getLeaderboard(accessToken, 20)
+            : Promise.resolve<LeaderboardEntry[] | null>(null),
+          includePeriods
+            ? getStatsPeriod(accessToken, "today")
+            : Promise.resolve<StatsPeriod | null>(null),
+          includePeriods
+            ? getStatsPeriod(accessToken, "week")
+            : Promise.resolve<StatsPeriod | null>(null),
+          includePeriods
+            ? getStatsPeriod(accessToken, "season")
+            : Promise.resolve<StatsPeriod | null>(null),
+        ]);
+        if (shouldCancel()) return null;
+
+        setRatingProfile(myRating);
+        setStatsSummary(summary);
+        setRecentForm(recentFormData);
+        setQueueInfo(queueInfoData);
+        if (includeLeaderboard && leaderboard) {
+          setLeaderboardEntries(leaderboard);
+        }
+        if (includePeriods) {
+          setStatsPeriodData({
+            today: todayPeriod ?? undefined,
+            week: weekPeriod ?? undefined,
+            season: seasonPeriod ?? undefined,
+          });
+        }
+
+        return matchesData.matches[0] ?? null;
+      } catch {
+        if (shouldCancel()) return null;
+        setRatingProfile(null);
+        setStatsSummary(null);
+        setStatsPeriodData({});
+        setRecentForm([]);
+        setQueueInfo(null);
+        if (includeLeaderboard) setLeaderboardEntries([]);
+        return null;
+      } finally {
+        if (!shouldCancel() && options?.setLoading) {
+          setRatingDataLoading(false);
+          if (includeLeaderboard) setLeaderboardLoading(false);
+        }
+      }
+    },
+    [],
+  );
+
   useEffect(() => {
     if (!tokens?.accessToken) {
       setRatingDataLoading(false);
@@ -5233,62 +5345,15 @@ export default function App() {
     }
 
     let cancelled = false;
-
-    const loadRatingData = async () => {
-      setRatingDataLoading(true);
-      setLeaderboardLoading(true);
-      try {
-        const [
-          myRating,
-          summary,
-          todayPeriod,
-          weekPeriod,
-          seasonPeriod,
-          recentFormData,
-          queueInfoData,
-          leaderboard,
-        ] = await Promise.all([
-          getMyRating(tokens.accessToken),
-          getStatsSummary(tokens.accessToken),
-          getStatsPeriod(tokens.accessToken, "today"),
-          getStatsPeriod(tokens.accessToken, "week"),
-          getStatsPeriod(tokens.accessToken, "season"),
-          getRecentForm(tokens.accessToken, 5),
-          getQueueInfo(tokens.accessToken),
-          getLeaderboard(tokens.accessToken, 20),
-        ]);
-        if (cancelled) return;
-        setRatingProfile(myRating);
-        setStatsSummary(summary);
-        setStatsPeriodData({
-          today: todayPeriod ?? undefined,
-          week: weekPeriod ?? undefined,
-          season: seasonPeriod ?? undefined,
-        });
-        setRecentForm(recentFormData);
-        setQueueInfo(queueInfoData);
-        setLeaderboardEntries(leaderboard);
-      } catch {
-        if (cancelled) return;
-        setRatingProfile(null);
-        setStatsSummary(null);
-        setStatsPeriodData({});
-        setRecentForm([]);
-        setQueueInfo(null);
-        setLeaderboardEntries([]);
-      } finally {
-        if (!cancelled) {
-          setRatingDataLoading(false);
-          setLeaderboardLoading(false);
-        }
-      }
-    };
-
-    void loadRatingData();
+    void refreshRatingData(tokens.accessToken, {
+      includePeriods: true,
+      setLoading: true,
+      isCancelled: () => cancelled,
+    });
     return () => {
       cancelled = true;
     };
-  }, [tokens?.accessToken]);
+  }, [refreshRatingData, tokens?.accessToken]);
 
   useEffect(() => {
     if (!tokens?.accessToken) {
@@ -5564,6 +5629,10 @@ export default function App() {
       setMe(null);
       setRatingDataLoading(false);
       setRatingProfile(null);
+      setStatsSummary(null);
+      setStatsPeriodData({});
+      setRecentForm([]);
+      setQueueInfo(null);
       setLeaderboardEntries([]);
       setShowEntryChoice(true);
       setAuthMode("login");
@@ -5586,6 +5655,18 @@ export default function App() {
     if (!isAnonymousUser) return;
     setShowAnonymousProgressPrompt(true);
   }, [isAnonymousUser]);
+
+  const handleDuelFinished = useCallback(async () => {
+    const latest =
+      tokens?.accessToken
+        ? await refreshRatingData(tokens.accessToken, {
+            includePeriods: true,
+            includeLeaderboard: true,
+          })
+        : null;
+    handleAnonymousGameFinished();
+    return latest;
+  }, [handleAnonymousGameFinished, refreshRatingData, tokens?.accessToken]);
 
   const openAuthFromAnonymousPrompt = useCallback((mode: "login" | "register") => {
     setShowAnonymousProgressPrompt(false);
@@ -5678,8 +5759,6 @@ export default function App() {
               className={cn(
                 "flex h-8 items-center gap-2 justify-self-end border border-zinc-700 bg-black/70 px-2.5 text-zinc-200 transition-all",
                 "shadow-[0_0_12px_rgba(132,0,255,0.08)]",
-                auraPulse &&
-                  "scale-[1.02] border-purple-300 shadow-[0_0_20px_rgba(168,85,247,0.28)]",
               )}
             >
               <button
@@ -5708,26 +5787,6 @@ export default function App() {
                   <LogOut className="h-3.5 w-3.5" aria-hidden="true" />
                 </button>
               )}
-              <span className="grid h-4 w-4 place-items-center border border-purple-400/45 bg-purple-950/30 text-[9px] leading-none text-purple-200">
-                <Gem className="h-2.5 w-2.5" aria-hidden="true" />
-              </span>
-              <span className="text-[10px] font-semibold uppercase tracking-[0.14em] text-zinc-500">
-                Aura
-              </span>
-              <span className="bg-purple-950/20 px-1.5 py-0.5 text-[12px] font-black tabular-nums tracking-[0.04em] text-zinc-100">
-                {auraBalance.toLocaleString()}
-              </span>
-              <button
-                className="grid h-5 w-5 place-items-center border border-purple-500/55 bg-purple-950/35 text-[12px] font-black leading-none text-purple-200 transition-colors hover:border-purple-300 hover:bg-purple-900/45 hover:text-white"
-                onClick={() => {
-                  setAuraPulse(true);
-                  window.setTimeout(() => setAuraPulse(false), 220);
-                }}
-                type="button"
-                aria-label="Top up aura"
-              >
-                <Plus className="h-3.5 w-3.5" aria-hidden="true" />
-              </button>
             </div>
           </div>
         </nav>
@@ -5822,7 +5881,7 @@ export default function App() {
           </Panel>
         </div>
       </div>
-      {isStatsOpen && (
+      {isStatsOpen && statsSnapshot && (
         <StatsModal
           onClose={() => setIsStatsOpen(false)}
           stats={statsSnapshot}
@@ -5871,7 +5930,7 @@ export default function App() {
           myUserId={me?.id ? String(me.id) : null}
           resultSoundEnabled={resultSoundEnabled}
           resultSoundVolume={resultSoundVolume}
-          onFinished={handleAnonymousGameFinished}
+          onFinished={handleDuelFinished}
           onClose={() => setIsDuelOpen(false)}
         />
       )}
