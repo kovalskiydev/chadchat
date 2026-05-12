@@ -432,50 +432,6 @@ function getGameFrameClass(frame: string) {
   }
 }
 
-function playVictoryPreview(sound: string) {
-  if (typeof window === "undefined") return;
-  const Ctx = window.AudioContext || (window as typeof window & { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
-  if (!Ctx) return;
-  const context = new Ctx();
-  const now = context.currentTime;
-
-  const playTone = (
-    freq: number,
-    start: number,
-    duration: number,
-    type: OscillatorType,
-  ) => {
-    const osc = context.createOscillator();
-    const gain = context.createGain();
-    osc.type = type;
-    osc.frequency.setValueAtTime(freq, start);
-    gain.gain.setValueAtTime(0.0001, start);
-    gain.gain.exponentialRampToValueAtTime(0.18, start + 0.02);
-    gain.gain.exponentialRampToValueAtTime(0.0001, start + duration);
-    osc.connect(gain);
-    gain.connect(context.destination);
-    osc.start(start);
-    osc.stop(start + duration + 0.02);
-  };
-
-  if (sound === "Chime") {
-    playTone(659.25, now, 0.18, "triangle");
-    playTone(783.99, now + 0.12, 0.2, "triangle");
-    playTone(987.77, now + 0.24, 0.24, "triangle");
-  } else if (sound === "Impact") {
-    playTone(196, now, 0.18, "sawtooth");
-    playTone(147, now + 0.09, 0.22, "square");
-  } else if (sound === "Arcade") {
-    playTone(523.25, now, 0.09, "square");
-    playTone(659.25, now + 0.1, 0.09, "square");
-    playTone(783.99, now + 0.2, 0.11, "square");
-  } else {
-    playTone(440, now, 0.12, "sine");
-    playTone(587.33, now + 0.12, 0.14, "sine");
-    playTone(698.46, now + 0.24, 0.16, "sine");
-  }
-}
-
 function normalizeDuelResultSound(value: unknown): DuelResultSound | null {
   if (!value || typeof value !== "object") return null;
   const record = value as Record<string, unknown>;
@@ -949,26 +905,22 @@ function CustomizeModal({
   gameCustomization,
   resultSoundOptions,
   resultSoundLoading,
-  resultSoundEnabled,
   resultSoundVolume,
   onChangeChatCustomization,
   onChangeGameCustomization,
-  onSelectResultSound,
-  onToggleResultSoundEnabled,
   onChangeResultSoundVolume,
+  onSelectResultSound,
   onClose,
 }: {
   chatCustomization: ChatCustomization;
   gameCustomization: GameCustomization;
   resultSoundOptions: ResultSoundOption[];
   resultSoundLoading: boolean;
-  resultSoundEnabled: boolean;
   resultSoundVolume: number;
   onChangeChatCustomization: (next: Partial<ChatCustomization>) => void;
   onChangeGameCustomization: (next: Partial<GameCustomization>) => void;
-  onSelectResultSound: (sound: ResultSoundOption) => void;
-  onToggleResultSoundEnabled: () => void;
   onChangeResultSoundVolume: (value: number) => void;
+  onSelectResultSound: (sound: ResultSoundOption) => void;
   onClose: () => void;
 }) {
   const [view, setView] = useState<"menu" | "chat" | "game">("menu");
@@ -1068,10 +1020,22 @@ function CustomizeModal({
         return;
       }
       stopPreview();
-      if (!sound.audio_url || !resultSoundEnabled || resultSoundVolume <= 0) return;
+      if (!sound.audio_url) return;
       const audio = new Audio(sound.audio_url);
       audio.volume = Math.max(0, Math.min(1, resultSoundVolume));
       audio.onended = () => {
+        if (previewAudioRef.current === audio) {
+          previewAudioRef.current = null;
+          setPreviewSoundId(null);
+        }
+      };
+      audio.onpause = () => {
+        if (previewAudioRef.current === audio) {
+          previewAudioRef.current = null;
+          setPreviewSoundId(null);
+        }
+      };
+      audio.onerror = () => {
         if (previewAudioRef.current === audio) {
           previewAudioRef.current = null;
           setPreviewSoundId(null);
@@ -1086,18 +1050,14 @@ function CustomizeModal({
         }
       });
     },
-    [previewSoundId, resultSoundEnabled, resultSoundVolume, stopPreview],
+    [previewSoundId, resultSoundVolume, stopPreview],
   );
 
   useEffect(() => {
-    if (!resultSoundEnabled || resultSoundVolume <= 0) {
-      stopPreview();
-      return;
-    }
     if (previewAudioRef.current) {
       previewAudioRef.current.volume = Math.max(0, Math.min(1, resultSoundVolume));
     }
-  }, [resultSoundEnabled, resultSoundVolume, stopPreview]);
+  }, [resultSoundVolume]);
 
   useEffect(() => {
     return () => {
@@ -1407,43 +1367,21 @@ function CustomizeModal({
                   )}
                 </div>
                 <div className="border border-zinc-900 bg-black/50 p-3">
-                  <div className="flex items-center justify-between gap-3">
-                    <div className="flex items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.14em] text-zinc-400">
-                      {resultSoundEnabled ? (
-                        <Volume2 className="h-3.5 w-3.5 text-purple-300" aria-hidden="true" />
-                      ) : (
-                        <VolumeX className="h-3.5 w-3.5 text-zinc-500" aria-hidden="true" />
-                      )}
-                      Result Sound
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        if (resultSoundEnabled) stopPreview();
-                        onToggleResultSoundEnabled();
-                      }}
-                      className="inline-flex h-9 items-center justify-center border border-zinc-800 bg-black px-3 text-[10px] font-semibold uppercase tracking-[0.14em] text-zinc-300 transition-colors hover:border-purple-400 hover:text-white"
-                    >
-                      {resultSoundEnabled ? "Sound On" : "Sound Off"}
-                    </button>
+                  <div className="mb-2 flex items-center justify-between text-[10px] uppercase tracking-[0.12em] text-zinc-500">
+                    <span>Volume</span>
+                    <span className="text-zinc-300">{Math.round(resultSoundVolume * 100)}%</span>
                   </div>
-                  <div className="mt-4">
-                    <div className="mb-2 flex items-center justify-between text-[10px] uppercase tracking-[0.12em] text-zinc-500">
-                      <span>Volume</span>
-                      <span className="text-zinc-300">{Math.round(resultSoundVolume * 100)}%</span>
-                    </div>
-                    <input
-                      type="range"
-                      min="0"
-                      max="1"
-                      step="0.01"
-                      value={resultSoundVolume}
-                      onChange={(event) =>
-                        onChangeResultSoundVolume(Number(event.target.value))
-                      }
-                      className="w-full accent-purple-400"
-                    />
-                  </div>
+                  <input
+                    type="range"
+                    min="0"
+                    max="1"
+                    step="0.01"
+                    value={resultSoundVolume}
+                    onChange={(event) =>
+                      onChangeResultSoundVolume(Number(event.target.value))
+                    }
+                    className="w-full accent-purple-400"
+                  />
                 </div>
                 <div className="max-h-[264px] space-y-2 overflow-y-auto pr-1">
                   {resultSoundOptions.map((sound) => {
@@ -1475,15 +1413,13 @@ function CustomizeModal({
                             "border px-3 text-[10px] font-semibold uppercase tracking-[0.12em] transition-colors",
                             !sound.audio_url
                               ? "cursor-not-allowed border-zinc-900 bg-black/60 text-zinc-700"
-                              : !resultSoundEnabled
-                                ? "border-zinc-900 bg-black/60 text-zinc-600"
-                                : "border-zinc-700 bg-zinc-900/55 text-zinc-200 hover:border-purple-500/60",
+                              : "border-zinc-700 bg-zinc-900/55 text-zinc-200 hover:border-purple-500/60",
                           )}
                           disabled={!sound.audio_url}
                           onClick={() => handlePreviewSound(sound)}
                           type="button"
                         >
-                          {previewSoundId === sound.id ? "Stop" : "Play"}
+                          {previewSoundId === sound.id ? "Stop" : "Start"}
                         </button>
                       </div>
                     );
@@ -1519,21 +1455,9 @@ function CustomizeModal({
                   <span className="text-[10px] uppercase tracking-[0.12em] text-zinc-600">
                     Result Sound: {selectedResultSound?.title ?? gameCustomization.victorySound}
                   </span>
-                  <button
-                    className="border border-zinc-700 bg-zinc-900/55 px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-zinc-200 transition-colors hover:border-purple-500/60"
-                    onClick={() => {
-                      if (selectedResultSound?.audio_url) {
-                        handlePreviewSound(selectedResultSound);
-                        return;
-                      }
-                      playVictoryPreview(gameCustomization.victorySound);
-                    }}
-                    type="button"
-                  >
-                    {selectedResultSound && previewSoundId === selectedResultSound.id
-                      ? "Stop Preview"
-                      : "Preview Sound"}
-                  </button>
+                  <span className="text-[10px] uppercase tracking-[0.12em] text-zinc-500">
+                    Pick from list above
+                  </span>
                 </div>
               </div>
             </div>
@@ -5717,7 +5641,6 @@ export default function App() {
           gameCustomization={gameCustomization}
           resultSoundOptions={resultSoundOptions}
           resultSoundLoading={resultSoundLoading}
-          resultSoundEnabled={resultSoundEnabled}
           resultSoundVolume={resultSoundVolume}
           onChangeChatCustomization={(next) =>
             setChatCustomization((current) => ({ ...current, ...next }))
@@ -5725,11 +5648,8 @@ export default function App() {
           onChangeGameCustomization={(next) =>
             setGameCustomization((current) => ({ ...current, ...next }))
           }
-          onSelectResultSound={handleSelectResultSound}
-          onToggleResultSoundEnabled={() =>
-            setResultSoundEnabled((current) => !current)
-          }
           onChangeResultSoundVolume={setResultSoundVolume}
+          onSelectResultSound={handleSelectResultSound}
           onClose={() => setIsCustomizeOpen(false)}
         />
       )}
