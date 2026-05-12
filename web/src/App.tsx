@@ -5136,6 +5136,8 @@ export default function App() {
   useEffect(() => {
     let mounted = true;
     const controller = new AbortController();
+    let firstCheck: number | null = null;
+    let intervalId: number | null = null;
 
     const checkHealth = async () => {
       try {
@@ -5152,15 +5154,18 @@ export default function App() {
       }
     };
 
-    void checkHealth();
-    const id = window.setInterval(() => {
+    firstCheck = window.setTimeout(() => {
       void checkHealth();
-    }, 20000);
+      intervalId = window.setInterval(() => {
+        void checkHealth();
+      }, 20000);
+    }, 1500);
 
     return () => {
       mounted = false;
       controller.abort();
-      window.clearInterval(id);
+      if (firstCheck) window.clearTimeout(firstCheck);
+      if (intervalId) window.clearInterval(intervalId);
     };
   }, []);
 
