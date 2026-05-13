@@ -67,6 +67,9 @@ func main() {
 	if err := mysqlutil.ExecStatements(db, liveChatSchema()); err != nil {
 		log.Fatalf("live chat schema: %v", err)
 	}
+	if err := ensureLiveChatColumns(db); err != nil {
+		log.Fatalf("live chat schema: %v", err)
+	}
 
 	s := &Server{
 		authServiceURL:          envOr("AUTH_SERVICE_URL", "http://localhost:8081"),
@@ -118,8 +121,29 @@ func liveChatSchema() []string {
 			created_at DATETIME(6) NOT NULL,
 			INDEX idx_live_chat_created_at (created_at)
 		) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`,
-		`ALTER TABLE live_chat_messages ADD COLUMN IF NOT EXISTS chat_style_json JSON NULL AFTER text`,
 	}
+}
+
+func ensureLiveChatColumns(db *sql.DB) error {
+	var count int
+	if err := db.QueryRow(
+		`SELECT COUNT(*)
+		   FROM information_schema.COLUMNS
+		  WHERE TABLE_SCHEMA = DATABASE()
+		    AND TABLE_NAME = 'live_chat_messages'
+		    AND COLUMN_NAME = 'chat_style_json'`,
+	).Scan(&count); err != nil {
+		return fmt.Errorf("check chat_style_json column: %w", err)
+	}
+	if count > 0 {
+		return nil
+	}
+	if _, err := db.Exec(
+		`ALTER TABLE live_chat_messages ADD COLUMN chat_style_json JSON NULL AFTER text`,
+	); err != nil {
+		return fmt.Errorf("add chat_style_json column: %w", err)
+	}
+	return nil
 }
 
 func (s *Server) withAuth(next func(http.ResponseWriter, *http.Request, authUser)) http.HandlerFunc {
