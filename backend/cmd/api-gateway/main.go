@@ -55,6 +55,7 @@ func main() {
 	mux.Handle("/leaderboard", ratingProxy)
 	mux.Handle("/result-sounds", customizationProxy)
 	mux.Handle("/result-sounds/", customizationProxy)
+	mux.Handle("/chat-customization/", customizationProxy)
 	mux.Handle("/admin/dashboard/", adminProxy)
 	mux.Handle("/admin/users/", adminProxy)
 	mux.Handle("/admin/ratings/", adminProxy)

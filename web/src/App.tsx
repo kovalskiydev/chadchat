@@ -57,8 +57,19 @@ import {
   getLiveChatHistory,
   sendLiveChatMessage,
   streamLiveChat,
+  type ChatStyleSnapshot,
   type LiveChatMessage,
 } from "@/lib/liveChat";
+import {
+  clearChatCustomizationSlot,
+  getChatCustomizationCatalog,
+  getMyChatCustomization,
+  selectChatCustomizationItem,
+  type ChatCustomizationCatalog,
+  type ChatCustomizationItem,
+  type ChatCustomizationSelection,
+  type ChatCustomizationSlot,
+} from "@/lib/chatCustomization";
 import {
   duelCurrentMatch,
   duelGetMatch,
@@ -154,6 +165,7 @@ type ChatMessage = {
   createdAt?: string;
   user: string;
   text: string;
+  chatStyle?: ChatStyleSnapshot | null;
   mine?: boolean;
   pending?: boolean;
 };
@@ -398,6 +410,96 @@ function getChatTextClass(textStyle: string) {
     default:
       return "text-zinc-300";
   }
+}
+
+function getInlineColorStyle(
+  value?: { color?: string; gradient?: string[]; colors?: string[] } | null,
+): React.CSSProperties | undefined {
+  if (!value) return undefined;
+  const colors = value.gradient ?? value.colors;
+  if (Array.isArray(colors) && colors.length > 1) {
+    return {
+      backgroundImage: `linear-gradient(90deg, ${colors.join(", ")})`,
+      WebkitBackgroundClip: "text",
+      backgroundClip: "text",
+      color: "transparent",
+    };
+  }
+  if (value.color) return { color: value.color };
+  return undefined;
+}
+
+function getChatStyleTextClass(style?: string | null) {
+  const normalized = (style ?? "").toLowerCase();
+  if (normalized.includes("glitch")) return "font-semibold tracking-[0.08em] text-purple-200";
+  if (normalized.includes("arcade")) return "font-black uppercase tracking-[0.1em] text-zinc-200";
+  if (normalized.includes("minimal")) return "tracking-0 text-zinc-400";
+  return "text-zinc-300";
+}
+
+function getChatStyleFrameClass(shape?: string | null, frame?: string | null) {
+  const value = `${shape ?? ""} ${frame ?? ""}`.toLowerCase();
+  if (value.includes("pill")) return "rounded-full";
+  if (value.includes("round")) return "rounded-md";
+  if (value.includes("double")) return "border-2";
+  if (value.includes("dash")) return "border-dashed";
+  return "";
+}
+
+function getSelectedChatStyle(
+  catalog: ChatCustomizationCatalog | null,
+  selection: ChatCustomizationSelection | null,
+): ChatStyleSnapshot | null {
+  if (!catalog || !selection) return null;
+  const title = catalog.titles.find((item) => item.id === selection.title_id);
+  const nick = catalog.nickname_colors.find(
+    (item) => item.id === selection.nickname_color_id,
+  );
+  const text = catalog.text_styles.find((item) => item.id === selection.text_style_id);
+  const frame = catalog.title_frames.find((item) => item.id === selection.title_frame_id);
+  const avatar = catalog.avatars.find((item) => item.id === selection.avatar_id);
+  const badges = catalog.badges.filter((item) => selection.badge_ids?.includes(item.id));
+
+  return {
+    title: title
+      ? {
+          label: title.preview?.label ?? title.title,
+          frame: frame?.preview?.frame ?? frame?.title,
+          frame_color: frame?.preview?.frame_color ?? frame?.preview?.color,
+          shape: frame?.preview?.shape ?? frame?.title,
+          color: title.preview?.color,
+          colors: title.preview?.colors ?? title.preview?.gradient,
+          animated: Boolean(title.preview?.animated),
+        }
+      : null,
+    nickname: nick
+      ? {
+          color: nick.preview?.color,
+          gradient: nick.preview?.gradient ?? nick.preview?.colors,
+          animated: Boolean(nick.preview?.animated),
+          font_weight: 800,
+        }
+      : null,
+    text: text
+      ? {
+          style: text.preview?.label ?? text.title,
+          color: text.preview?.color,
+          animated: Boolean(text.preview?.animated),
+        }
+      : null,
+    avatar: avatar
+      ? {
+          url: avatar.preview?.url,
+          frame: avatar.preview?.frame,
+          color: avatar.preview?.color,
+        }
+      : null,
+    badges: badges.map((badge) => ({
+      id: badge.id,
+      label: badge.preview?.label ?? badge.title,
+      color: badge.preview?.color,
+    })),
+  };
 }
 
 function isAnimatedTitle(title: string) {
@@ -713,6 +815,16 @@ function ChatMessageItem({
   chatCustomization: ChatCustomization;
 }) {
   const [entered, setEntered] = useState(false);
+  const style = message.chatStyle;
+  const titleStyle = style?.title;
+  const nicknameStyle = style?.nickname;
+  const textStyle = style?.text;
+  const avatarStyle = style?.avatar;
+  const titleLabel = titleStyle?.label ?? (message.mine ? chatCustomization.title : null);
+  const titleFrameColor = titleStyle?.frame_color ?? titleStyle?.color;
+  const titleInlineStyle = getInlineColorStyle(titleStyle);
+  const nicknameInlineStyle = getInlineColorStyle(nicknameStyle);
+  const textInlineStyle = textStyle?.color ? { color: textStyle.color } : undefined;
 
   useEffect(() => {
     const id = window.requestAnimationFrame(() => setEntered(true));
@@ -728,28 +840,54 @@ function ChatMessageItem({
         message.pending && "animate-pulse border-purple-400/40",
       )}
     >
-      <Avatar user={message.user} className="h-7 w-7" />
+      {avatarStyle?.url ? (
+        <img
+          alt=""
+          className="h-7 w-7 border border-zinc-800 object-cover"
+          src={avatarStyle.url}
+        />
+      ) : (
+        <Avatar user={message.user} className="h-7 w-7" />
+      )}
       <div className="min-w-0">
         <div className="mb-1 flex items-center justify-between gap-2">
           <div className="flex min-w-0 items-center gap-1.5">
-            {message.mine && (
+            {titleLabel && (
               <span
                 className={cn(
                   "shrink-0 bg-purple-950/35 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-[0.1em]",
-                  getTitleBorderColorClass(chatCustomization.titleBorderColor),
-                  getTitleBorderShapeClass(chatCustomization.titleBorderShape),
-                  isAnimatedTitle(chatCustomization.title) && "animate-pulse",
+                  titleFrameColor ? "border" : getTitleBorderColorClass(chatCustomization.titleBorderColor),
+                  getChatStyleFrameClass(titleStyle?.shape, titleStyle?.frame),
+                  !titleStyle && getTitleBorderShapeClass(chatCustomization.titleBorderShape),
+                  (titleStyle?.animated || (!titleStyle && isAnimatedTitle(chatCustomization.title))) &&
+                    "animate-pulse",
                 )}
+                style={{
+                  ...titleInlineStyle,
+                  ...(titleFrameColor ? { borderColor: titleFrameColor } : {}),
+                }}
               >
-                {chatCustomization.title}
+                {titleLabel}
               </span>
             )}
+            {style?.badges?.map((badge) => (
+              <span
+                className="shrink-0 border border-zinc-800 bg-zinc-950 px-1 py-0.5 text-[8px] font-black uppercase tracking-[0.1em] text-zinc-300"
+                key={badge.id ?? badge.label}
+                style={badge.color ? { color: badge.color, borderColor: badge.color } : undefined}
+              >
+                {badge.label ?? badge.id}
+              </span>
+            ))}
             <span
               className={cn(
                 "truncate text-[10px] font-semibold uppercase tracking-[0.14em] text-zinc-500",
-                message.mine && "bg-clip-text font-black text-transparent",
-                message.mine && getNickColorClass(chatCustomization.nameColor),
+                nicknameStyle && "font-black",
+                !nicknameStyle && message.mine && "bg-clip-text font-black text-transparent",
+                !nicknameStyle && message.mine && getNickColorClass(chatCustomization.nameColor),
+                nicknameStyle?.animated && "animate-pulse",
               )}
+              style={nicknameInlineStyle}
             >
               {message.user}
             </span>
@@ -764,9 +902,15 @@ function ChatMessageItem({
         <p
           className={cn(
             "break-words text-xs leading-5 transition-opacity duration-200",
-            message.mine ? getChatTextClass(chatCustomization.textStyle) : "text-zinc-300",
+            textStyle
+              ? getChatStyleTextClass(textStyle.style)
+              : message.mine
+                ? getChatTextClass(chatCustomization.textStyle)
+                : "text-zinc-300",
+            textStyle?.animated && "animate-pulse",
             message.pending && "opacity-75",
           )}
+          style={textInlineStyle}
         >
           {message.text}
         </p>
@@ -994,29 +1138,46 @@ function StatsModal({
 
 function CustomizeModal({
   chatCustomization,
+  chatCatalog,
+  chatSelection,
+  chatCustomizationLoading,
+  chatCustomizationSaving,
+  chatCustomizationError,
   gameCustomization,
   resultSoundOptions,
   resultSoundLoading,
   resultSoundVolume,
-  onChangeChatCustomization,
+  onSelectChatCustomization,
+  onClearChatCustomization,
   onChangeGameCustomization,
   onChangeResultSoundVolume,
   onSelectResultSound,
   onClose,
 }: {
   chatCustomization: ChatCustomization;
+  chatCatalog: ChatCustomizationCatalog | null;
+  chatSelection: ChatCustomizationSelection | null;
+  chatCustomizationLoading: boolean;
+  chatCustomizationSaving: boolean;
+  chatCustomizationError: string | null;
   gameCustomization: GameCustomization;
   resultSoundOptions: ResultSoundOption[];
   resultSoundLoading: boolean;
   resultSoundVolume: number;
-  onChangeChatCustomization: (next: Partial<ChatCustomization>) => void;
+  onSelectChatCustomization: (
+    slot: ChatCustomizationSlot,
+    item: ChatCustomizationItem,
+  ) => void;
+  onClearChatCustomization: (slot: ChatCustomizationSlot) => void;
   onChangeGameCustomization: (next: Partial<GameCustomization>) => void;
   onChangeResultSoundVolume: (value: number) => void;
   onSelectResultSound: (sound: ResultSoundOption) => void;
   onClose: () => void;
 }) {
   const [view, setView] = useState<"menu" | "chat" | "game">("menu");
-  const [category, setCategory] = useState<"titles" | "colors" | "text">("titles");
+  const [category, setCategory] = useState<
+    "titles" | "colors" | "text" | "frames" | "avatars" | "badges"
+  >("titles");
   const [previewSoundId, setPreviewSoundId] = useState<string | null>(null);
   const previewAudioRef = useRef<HTMLAudioElement | null>(null);
   const options = [
@@ -1033,57 +1194,18 @@ function CustomizeModal({
       icon: Trophy,
     },
   ];
-  const titleItems = [
-    { label: "RANKED", rarity: "Base", locked: false, animated: false },
-    { label: "CHAD", rarity: "Rare", locked: false, animated: false },
-    { label: "MOGGER", rarity: "Rare", locked: false, animated: false },
-    { label: "ELITE", rarity: "Epic", locked: false, animated: true },
-    { label: "ASCENDED", rarity: "Epic", locked: true, animated: true },
-    { label: "TRUE ADAM", rarity: "Mythic", locked: true, animated: true },
-    { label: "BLACKPILL", rarity: "Mythic", locked: true, animated: true },
-    { label: "VOIDKING", rarity: "Legend", locked: true, animated: true },
-  ];
-  const titleBorderColorOptions = [
-    { label: "Purple", className: "bg-purple-400", locked: false },
-    { label: "Gold", className: "bg-[#d4af37]", locked: false },
-    { label: "Silver", className: "bg-[#c0c0c0]", locked: false },
-    { label: "Bronze", className: "bg-[#cd7f32]", locked: false },
-    { label: "Crimson", className: "bg-red-400", locked: true },
-    { label: "Cyan", className: "bg-cyan-300", locked: true },
-  ];
-  const titleBorderShapeOptions = [
-    { label: "Square", locked: false },
-    { label: "Rounded", locked: false },
-    { label: "Pill", locked: false },
-    { label: "Double", locked: true },
-    { label: "Dashed", locked: true },
-  ];
-  const colorOptions = [
-    { label: "Purple", className: "bg-purple-400", gradient: false, locked: false },
-    { label: "Gold", className: "bg-[#d4af37]", gradient: false, locked: false },
-    { label: "Silver", className: "bg-[#c0c0c0]", gradient: false, locked: false },
-    { label: "Bronze", className: "bg-[#cd7f32]", gradient: false, locked: false },
-    { label: "Neon", className: "bg-gradient-to-r from-[#5227FF] via-[#FF9FFC] to-[#B497CF]", gradient: true, locked: false },
-    { label: "Inferno", className: "bg-gradient-to-r from-red-500 via-orange-300 to-yellow-200", gradient: true, locked: true },
-    { label: "Ice", className: "bg-gradient-to-r from-cyan-300 via-sky-400 to-violet-300", gradient: true, locked: true },
-    { label: "Toxic", className: "bg-gradient-to-r from-lime-300 via-emerald-400 to-purple-400", gradient: true, locked: true },
-  ];
-  const textStyleOptions = [
-    { label: "Sharp", locked: false },
-    { label: "Glitch", locked: false },
-    { label: "Minimal", locked: false },
-    { label: "Arcade", locked: false },
-    { label: "Static", locked: true },
-    { label: "Chrome", locked: true },
-    { label: "Ghost", locked: true },
-    { label: "Signal", locked: true },
-  ];
   const isChatView = view === "chat";
-  const previewColor = getNickColorClass(chatCustomization.nameColor);
+  const selectedChatStyle = getSelectedChatStyle(chatCatalog, chatSelection);
+  const previewColor = selectedChatStyle?.nickname
+    ? ""
+    : getNickColorClass(chatCustomization.nameColor);
   const categoryItems = [
     { id: "titles" as const, label: "Title" },
     { id: "colors" as const, label: "Nick" },
     { id: "text" as const, label: "Text" },
+    { id: "frames" as const, label: "Frame" },
+    { id: "avatars" as const, label: "Avatar" },
+    { id: "badges" as const, label: "Badge" },
   ];
   const gameFrameItems = [
     { label: "Neon Grid", locked: false },
@@ -1157,6 +1279,98 @@ function CustomizeModal({
     };
   }, [stopPreview]);
 
+  const selectedIdsByCategory = {
+    titles: chatSelection?.title_id,
+    colors: chatSelection?.nickname_color_id,
+    text: chatSelection?.text_style_id,
+    frames: chatSelection?.title_frame_id,
+    avatars: chatSelection?.avatar_id,
+    badges: undefined,
+  };
+  const slotByCategory: Record<typeof category, ChatCustomizationSlot> = {
+    titles: "title",
+    colors: "nickname_color",
+    text: "text_style",
+    frames: "title_frame",
+    avatars: "avatar",
+    badges: "badge",
+  };
+  const catalogItemsByCategory = {
+    titles: chatCatalog?.titles ?? [],
+    colors: chatCatalog?.nickname_colors ?? [],
+    text: chatCatalog?.text_styles ?? [],
+    frames: chatCatalog?.title_frames ?? [],
+    avatars: chatCatalog?.avatars ?? [],
+    badges: chatCatalog?.badges ?? [],
+  };
+  const activeCatalogItems = catalogItemsByCategory[category];
+
+  const renderCatalogItem = (item: ChatCustomizationItem) => {
+    const slot = slotByCategory[category];
+    const isBadgeSelected = chatSelection?.badge_ids?.includes(item.id) ?? false;
+    const selected =
+      category === "badges"
+        ? isBadgeSelected
+        : selectedIdsByCategory[category] === item.id;
+    const locked = !item.owned;
+    const previewColors = item.preview?.gradient ?? item.preview?.colors;
+    const swatchStyle =
+      Array.isArray(previewColors) && previewColors.length > 1
+        ? { backgroundImage: `linear-gradient(90deg, ${previewColors.join(", ")})` }
+        : item.preview?.color
+          ? { backgroundColor: item.preview.color }
+          : undefined;
+
+    return (
+      <button
+        className={cn(
+          "min-h-24 border bg-black/60 p-3 text-left transition-colors",
+          locked && "cursor-not-allowed border-zinc-900 bg-black/50 opacity-45",
+          !locked &&
+            (selected
+              ? "border-purple-400 bg-purple-950/35 text-purple-100"
+              : "border-zinc-700 bg-zinc-900/55 text-zinc-200 hover:border-purple-500/60"),
+        )}
+        disabled={locked || chatCustomizationSaving}
+        key={item.id}
+        onClick={() => onSelectChatCustomization(slot, item)}
+        type="button"
+      >
+        <div className="mb-5 flex items-center justify-between gap-2">
+          <span
+            className={cn(
+              "h-4 w-4 border border-zinc-700 bg-purple-400",
+              category === "avatars" && "h-6 w-6",
+            )}
+            style={swatchStyle}
+          />
+          <span className="text-[10px] uppercase tracking-[0.12em] text-zinc-600">
+            {locked
+              ? item.locked_reason ?? "Locked"
+              : selected
+                ? "Selected"
+                : item.preview?.animated
+                  ? "Animated"
+                  : item.rarity ?? "Owned"}
+          </span>
+        </div>
+        <div
+          className={cn(
+            "text-xs font-black uppercase tracking-[0.12em]",
+            item.preview?.animated && "animate-pulse text-purple-200",
+          )}
+        >
+          {item.preview?.label ?? item.title}
+        </div>
+        {item.description && (
+          <p className="mt-2 text-[10px] leading-4 text-zinc-500">
+            {item.description}
+          </p>
+        )}
+      </button>
+    );
+  };
+
   return (
     <div
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/72 p-4 backdrop-blur-sm"
@@ -1208,7 +1422,7 @@ function CustomizeModal({
 
         {isChatView ? (
           <div className="space-y-5 p-5">
-            <div className="grid grid-cols-3 border border-zinc-900 bg-black/60 p-1">
+            <div className="grid grid-cols-3 border border-zinc-900 bg-black/60 p-1 sm:grid-cols-6">
               {categoryItems.map((item) => (
                 <button
                   className={cn(
@@ -1225,195 +1439,114 @@ function CustomizeModal({
             </div>
 
             <div className="max-h-[320px] overflow-y-auto pr-1">
-              <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-                {category === "titles" &&
-                  <>
-                    {titleItems.map((item) => (
-                      <button
-                        className={cn(
-                          "min-h-24 border bg-black/60 p-3 text-left transition-colors",
-                          item.locked && "cursor-not-allowed opacity-45",
-                          !item.locked &&
-                            (chatCustomization.title === item.label
-                              ? "border-purple-400 bg-purple-950/35 text-purple-100"
-                              : "border-zinc-700 bg-zinc-900/55 text-zinc-200 hover:border-purple-500/60"),
-                        )}
-                        disabled={item.locked}
-                        key={item.label}
-                        onClick={() =>
-                          onChangeChatCustomization({ title: item.label })
-                        }
-                        type="button"
-                      >
-                        <div className="mb-5 flex items-center justify-between gap-2">
-                          <span className="text-[10px] uppercase tracking-[0.12em] text-zinc-600">
-                            {item.rarity}
-                          </span>
-                          <span className="text-[10px] uppercase tracking-[0.12em] text-zinc-600">
-                            {item.locked ? "Locked" : item.animated ? "Animated" : "Owned"}
-                          </span>
-                        </div>
-                        <div
-                          className={cn(
-                            "text-xs font-black uppercase tracking-[0.12em]",
-                            item.animated && "animate-pulse text-purple-200",
-                          )}
-                        >
-                          {item.label}
-                        </div>
-                      </button>
-                    ))}
-
-                    <div className="border border-zinc-900 bg-black/50 p-3 sm:col-span-2 lg:col-span-3">
-                      <div className="mb-3 text-[10px] font-semibold uppercase tracking-[0.14em] text-zinc-600">
-                        Title Border Color
-                      </div>
-                      <div className="grid gap-2 sm:grid-cols-3">
-                        {titleBorderColorOptions.map((item) => (
-                          <button
-                            className={cn(
-                              "grid grid-cols-[16px_1fr] items-center gap-2 border px-3 py-2 text-left text-[10px] font-semibold uppercase tracking-[0.12em] transition-colors",
-                              item.locked && "cursor-not-allowed opacity-45",
-                              !item.locked &&
-                                (chatCustomization.titleBorderColor === item.label
-                                  ? "border-purple-400 bg-purple-950/35 text-purple-100"
-                                  : "border-zinc-700 bg-zinc-900/55 text-zinc-200 hover:border-purple-500/60"),
-                            )}
-                            disabled={item.locked}
-                            key={item.label}
-                            onClick={() =>
-                              onChangeChatCustomization({
-                                titleBorderColor: item.label,
-                              })
-                            }
-                            type="button"
-                          >
-                            <span className={cn("h-3 w-3", item.className)} />
-                            {item.label}
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-
-                    <div className="border border-zinc-900 bg-black/50 p-3 sm:col-span-2 lg:col-span-3">
-                      <div className="mb-3 text-[10px] font-semibold uppercase tracking-[0.14em] text-zinc-600">
-                        Title Border Shape
-                      </div>
-                      <div className="grid gap-2 sm:grid-cols-3">
-                        {titleBorderShapeOptions.map((item) => (
-                          <button
-                            className={cn(
-                              "border px-3 py-2 text-left text-[10px] font-semibold uppercase tracking-[0.12em] transition-colors",
-                              item.locked && "cursor-not-allowed opacity-45",
-                              !item.locked &&
-                                (chatCustomization.titleBorderShape === item.label
-                                  ? "border-purple-400 bg-purple-950/35 text-purple-100"
-                                  : "border-zinc-700 bg-zinc-900/55 text-zinc-200 hover:border-purple-500/60"),
-                            )}
-                            disabled={item.locked}
-                            key={item.label}
-                            onClick={() =>
-                              onChangeChatCustomization({
-                                titleBorderShape: item.label,
-                              })
-                            }
-                            type="button"
-                          >
-                            {item.label}
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-                  </>}
-
-                {category === "colors" &&
-                  colorOptions.map((item) => (
-                    <button
-                      className={cn(
-                        "min-h-24 border bg-black/60 p-3 text-left transition-colors",
-                        item.locked && "cursor-not-allowed opacity-45",
-                        !item.locked &&
-                          (chatCustomization.nameColor === item.label
-                            ? "border-purple-400 bg-purple-950/35 text-purple-100"
-                            : "border-zinc-700 bg-zinc-900/55 text-zinc-200 hover:border-purple-500/60"),
-                      )}
-                      disabled={item.locked}
-                      key={item.label}
-                      onClick={() =>
-                        onChangeChatCustomization({ nameColor: item.label })
-                      }
-                      type="button"
-                    >
-                      <div className="mb-5 flex items-center justify-between gap-2">
-                        <span className={cn("h-4 w-4", item.className)} />
-                        <span className="text-[10px] uppercase tracking-[0.12em] text-zinc-600">
-                          {item.locked ? "Locked" : item.gradient ? "Gradient" : "Solid"}
-                        </span>
-                      </div>
-                      <div className="text-xs font-black uppercase tracking-[0.12em]">
-                        {item.label}
-                      </div>
-                    </button>
+              {chatCustomizationLoading ? (
+                <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                  {Array.from({ length: 6 }).map((_, index) => (
+                    <div
+                      className="h-24 animate-pulse border border-zinc-900 bg-black/60"
+                      key={index}
+                    />
                   ))}
-
-                {category === "text" &&
-                  textStyleOptions.map((item) => (
-                    <button
-                      className={cn(
-                        "min-h-24 border bg-black/60 p-3 text-left transition-colors",
-                        item.locked && "cursor-not-allowed opacity-45",
-                        !item.locked &&
-                          (chatCustomization.textStyle === item.label
-                            ? "border-purple-400 bg-purple-950/35 text-purple-100"
-                            : "border-zinc-700 bg-zinc-900/55 text-zinc-200 hover:border-purple-500/60"),
-                      )}
-                      disabled={item.locked}
-                      key={item.label}
-                      onClick={() =>
-                        onChangeChatCustomization({ textStyle: item.label })
-                      }
-                      type="button"
-                    >
-                      <div className="mb-5 text-[10px] uppercase tracking-[0.12em] text-zinc-600">
-                        {item.locked ? "Locked" : "Owned"}
-                      </div>
-                      <div className="text-xs font-black uppercase tracking-[0.12em]">
-                        {item.label}
-                      </div>
-                    </button>
-                  ))}
-              </div>
+                </div>
+              ) : chatCustomizationError ? (
+                <div className="border border-red-500/45 bg-red-950/35 px-3 py-4 text-[10px] font-semibold uppercase tracking-[0.12em] text-red-200">
+                  {chatCustomizationError}
+                </div>
+              ) : activeCatalogItems.length ? (
+                <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                  {activeCatalogItems.map(renderCatalogItem)}
+                </div>
+              ) : (
+                <div className="border border-zinc-900 bg-black/60 px-3 py-4 text-[10px] font-semibold uppercase tracking-[0.12em] text-zinc-500">
+                  No items in this slot
+                </div>
+              )}
             </div>
 
             <div className="border border-zinc-900 bg-black/60 p-4">
-              <div className="text-[10px] uppercase tracking-[0.14em] text-zinc-600">
-                Preview
+              <div className="flex items-center justify-between gap-3">
+                <div className="text-[10px] uppercase tracking-[0.14em] text-zinc-600">
+                  Preview
+                </div>
+                {category !== "badges" && (
+                  <button
+                    className="text-[10px] font-semibold uppercase tracking-[0.12em] text-zinc-500 transition-colors hover:text-zinc-200"
+                    disabled={chatCustomizationSaving}
+                    onClick={() => onClearChatCustomization(slotByCategory[category])}
+                    type="button"
+                  >
+                    Clear slot
+                  </button>
+                )}
               </div>
               <div className="mt-3 flex items-center gap-2">
+                {selectedChatStyle?.avatar?.url && (
+                  <img
+                    alt=""
+                    className="h-7 w-7 border border-zinc-800 object-cover"
+                    src={selectedChatStyle.avatar.url}
+                  />
+                )}
+                {selectedChatStyle?.title?.label && (
+                  <span
+                    className={cn(
+                      "border bg-purple-950/35 px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.12em]",
+                      getChatStyleFrameClass(
+                        selectedChatStyle.title.shape,
+                        selectedChatStyle.title.frame,
+                      ),
+                      selectedChatStyle.title.animated && "animate-pulse",
+                    )}
+                    style={{
+                      ...getInlineColorStyle(selectedChatStyle.title),
+                      ...(selectedChatStyle.title.frame_color
+                        ? { borderColor: selectedChatStyle.title.frame_color }
+                        : {}),
+                    }}
+                  >
+                    {selectedChatStyle.title.label}
+                  </span>
+                )}
                 <span
                   className={cn(
-                    "bg-purple-950/35 px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.12em]",
-                    getTitleBorderColorClass(chatCustomization.titleBorderColor),
-                    getTitleBorderShapeClass(chatCustomization.titleBorderShape),
-                  )}
-                >
-                  {chatCustomization.title}
-                </span>
-                <span
-                  className={cn(
-                    "bg-clip-text text-sm font-black uppercase tracking-[0.12em] text-transparent",
+                    "text-sm font-black uppercase tracking-[0.12em]",
+                    !selectedChatStyle?.nickname &&
+                      "bg-clip-text text-transparent",
                     previewColor,
+                    selectedChatStyle?.nickname?.animated && "animate-pulse",
                   )}
+                  style={getInlineColorStyle(selectedChatStyle?.nickname)}
                 >
                   volatileMS
                 </span>
+                {selectedChatStyle?.badges?.map((badge) => (
+                  <span
+                    className="border border-zinc-800 bg-zinc-950 px-1 py-0.5 text-[8px] font-black uppercase tracking-[0.1em] text-zinc-300"
+                    key={badge.id ?? badge.label}
+                    style={
+                      badge.color
+                        ? { color: badge.color, borderColor: badge.color }
+                        : undefined
+                    }
+                  >
+                    {badge.label ?? badge.id}
+                  </span>
+                ))}
                 <span
                   className={cn(
                     "text-xs",
-                    getChatTextClass(chatCustomization.textStyle),
+                    selectedChatStyle?.text
+                      ? getChatStyleTextClass(selectedChatStyle.text.style)
+                      : getChatTextClass(chatCustomization.textStyle),
+                    selectedChatStyle?.text?.animated && "animate-pulse",
                   )}
+                  style={
+                    selectedChatStyle?.text?.color
+                      ? { color: selectedChatStyle.text.color }
+                      : undefined
+                  }
                 >
-                  {chatCustomization.textStyle} message style
+                  Message style
                 </span>
               </div>
             </div>
@@ -1597,11 +1730,13 @@ function CustomizeModal({
 
 function LiveChat({
   chatCustomization,
+  currentChatStyle,
   currentUserName,
   accessToken,
   chatBlurred,
 }: {
   chatCustomization: ChatCustomization;
+  currentChatStyle: ChatStyleSnapshot | null;
   currentUserName: string;
   accessToken: string | null;
   chatBlurred: boolean;
@@ -1646,6 +1781,7 @@ function LiveChat({
         createdAt: msg.created_at,
         user,
         text: msg.text ?? "",
+        chatStyle: msg.chat_style ?? null,
         mine,
       };
     };
@@ -1725,6 +1861,7 @@ function LiveChat({
         id: optimisticId,
         user: currentUserName,
         text,
+        chatStyle: currentChatStyle,
         mine: true,
         pending: true,
       },
@@ -5177,9 +5314,15 @@ export default function App() {
   const [consentAccepted, setConsentAccepted] = useState(false);
   const [tokens, setTokens] = useState<AuthTokens | null>(null);
   const [me, setMe] = useState<AuthUser | null>(null);
-  const [chatCustomization, setChatCustomization] = useState<ChatCustomization>(
+  const [chatCustomization] = useState<ChatCustomization>(
     defaultChatCustomization,
   );
+  const [chatCatalog, setChatCatalog] = useState<ChatCustomizationCatalog | null>(null);
+  const [chatSelection, setChatSelection] =
+    useState<ChatCustomizationSelection | null>(null);
+  const [chatCustomizationLoading, setChatCustomizationLoading] = useState(false);
+  const [chatCustomizationSaving, setChatCustomizationSaving] = useState(false);
+  const [chatCustomizationError, setChatCustomizationError] = useState<string | null>(null);
   const [gameCustomization, setGameCustomization] = useState<GameCustomization>(
     defaultGameCustomization,
   );
@@ -5193,6 +5336,7 @@ export default function App() {
     (me?.nickname && String(me.nickname)) ||
     (isAnonymousUser ? "ANONYMOUS" : "GUEST");
   const statsSnapshot = buildStatsSnapshot(ratingProfile, statsSummary);
+  const currentChatStyle = getSelectedChatStyle(chatCatalog, chatSelection);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -5225,6 +5369,9 @@ export default function App() {
         setRecentForm([]);
         setQueueInfo(null);
         setLeaderboardEntries([]);
+        setChatCatalog(null);
+        setChatSelection(null);
+        setChatCustomizationError(null);
       }
     };
 
@@ -5337,6 +5484,45 @@ export default function App() {
       cancelled = true;
     };
   }, []);
+
+  useEffect(() => {
+    if (!tokens?.accessToken) {
+      setChatCatalog(null);
+      setChatSelection(null);
+      return;
+    }
+
+    let cancelled = false;
+    setChatCustomizationLoading(true);
+    setChatCustomizationError(null);
+
+    void Promise.all([
+      getChatCustomizationCatalog(tokens.accessToken),
+      getMyChatCustomization(tokens.accessToken),
+    ])
+      .then(([catalog, selection]) => {
+        if (cancelled) return;
+        setChatCatalog(catalog);
+        setChatSelection(selection);
+      })
+      .catch((error: unknown) => {
+        if (cancelled) return;
+        setChatCatalog(null);
+        setChatSelection(null);
+        setChatCustomizationError(
+          error instanceof Error
+            ? error.message
+            : "Failed to load chat customization",
+        );
+      })
+      .finally(() => {
+        if (!cancelled) setChatCustomizationLoading(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [tokens?.accessToken]);
 
   const refreshRatingData = useCallback(
     async (
@@ -5511,6 +5697,73 @@ export default function App() {
         }));
       } catch (error) {
         setAuthError(error instanceof Error ? error.message : "Failed to select result sound");
+      }
+    },
+    [tokens?.accessToken],
+  );
+
+  const handleSelectChatCustomization = useCallback(
+    async (slot: ChatCustomizationSlot, item: ChatCustomizationItem) => {
+      if (!tokens?.accessToken || !item.owned) return;
+      setChatCustomizationSaving(true);
+      setChatCustomizationError(null);
+      try {
+        const nextSelection = await selectChatCustomizationItem(
+          tokens.accessToken,
+          slot,
+          item.id,
+        );
+        setChatSelection(nextSelection);
+        setChatCatalog((current) => {
+          if (!current) return current;
+          const slotKey =
+            slot === "title"
+              ? "titles"
+              : slot === "nickname_color"
+                ? "nickname_colors"
+                : slot === "text_style"
+                  ? "text_styles"
+                  : slot === "title_frame"
+                    ? "title_frames"
+                    : slot === "avatar"
+                      ? "avatars"
+                      : "badges";
+          return {
+            ...current,
+            [slotKey]: current[slotKey].map((entry) => ({
+              ...entry,
+              selected:
+                slot === "badge"
+                  ? Boolean(nextSelection.badge_ids?.includes(entry.id))
+                  : entry.id === item.id,
+            })),
+          };
+        });
+      } catch (error) {
+        setChatCustomizationError(
+          error instanceof Error ? error.message : "Failed to select chat item",
+        );
+      } finally {
+        setChatCustomizationSaving(false);
+      }
+    },
+    [tokens?.accessToken],
+  );
+
+  const handleClearChatCustomization = useCallback(
+    async (slot: ChatCustomizationSlot) => {
+      if (!tokens?.accessToken) return;
+      setChatCustomizationSaving(true);
+      setChatCustomizationError(null);
+      try {
+        const nextSelection = await clearChatCustomizationSlot(tokens.accessToken, slot);
+        setChatSelection(nextSelection);
+      } catch (error) {
+        setChatCustomizationError(
+          error instanceof Error ? error.message : "Failed to clear chat slot",
+        );
+      } finally {
+        setChatCustomizationSaving(false);
       }
     },
     [tokens?.accessToken],
@@ -5910,6 +6163,7 @@ export default function App() {
           >
             <LiveChat
               chatCustomization={chatCustomization}
+              currentChatStyle={currentChatStyle}
               currentUserName={currentNickname}
               accessToken={tokens?.accessToken ?? null}
               chatBlurred={chatBlurred}
@@ -5987,13 +6241,17 @@ export default function App() {
       {isCustomizeOpen && (
         <CustomizeModal
           chatCustomization={chatCustomization}
+          chatCatalog={chatCatalog}
+          chatSelection={chatSelection}
+          chatCustomizationLoading={chatCustomizationLoading}
+          chatCustomizationSaving={chatCustomizationSaving}
+          chatCustomizationError={chatCustomizationError}
           gameCustomization={gameCustomization}
           resultSoundOptions={resultSoundOptions}
           resultSoundLoading={resultSoundLoading}
           resultSoundVolume={resultSoundVolume}
-          onChangeChatCustomization={(next) =>
-            setChatCustomization((current) => ({ ...current, ...next }))
-          }
+          onSelectChatCustomization={handleSelectChatCustomization}
+          onClearChatCustomization={handleClearChatCustomization}
           onChangeGameCustomization={(next) =>
             setGameCustomization((current) => ({ ...current, ...next }))
           }

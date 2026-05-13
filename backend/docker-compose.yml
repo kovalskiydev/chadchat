@@ -77,9 +77,12 @@ services:
     environment:
       - MYSQL_DSN=app:app@tcp(mysql:3306)/chadchat?parseTime=true&multiStatements=true&charset=utf8mb4
       - AUTH_SERVICE_URL=http://auth-service:8081
+      - CUSTOMIZATION_SERVICE_URL=http://customization-service:8087
+      - CUSTOMIZATION_INTERNAL_SECRET=dev-customization-secret-change-me
     depends_on:
       - mysql
       - auth-service
+      - customization-service
     ports:
       - "8084:8084"
 

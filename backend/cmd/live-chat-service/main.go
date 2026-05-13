@@ -17,11 +17,13 @@ import (
 )
 
 type Server struct {
-	authServiceURL string
-	db             *sql.DB
-	subsMu         sync.RWMutex
-	subscribers    map[string]chan []byte
-	limiter        *rateutil.Limiter
+	authServiceURL          string
+	customizationServiceURL string
+	customizationSecret     string
+	db                      *sql.DB
+	subsMu                  sync.RWMutex
+	subscribers             map[string]chan []byte
+	limiter                 *rateutil.Limiter
 }
 
 type ChatMessage struct {
@@ -29,6 +31,7 @@ type ChatMessage struct {
 	SenderID       string    `json:"sender_id"`
 	SenderNickname string    `json:"sender_nickname"`
 	Text           string    `json:"text"`
+	ChatStyle      any       `json:"chat_style,omitempty"`
 	CreatedAt      time.Time `json:"created_at"`
 }
 
@@ -52,6 +55,10 @@ type authUser struct {
 	Nickname string
 }
 
+type chatStyleInternalResponse struct {
+	ChatStyle any `json:"chat_style"`
+}
+
 func main() {
 	db, err := mysqlutil.OpenFromEnv()
 	if err != nil {
@@ -62,10 +69,12 @@ func main() {
 	}
 
 	s := &Server{
-		authServiceURL: envOr("AUTH_SERVICE_URL", "http://localhost:8081"),
-		db:             db,
-		subscribers:    map[string]chan []byte{},
-		limiter:        rateutil.NewLimiter(),
+		authServiceURL:          envOr("AUTH_SERVICE_URL", "http://localhost:8081"),
+		customizationServiceURL: envOr("CUSTOMIZATION_SERVICE_URL", "http://localhost:8087"),
+		customizationSecret:     envOr("CUSTOMIZATION_INTERNAL_SECRET", "dev-customization-secret-change-me"),
+		db:                      db,
+		subscribers:             map[string]chan []byte{},
+		limiter:                 rateutil.NewLimiter(),
 	}
 
 	mux := http.NewServeMux()
@@ -105,9 +114,11 @@ func liveChatSchema() []string {
 			sender_id VARCHAR(64) NOT NULL,
 			sender_nickname VARCHAR(64) NOT NULL,
 			text TEXT NOT NULL,
+			chat_style_json JSON NULL,
 			created_at DATETIME(6) NOT NULL,
 			INDEX idx_live_chat_created_at (created_at)
 		) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`,
+		`ALTER TABLE live_chat_messages ADD COLUMN IF NOT EXISTS chat_style_json JSON NULL AFTER text`,
 	}
 }
 
@@ -212,10 +223,18 @@ func (s *Server) handlePostMessage(w http.ResponseWriter, r *http.Request, user 
 		Text:           text,
 		CreatedAt:      time.Now().UTC(),
 	}
+	style, err := s.fetchChatStyle(user.ID)
+	if err == nil {
+		msg.ChatStyle = style
+	}
+	var styleJSON []byte
+	if msg.ChatStyle != nil {
+		styleJSON, _ = json.Marshal(msg.ChatStyle)
+	}
 	if _, err := s.db.Exec(
-		`INSERT INTO live_chat_messages (id, sender_id, sender_nickname, text, created_at)
-		 VALUES (?, ?, ?, ?, ?)`,
-		msg.ID, msg.SenderID, msg.SenderNickname, msg.Text, msg.CreatedAt,
+		`INSERT INTO live_chat_messages (id, sender_id, sender_nickname, text, chat_style_json, created_at)
+		 VALUES (?, ?, ?, ?, ?, ?)`,
+		msg.ID, msg.SenderID, msg.SenderNickname, msg.Text, nullableBytes(styleJSON), msg.CreatedAt,
 	); err != nil {
 		writeErr(w, http.StatusInternalServerError, "db_error")
 		return
@@ -284,9 +303,9 @@ func (s *Server) handleStream(w http.ResponseWriter, r *http.Request, user authU
 
 func (s *Server) fetchHistory(limit int) ([]ChatMessage, error) {
 	rows, err := s.db.Query(
-		`SELECT id, sender_id, sender_nickname, text, created_at
+		`SELECT id, sender_id, sender_nickname, text, chat_style_json, created_at
 		 FROM (
-		 	SELECT id, sender_id, sender_nickname, text, created_at
+		 	SELECT id, sender_id, sender_nickname, text, chat_style_json, created_at
 		 	FROM live_chat_messages
 		 	ORDER BY created_at DESC
 		 	LIMIT ?
@@ -302,12 +321,47 @@ func (s *Server) fetchHistory(limit int) ([]ChatMessage, error) {
 	messages := make([]ChatMessage, 0, limit)
 	for rows.Next() {
 		var msg ChatMessage
-		if err := rows.Scan(&msg.ID, &msg.SenderID, &msg.SenderNickname, &msg.Text, &msg.CreatedAt); err != nil {
+		var styleRaw sql.NullString
+		if err := rows.Scan(&msg.ID, &msg.SenderID, &msg.SenderNickname, &msg.Text, &styleRaw, &msg.CreatedAt); err != nil {
 			return nil, err
+		}
+		if styleRaw.Valid && styleRaw.String != "" {
+			var style any
+			if json.Unmarshal([]byte(styleRaw.String), &style) == nil {
+				msg.ChatStyle = style
+			}
 		}
 		messages = append(messages, msg)
 	}
 	return messages, rows.Err()
+}
+
+func (s *Server) fetchChatStyle(userID string) (any, error) {
+	req, err := http.NewRequest(http.MethodGet, strings.TrimRight(s.customizationServiceURL, "/")+"/internal/users/"+userID+"/chat-style", nil)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("X-Customization-Internal-Secret", s.customizationSecret)
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return nil, errors.New("chat_style_unavailable")
+	}
+	var out chatStyleInternalResponse
+	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
+		return nil, err
+	}
+	return out.ChatStyle, nil
+}
+
+func nullableBytes(v []byte) any {
+	if len(v) == 0 {
+		return nil
+	}
+	return v
 }
 
 func (s *Server) broadcast(payload []byte) {

@@ -10,6 +10,42 @@ export type LiveChatMessage = {
   user?: string;
   text: string;
   created_at?: string;
+  chat_style?: ChatStyleSnapshot | null;
+};
+
+export type ChatStyleSnapshot = {
+  title?: {
+    label?: string;
+    frame?: string;
+    frame_color?: string;
+    shape?: string;
+    color?: string;
+    colors?: string[];
+    animated?: boolean;
+  } | null;
+  nickname?: {
+    color?: string;
+    gradient?: string[];
+    colors?: string[];
+    animated?: boolean;
+    font_weight?: number;
+  } | null;
+  text?: {
+    style?: string;
+    color?: string;
+    animated?: boolean;
+  } | null;
+  avatar?: {
+    url?: string;
+    frame?: string;
+    color?: string;
+  } | null;
+  badges?: Array<{
+    id?: string;
+    label?: string;
+    icon_url?: string;
+    color?: string;
+  }>;
 };
 
 export async function getLiveChatHistory(accessToken: string, limit = 40) {

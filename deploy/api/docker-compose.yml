@@ -93,9 +93,12 @@ services:
       MYSQL_DSN: ${MYSQL_DSN}
       PORT: 8084
       AUTH_SERVICE_URL: http://auth-service:8081
+      CUSTOMIZATION_SERVICE_URL: http://customization-service:8087
+      CUSTOMIZATION_INTERNAL_SECRET: ${CUSTOMIZATION_INTERNAL_SECRET}
     depends_on:
       - mysql
       - auth-service
+      - customization-service
     expose:
       - "8084"
 
