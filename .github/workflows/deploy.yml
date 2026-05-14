@@ -155,6 +155,11 @@ jobs:
             dockerfile: ./backend/Dockerfile
             build_args: |
               SERVICE_PATH=./cmd/admin-service
+          - image_name: profile-service
+            context: ./backend
+            dockerfile: ./backend/Dockerfile
+            build_args: |
+              SERVICE_PATH=./cmd/profile-service
           - image_name: ml-service
             context: ./ml
             dockerfile: ./ml/Dockerfile
@@ -257,6 +262,7 @@ jobs:
             RATING_SERVICE_IMAGE=${{ env.REGISTRY }}/${OWNER_LC}/chadchat-rating-service:main
             CUSTOMIZATION_SERVICE_IMAGE=${{ env.REGISTRY }}/${OWNER_LC}/chadchat-customization-service:main
             ADMIN_SERVICE_IMAGE=${{ env.REGISTRY }}/${OWNER_LC}/chadchat-admin-service:main
+            PROFILE_SERVICE_IMAGE=${{ env.REGISTRY }}/${OWNER_LC}/chadchat-profile-service:main
             ML_SERVICE_IMAGE=${{ env.REGISTRY }}/${OWNER_LC}/chadchat-ml-service:main
             EOF
             echo "${{ secrets.GHCR_TOKEN }}" | docker login ${{ env.REGISTRY }} -u "${{ secrets.GHCR_USERNAME }}" --password-stdin

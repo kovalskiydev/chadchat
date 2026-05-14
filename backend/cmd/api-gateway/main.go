@@ -21,6 +21,7 @@ func main() {
 	ratingURL := envOr("RATING_SERVICE_URL", "http://localhost:8086")
 	customizationURL := envOr("CUSTOMIZATION_SERVICE_URL", "http://localhost:8087")
 	adminURL := envOr("ADMIN_SERVICE_URL", "http://localhost:8088")
+	profileURL := envOr("PROFILE_SERVICE_URL", "http://localhost:8089")
 
 	authProxy := mustProxy(authURL)
 	verificationProxy := mustProxy(verificationURL)
@@ -30,6 +31,7 @@ func main() {
 	ratingProxy := mustProxy(ratingURL)
 	customizationProxy := mustProxy(customizationURL)
 	adminProxy := mustProxy(adminURL)
+	profileProxy := mustProxy(profileURL)
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /health", handleHealth(map[string]string{
@@ -41,6 +43,7 @@ func main() {
 		"rating":        ratingURL,
 		"customization": customizationURL,
 		"admin":         adminURL,
+		"profile":       profileURL,
 	}))
 	mux.Handle("/auth/", authProxy)
 	mux.Handle("/me", authProxy)
@@ -56,6 +59,7 @@ func main() {
 	mux.Handle("/result-sounds", customizationProxy)
 	mux.Handle("/result-sounds/", customizationProxy)
 	mux.Handle("/chat-customization/", customizationProxy)
+	mux.Handle("/profiles/", profileProxy)
 	mux.Handle("/admin/dashboard/", adminProxy)
 	mux.Handle("/admin/users/", adminProxy)
 	mux.Handle("/admin/ratings/", adminProxy)

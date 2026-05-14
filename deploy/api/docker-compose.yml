@@ -202,6 +202,26 @@ services:
     expose:
       - "8088"
 
+  profile-service:
+    image: ${PROFILE_SERVICE_IMAGE:-chadchat/profile-service:latest}
+    build:
+      context: ../../backend
+      dockerfile: Dockerfile
+      args:
+        SERVICE_PATH: ./cmd/profile-service
+    restart: unless-stopped
+    environment:
+      MYSQL_DSN: ${MYSQL_DSN}
+      PORT: 8089
+      AUTH_SERVICE_URL: http://auth-service:8081
+    depends_on:
+      - mysql
+      - auth-service
+      - rating-service
+      - customization-service
+    expose:
+      - "8089"
+
   api-gateway:
     image: ${API_GATEWAY_IMAGE:-chadchat/api-gateway:latest}
     build:
@@ -221,6 +241,7 @@ services:
       CUSTOMIZATION_SERVICE_URL: ${CUSTOMIZATION_SERVICE_URL:-http://customization-service:8087}
       RATING_SERVICE_URL: ${RATING_SERVICE_URL:-http://rating-service:8086}
       ADMIN_SERVICE_URL: ${ADMIN_SERVICE_URL:-http://admin-service:8088}
+      PROFILE_SERVICE_URL: ${PROFILE_SERVICE_URL:-http://profile-service:8089}
       ML_SERVICE_URL: ${ML_SERVICE_URL:-http://ml-service:8090}
     depends_on:
       - auth-service
@@ -231,6 +252,7 @@ services:
       - customization-service
       - rating-service
       - admin-service
+      - profile-service
     ports:
       - "${API_PUBLIC_PORT:-8080}:8080"
 

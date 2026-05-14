@@ -173,6 +173,23 @@ services:
     ports:
       - "8088:8088"
 
+  profile-service:
+    image: golang:1.23
+    working_dir: /app
+    volumes:
+      - .:/app
+    command: go run ./cmd/profile-service
+    environment:
+      - MYSQL_DSN=app:app@tcp(mysql:3306)/chadchat?parseTime=true&multiStatements=true&charset=utf8mb4
+      - AUTH_SERVICE_URL=http://auth-service:8081
+    depends_on:
+      - mysql
+      - auth-service
+      - rating-service
+      - customization-service
+    ports:
+      - "8089:8089"
+
   api-gateway:
     image: golang:1.23
     working_dir: /app
@@ -188,6 +205,7 @@ services:
       - RATING_SERVICE_URL=http://rating-service:8086
       - CUSTOMIZATION_SERVICE_URL=http://customization-service:8087
       - ADMIN_SERVICE_URL=http://admin-service:8088
+      - PROFILE_SERVICE_URL=http://profile-service:8089
       - ML_SERVICE_URL=http://ml-service:8090
     depends_on:
       - auth-service
@@ -198,6 +216,7 @@ services:
       - rating-service
       - customization-service
       - admin-service
+      - profile-service
     ports:
       - "8080:8080"
 

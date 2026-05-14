@@ -97,6 +97,15 @@ import {
   type StatsSummary,
 } from "@/lib/rating";
 import {
+  getMyProfile,
+  getProfileComments,
+  getPublicProfile,
+  postProfileComment,
+  updateMyProfile,
+  type Profile,
+  type ProfileComment,
+} from "@/lib/profile";
+import {
   getResultSounds,
   selectResultSound,
   type ResultSoundOption,
@@ -162,6 +171,7 @@ type UiPeriodStats = {
 
 type ChatMessage = {
   id: number | string;
+  userId?: string;
   createdAt?: string;
   user: string;
   text: string;
@@ -572,12 +582,20 @@ function normalizeDuelResultSound(value: unknown): DuelResultSound | null {
 function PositionAvatar({
   position,
   user,
+  onClick,
 }: {
   position: number;
   user: string;
+  onClick?: () => void;
 }) {
   return (
-    <div className="relative h-9 w-9 shrink-0">
+    <button
+      type="button"
+      className="relative h-9 w-9 shrink-0 disabled:pointer-events-none"
+      onClick={onClick}
+      disabled={!onClick}
+      aria-label={`Open ${user} profile`}
+    >
       <Avatar user={user} className="h-9 w-9" />
       <span
         className={cn(
@@ -587,7 +605,7 @@ function PositionAvatar({
       >
         {String(position).padStart(2, "0")}
       </span>
-    </div>
+    </button>
   );
 }
 
@@ -810,9 +828,11 @@ function StatsPanel({
 function ChatMessageItem({
   message,
   chatCustomization,
+  onOpenProfile,
 }: {
   message: ChatMessage;
   chatCustomization: ChatCustomization;
+  onOpenProfile?: (userID: string) => void;
 }) {
   const [entered, setEntered] = useState(false);
   const style = message.chatStyle;
@@ -840,15 +860,23 @@ function ChatMessageItem({
         message.pending && "animate-pulse border-purple-400/40",
       )}
     >
-      {avatarStyle?.url ? (
-        <img
-          alt=""
-          className="h-7 w-7 border border-zinc-800 object-cover"
-          src={avatarStyle.url}
-        />
-      ) : (
-        <Avatar user={message.user} className="h-7 w-7" />
-      )}
+      <button
+        type="button"
+        className="h-7 w-7"
+        disabled={!message.userId || !onOpenProfile}
+        onClick={() => message.userId && onOpenProfile?.(message.userId)}
+        aria-label={`Open ${message.user} profile`}
+      >
+        {avatarStyle?.url ? (
+          <img
+            alt=""
+            className="h-7 w-7 border border-zinc-800 object-cover"
+            src={avatarStyle.url}
+          />
+        ) : (
+          <Avatar user={message.user} className="h-7 w-7" />
+        )}
+      </button>
       <div className="min-w-0">
         <div className="mb-1 flex items-center justify-between gap-2">
           <div className="flex min-w-0 items-center gap-1.5">
@@ -888,6 +916,16 @@ function ChatMessageItem({
                 nicknameStyle?.animated && "animate-pulse",
               )}
               style={nicknameInlineStyle}
+              role={message.userId && onOpenProfile ? "button" : undefined}
+              tabIndex={message.userId && onOpenProfile ? 0 : undefined}
+              onClick={() => message.userId && onOpenProfile?.(message.userId)}
+              onKeyDown={(event) => {
+                if (!message.userId || !onOpenProfile) return;
+                if (event.key === "Enter" || event.key === " ") {
+                  event.preventDefault();
+                  onOpenProfile(message.userId);
+                }
+              }}
             >
               {message.user}
             </span>
@@ -1143,13 +1181,11 @@ function CustomizeModal({
   chatCustomizationLoading,
   chatCustomizationSaving,
   chatCustomizationError,
-  gameCustomization,
   resultSoundOptions,
   resultSoundLoading,
   resultSoundVolume,
   onSelectChatCustomization,
   onClearChatCustomization,
-  onChangeGameCustomization,
   onChangeResultSoundVolume,
   onSelectResultSound,
   onClose,
@@ -1160,7 +1196,6 @@ function CustomizeModal({
   chatCustomizationLoading: boolean;
   chatCustomizationSaving: boolean;
   chatCustomizationError: string | null;
-  gameCustomization: GameCustomization;
   resultSoundOptions: ResultSoundOption[];
   resultSoundLoading: boolean;
   resultSoundVolume: number;
@@ -1169,7 +1204,6 @@ function CustomizeModal({
     item: ChatCustomizationItem,
   ) => void;
   onClearChatCustomization: (slot: ChatCustomizationSlot) => void;
-  onChangeGameCustomization: (next: Partial<GameCustomization>) => void;
   onChangeResultSoundVolume: (value: number) => void;
   onSelectResultSound: (sound: ResultSoundOption) => void;
   onClose: () => void;
@@ -1207,16 +1241,7 @@ function CustomizeModal({
     { id: "avatars" as const, label: "Avatar" },
     { id: "badges" as const, label: "Badge" },
   ];
-  const gameFrameItems = [
-    { label: "Neon Grid", locked: false },
-    { label: "Steel", locked: false },
-    { label: "Gold", locked: false },
-    { label: "Carbon", locked: false },
-    { label: "Abyss", locked: true },
-  ];
   const isGameView = view === "game";
-  const selectedResultSound =
-    resultSoundOptions.find((sound) => sound.selected) ?? null;
 
   const stopPreview = useCallback(() => {
     if (previewAudioRef.current) {
@@ -1553,137 +1578,75 @@ function CustomizeModal({
           </div>
         ) : isGameView ? (
           <div className="space-y-5 p-5">
-            <div className="grid gap-4 sm:grid-cols-2">
-              <div className="space-y-3">
+            <div className="space-y-3">
+              <div className="flex items-center justify-between gap-3">
                 <div className="text-[10px] font-semibold uppercase tracking-[0.14em] text-zinc-600">
-                  Frame Type
+                  Result Sound
                 </div>
-                {gameFrameItems.map((item) => (
-                  <button
-                    className={cn(
-                      "w-full border px-3 py-2 text-left text-[10px] font-semibold uppercase tracking-[0.12em] transition-colors",
-                      item.locked && "cursor-not-allowed opacity-45",
-                      !item.locked &&
-                        (gameCustomization.frame === item.label
-                          ? "border-purple-400 bg-purple-950/35 text-purple-100"
-                          : "border-zinc-700 bg-zinc-900/55 text-zinc-200 hover:border-purple-500/60"),
-                    )}
-                    disabled={item.locked}
-                    key={item.label}
-                    onClick={() =>
-                      onChangeGameCustomization({ frame: item.label })
-                    }
-                    type="button"
-                  >
-                    {item.label}
-                  </button>
-                ))}
-              </div>
-
-              <div className="space-y-3">
-                <div className="flex items-center justify-between gap-3">
-                  <div className="text-[10px] font-semibold uppercase tracking-[0.14em] text-zinc-600">
-                    Result Sound
+                {resultSoundLoading && (
+                  <div className="text-[10px] uppercase tracking-[0.12em] text-zinc-500">
+                    Loading...
                   </div>
-                  {resultSoundLoading && (
-                    <div className="text-[10px] uppercase tracking-[0.12em] text-zinc-500">
-                      Loading...
+                )}
+              </div>
+              <div className="border border-zinc-900 bg-black/50 p-3">
+                <div className="mb-2 flex items-center justify-between text-[10px] uppercase tracking-[0.12em] text-zinc-500">
+                  <span>Volume</span>
+                  <span className="text-zinc-300">{Math.round(resultSoundVolume * 100)}%</span>
+                </div>
+                <input
+                  type="range"
+                  min="0"
+                  max="1"
+                  step="0.01"
+                  value={resultSoundVolume}
+                  onChange={(event) =>
+                    onChangeResultSoundVolume(Number(event.target.value))
+                  }
+                  className="w-full accent-purple-400"
+                />
+              </div>
+              <div className="max-h-[264px] space-y-2 overflow-y-auto pr-1">
+                {resultSoundOptions.map((sound) => {
+                  const locked = !sound.owned;
+                  return (
+                    <div className="grid grid-cols-[1fr_auto] gap-2" key={sound.id}>
+                      <button
+                        className={cn(
+                          "border px-3 py-2 text-left text-[10px] font-semibold uppercase tracking-[0.12em] transition-colors",
+                          locked && "cursor-not-allowed border-zinc-900 bg-black/60 text-zinc-700",
+                          !locked &&
+                            (sound.selected
+                              ? "border-purple-400 bg-purple-950/35 text-purple-100"
+                              : "border-zinc-700 bg-zinc-900/55 text-zinc-200 hover:border-purple-500/60"),
+                        )}
+                        disabled={locked}
+                        onClick={() => onSelectResultSound(sound)}
+                        type="button"
+                      >
+                        <div className="flex items-center justify-between gap-2">
+                          <span>{sound.title}</span>
+                          <span className="text-[9px] uppercase tracking-[0.12em] text-zinc-500">
+                            {locked ? "Locked" : sound.selected ? "Selected" : sound.is_default ? "Default" : "Owned"}
+                          </span>
+                        </div>
+                      </button>
+                      <button
+                        className={cn(
+                          "border px-3 text-[10px] font-semibold uppercase tracking-[0.12em] transition-colors",
+                          !sound.audio_url
+                            ? "cursor-not-allowed border-zinc-900 bg-black/60 text-zinc-700"
+                            : "border-zinc-700 bg-zinc-900/55 text-zinc-200 hover:border-purple-500/60",
+                        )}
+                        disabled={!sound.audio_url}
+                        onClick={() => handlePreviewSound(sound)}
+                        type="button"
+                      >
+                        {previewSoundId === sound.id ? "Stop" : "Start"}
+                      </button>
                     </div>
-                  )}
-                </div>
-                <div className="border border-zinc-900 bg-black/50 p-3">
-                  <div className="mb-2 flex items-center justify-between text-[10px] uppercase tracking-[0.12em] text-zinc-500">
-                    <span>Volume</span>
-                    <span className="text-zinc-300">{Math.round(resultSoundVolume * 100)}%</span>
-                  </div>
-                  <input
-                    type="range"
-                    min="0"
-                    max="1"
-                    step="0.01"
-                    value={resultSoundVolume}
-                    onChange={(event) =>
-                      onChangeResultSoundVolume(Number(event.target.value))
-                    }
-                    className="w-full accent-purple-400"
-                  />
-                </div>
-                <div className="max-h-[264px] space-y-2 overflow-y-auto pr-1">
-                  {resultSoundOptions.map((sound) => {
-                    const locked = !sound.owned;
-                    return (
-                      <div className="grid grid-cols-[1fr_auto] gap-2" key={sound.id}>
-                        <button
-                          className={cn(
-                            "border px-3 py-2 text-left text-[10px] font-semibold uppercase tracking-[0.12em] transition-colors",
-                            locked && "cursor-not-allowed border-zinc-900 bg-black/60 text-zinc-700",
-                            !locked &&
-                              (sound.selected
-                                ? "border-purple-400 bg-purple-950/35 text-purple-100"
-                                : "border-zinc-700 bg-zinc-900/55 text-zinc-200 hover:border-purple-500/60"),
-                          )}
-                          disabled={locked}
-                          onClick={() => onSelectResultSound(sound)}
-                          type="button"
-                        >
-                          <div className="flex items-center justify-between gap-2">
-                            <span>{sound.title}</span>
-                            <span className="text-[9px] uppercase tracking-[0.12em] text-zinc-500">
-                              {locked ? "Locked" : sound.selected ? "Selected" : sound.is_default ? "Default" : "Owned"}
-                            </span>
-                          </div>
-                        </button>
-                        <button
-                          className={cn(
-                            "border px-3 text-[10px] font-semibold uppercase tracking-[0.12em] transition-colors",
-                            !sound.audio_url
-                              ? "cursor-not-allowed border-zinc-900 bg-black/60 text-zinc-700"
-                              : "border-zinc-700 bg-zinc-900/55 text-zinc-200 hover:border-purple-500/60",
-                          )}
-                          disabled={!sound.audio_url}
-                          onClick={() => handlePreviewSound(sound)}
-                          type="button"
-                        >
-                          {previewSoundId === sound.id ? "Stop" : "Start"}
-                        </button>
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-            </div>
-
-            <div className="border border-zinc-900 bg-black/60 p-4">
-              <div className="text-[10px] uppercase tracking-[0.14em] text-zinc-600">
-                Game Preview
-              </div>
-              <div className="mt-3">
-                <div
-                  className={cn(
-                    "border p-2",
-                    getGameFrameClass(gameCustomization.frame),
-                  )}
-                >
-                  <div className="border border-zinc-900 bg-black/75 p-3">
-                    <div className="flex items-center justify-between">
-                      <span className="text-[10px] uppercase tracking-[0.12em] text-zinc-500">
-                        Active Frame
-                      </span>
-                      <span className="text-[10px] uppercase tracking-[0.12em] text-zinc-300">
-                        {gameCustomization.frame}
-                      </span>
-                    </div>
-                    <div className="mt-3 h-10 border border-zinc-800 bg-zinc-950/70" />
-                  </div>
-                </div>
-                <div className="mt-3 flex items-center justify-between">
-                  <span className="text-[10px] uppercase tracking-[0.12em] text-zinc-600">
-                    Result Sound: {selectedResultSound?.title ?? gameCustomization.victorySound}
-                  </span>
-                  <span className="text-[10px] uppercase tracking-[0.12em] text-zinc-500">
-                    Pick from list above
-                  </span>
-                </div>
+                  );
+                })}
               </div>
             </div>
           </div>
@@ -1734,12 +1697,14 @@ function LiveChat({
   currentUserName,
   accessToken,
   chatBlurred,
+  onOpenProfile,
 }: {
   chatCustomization: ChatCustomization;
   currentChatStyle: ChatStyleSnapshot | null;
   currentUserName: string;
   accessToken: string | null;
   chatBlurred: boolean;
+  onOpenProfile: (userID: string) => void;
 }) {
   const [messages, setMessages] = useState<ChatMessage[]>(initialChatMessages);
   const [draft, setDraft] = useState("");
@@ -1778,6 +1743,7 @@ function LiveChat({
           msg.id ??
           msg.sender_id ??
           `${user}|${msg.text ?? ""}|${msg.created_at ?? ""}`,
+        userId: msg.sender_id !== undefined ? String(msg.sender_id) : undefined,
         createdAt: msg.created_at,
         user,
         text: msg.text ?? "",
@@ -1895,6 +1861,7 @@ function LiveChat({
               chatCustomization={chatCustomization}
               key={message.id}
               message={message}
+              onOpenProfile={onOpenProfile}
             />
           ))}
           <div ref={chatEndRef} />
@@ -2630,9 +2597,11 @@ function getTopGradientColors(position: number) {
 function TopsLeaderboard({
   entries,
   loading,
+  onOpenProfile,
 }: {
   entries: LeaderboardEntry[];
   loading: boolean;
+  onOpenProfile: (userID: string) => void;
 }) {
   const [page, setPage] = useState(0);
   const sortedPlayers = [...entries].sort((a, b) => b.rating - a.rating);
@@ -2685,7 +2654,11 @@ function TopsLeaderboard({
                 )}
               />
               <div className="grid grid-cols-[40px_1fr_auto] items-center gap-3">
-                <PositionAvatar position={position} user={player.nickname} />
+                <PositionAvatar
+                  position={position}
+                  user={player.nickname}
+                  onClick={() => onOpenProfile(player.user_id)}
+                />
                 <div className="min-w-0">
                   {position <= 3 ? (
                     <GradientText
@@ -2697,9 +2670,13 @@ function TopsLeaderboard({
                       <span className="truncate">{player.nickname}</span>
                     </GradientText>
                   ) : (
-                    <div className="truncate text-xs font-black uppercase tracking-[0.14em] text-zinc-200">
+                    <button
+                      type="button"
+                      onClick={() => onOpenProfile(player.user_id)}
+                      className="truncate text-left text-xs font-black uppercase tracking-[0.14em] text-zinc-200 transition-colors hover:text-purple-200"
+                    >
                       {player.nickname}
-                    </div>
+                    </button>
                   )}
                   <div
                     className={cn(
@@ -4324,6 +4301,392 @@ function formatScoreOutOfTen(value: number | null) {
   return `${Number.isInteger(rounded) ? rounded.toFixed(0) : rounded.toFixed(1)}/10`;
 }
 
+function formatDateShort(value?: string | null) {
+  if (!value) return "Never";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "Unknown";
+  return date.toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" });
+}
+
+function profileTitleStyle(profile: Profile | null): React.CSSProperties | undefined {
+  const title = profile?.selected_title;
+  if (!title) return undefined;
+  if (Array.isArray(title.colors) && title.colors.length > 1) {
+    return {
+      backgroundImage: `linear-gradient(90deg, ${title.colors.join(", ")})`,
+      WebkitBackgroundClip: "text",
+      backgroundClip: "text",
+      color: "transparent",
+    };
+  }
+  return title.color ? { color: title.color } : undefined;
+}
+
+function ProfileModal({
+  accessToken,
+  userID,
+  myUserID,
+  onClose,
+  onProfileUpdated,
+}: {
+  accessToken: string | null;
+  userID: string | null;
+  myUserID: string | null;
+  onClose: () => void;
+  onProfileUpdated?: (profile: Profile) => void;
+}) {
+  const isMine = Boolean(userID && myUserID && userID === myUserID);
+  const [profile, setProfile] = useState<Profile | null>(null);
+  const [comments, setComments] = useState<ProfileComment[]>([]);
+  const [nextCursor, setNextCursor] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [commentsLoading, setCommentsLoading] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [commentDraft, setCommentDraft] = useState("");
+  const [editBio, setEditBio] = useState("");
+  const [editCountry, setEditCountry] = useState("");
+  const [editAvatar, setEditAvatar] = useState("");
+  const [error, setError] = useState<string | null>(null);
+
+  const loadComments = useCallback(
+    async (cursor?: string) => {
+      if (!accessToken || !userID) return;
+      setCommentsLoading(true);
+      try {
+        const result = await getProfileComments(accessToken, userID, 20, cursor);
+        setComments((current) =>
+          cursor ? [...current, ...result.comments] : result.comments,
+        );
+        setNextCursor(result.nextCursor);
+      } catch (error) {
+        setError(error instanceof Error ? error.message : "Failed to load comments");
+      } finally {
+        setCommentsLoading(false);
+      }
+    },
+    [accessToken, userID],
+  );
+
+  useEffect(() => {
+    if (!accessToken || !userID) return;
+    let cancelled = false;
+    setLoading(true);
+    setError(null);
+    setComments([]);
+    setNextCursor("");
+
+    const run = async () => {
+      try {
+        const loaded = isMine
+          ? await getMyProfile(accessToken)
+          : await getPublicProfile(accessToken, userID);
+        if (cancelled) return;
+        setProfile(loaded);
+        setEditBio(loaded?.bio ?? "");
+        setEditCountry(loaded?.country_code ?? "");
+        setEditAvatar(loaded?.avatar_url ?? "");
+        await loadComments();
+      } catch (error) {
+        if (!cancelled) {
+          setError(error instanceof Error ? error.message : "Failed to load profile");
+        }
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    };
+
+    void run();
+    return () => {
+      cancelled = true;
+    };
+  }, [accessToken, userID, isMine, loadComments]);
+
+  const saveProfile = async () => {
+    if (!accessToken || !isMine) return;
+    setSaving(true);
+    setError(null);
+    try {
+      const updated = await updateMyProfile(accessToken, {
+        avatar_url: editAvatar.trim(),
+        country_code: editCountry.trim().toUpperCase(),
+        bio: editBio.trim(),
+      });
+      if (updated) {
+        setProfile(updated);
+        onProfileUpdated?.(updated);
+      }
+    } catch (error) {
+      setError(error instanceof Error ? error.message : "Failed to save profile");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const submitComment = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!accessToken || !userID) return;
+    const text = commentDraft.trim();
+    if (!text) return;
+    setSaving(true);
+    try {
+      const comment = await postProfileComment(accessToken, userID, text);
+      if (comment) setComments((current) => [comment, ...current]);
+      setCommentDraft("");
+    } catch (error) {
+      setError(error instanceof Error ? error.message : "Failed to post comment");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const progress = Math.max(0, Math.min(100, profile?.progress_percent ?? 0));
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/72 p-4 backdrop-blur-sm"
+      role="dialog"
+      aria-modal="true"
+      onMouseDown={onClose}
+    >
+      <div
+        className="max-h-[90vh] w-full max-w-3xl overflow-y-auto border border-purple-500/35 bg-zinc-950 shadow-[0_0_40px_rgba(132,0,255,0.22)]"
+        onMouseDown={(event) => event.stopPropagation()}
+      >
+        <div className="flex items-center justify-between border-b border-border px-5 py-4">
+          <div>
+            <div className="text-[10px] font-semibold uppercase tracking-[0.18em] text-zinc-600">
+              {isMine ? "My Profile" : "Public Profile"}
+            </div>
+            <h2 className="mt-2 text-lg font-black uppercase tracking-[0.14em] text-zinc-100">
+              {profile?.nickname ?? "Loading..."}
+            </h2>
+          </div>
+          <button
+            className="inline-flex h-10 w-10 items-center justify-center border border-zinc-800 bg-black/80 text-zinc-400 transition-colors hover:border-purple-400 hover:text-white"
+            onClick={onClose}
+            type="button"
+            aria-label="Close profile"
+          >
+            <X className="h-4 w-4" aria-hidden="true" />
+          </button>
+        </div>
+
+        <div className="space-y-4 p-5">
+          {loading ? (
+            <div className="h-64 animate-pulse border border-zinc-900 bg-black/60" />
+          ) : profile ? (
+            <>
+              <div className="grid gap-4 md:grid-cols-[220px_1fr]">
+                <div className="border border-zinc-900 bg-black/60 p-4">
+                  {profile.avatar_url ? (
+                    <img
+                      alt=""
+                      className="h-28 w-28 border border-zinc-800 object-cover"
+                      src={profile.avatar_url}
+                    />
+                  ) : (
+                    <Avatar user={profile.nickname ?? profile.user_id} className="h-28 w-28" />
+                  )}
+                  <div className="mt-4 flex flex-wrap items-center gap-2">
+                    {profile.selected_title?.label && (
+                      <span
+                        className={cn(
+                          "border border-purple-500/45 bg-purple-950/35 px-2 py-1 text-[10px] font-black uppercase tracking-[0.12em]",
+                          profile.selected_title.animated && "animate-pulse",
+                        )}
+                        style={profileTitleStyle(profile)}
+                      >
+                        {profile.selected_title.label}
+                      </span>
+                    )}
+                    {profile.selected_badges?.map((badge) => (
+                      <span
+                        className="border border-zinc-800 bg-zinc-950 px-2 py-1 text-[9px] font-black uppercase tracking-[0.1em]"
+                        key={badge.id ?? badge.label}
+                        style={badge.color ? { color: badge.color, borderColor: badge.color } : undefined}
+                      >
+                        {badge.label ?? badge.id}
+                      </span>
+                    ))}
+                  </div>
+                  <div
+                    className={cn(
+                      "mt-3 text-xl font-black uppercase tracking-[0.12em]",
+                      profile.nickname_style?.animated && "animate-pulse",
+                    )}
+                    style={getInlineColorStyle(profile.nickname_style)}
+                  >
+                    {profile.nickname ?? profile.user_id}
+                  </div>
+                  <div className="mt-2 text-[10px] uppercase tracking-[0.12em] text-zinc-500">
+                    {profile.country_code ?? "--"} / {profile.type ?? "user"} / {profile.account_age_days ?? 0}d
+                  </div>
+                </div>
+
+                <div className="space-y-3">
+                  <div className="border border-zinc-900 bg-black/60 p-4">
+                    <div className="flex items-center justify-between gap-4">
+                      <div>
+                        <div className="text-[10px] uppercase tracking-[0.14em] text-zinc-600">
+                          Rating
+                        </div>
+                        <div className="mt-1 text-3xl font-black tabular-nums text-zinc-100">
+                          {profile.rating ?? 0}
+                        </div>
+                      </div>
+                      <div className="text-right">
+                        <div className={cn("inline-flex border px-3 py-1 text-xs font-black uppercase tracking-[0.12em]", getRankClass(formatRankLabel(profile.rank)))}>
+                          {formatRankLabel(profile.rank)}
+                        </div>
+                        <div className="mt-2 text-[10px] uppercase tracking-[0.12em] text-zinc-500">
+                          peak {profile.peak_rating ?? 0}
+                        </div>
+                      </div>
+                    </div>
+                    <div className="mt-4 h-2 overflow-hidden border border-zinc-800 bg-black">
+                      <div className="h-full bg-purple-400 transition-[width] duration-300" style={{ width: `${progress}%` }} />
+                    </div>
+                  </div>
+
+                  <div className="grid gap-3 sm:grid-cols-4">
+                    {[
+                      ["Wins", profile.wins ?? 0],
+                      ["Losses", profile.losses ?? 0],
+                      ["Win rate", `${Math.round(profile.win_rate ?? 0)}%`],
+                      ["Streak", profile.streak ?? 0],
+                    ].map(([label, value]) => (
+                      <div className="border border-zinc-900 bg-black/60 p-3" key={label}>
+                        <div className="text-[10px] uppercase tracking-[0.12em] text-zinc-600">{label}</div>
+                        <div className="mt-2 text-lg font-black tabular-nums text-zinc-100">{value}</div>
+                      </div>
+                    ))}
+                  </div>
+
+                  <div className="grid gap-3 sm:grid-cols-3">
+                    {[
+                      ["Avg", profile.average_score ?? 0],
+                      ["Best", profile.best_score ?? 0],
+                      ["Test lab", profile.test_lab_best ?? 0],
+                    ].map(([label, value]) => (
+                      <div className="border border-zinc-900 bg-black/60 p-3" key={label}>
+                        <div className="text-[10px] uppercase tracking-[0.12em] text-zinc-600">{label}</div>
+                        <div className="mt-2 text-lg font-black tabular-nums text-zinc-100">{Number(value).toFixed(2)}</div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+
+              {isMine ? (
+                <div className="grid gap-3 border border-zinc-900 bg-black/60 p-4">
+                  <div className="text-[10px] font-semibold uppercase tracking-[0.14em] text-zinc-600">
+                    Edit Profile
+                  </div>
+                  <input
+                    className="h-10 border border-zinc-800 bg-black/80 px-3 text-xs text-zinc-100 outline-none focus:border-purple-400"
+                    placeholder="Avatar URL"
+                    value={editAvatar}
+                    onChange={(event) => setEditAvatar(event.target.value)}
+                  />
+                  <input
+                    className="h-10 border border-zinc-800 bg-black/80 px-3 text-xs uppercase text-zinc-100 outline-none focus:border-purple-400"
+                    placeholder="Country code"
+                    maxLength={2}
+                    value={editCountry}
+                    onChange={(event) => setEditCountry(event.target.value.toUpperCase())}
+                  />
+                  <textarea
+                    className="min-h-24 resize-none border border-zinc-800 bg-black/80 p-3 text-xs text-zinc-100 outline-none focus:border-purple-400"
+                    placeholder="Bio"
+                    maxLength={280}
+                    value={editBio}
+                    onChange={(event) => setEditBio(event.target.value)}
+                  />
+                  <button
+                    className="h-10 border border-purple-500/50 bg-purple-950/35 px-4 text-[10px] font-semibold uppercase tracking-[0.14em] text-purple-100 transition-colors hover:border-purple-300 disabled:opacity-40"
+                    type="button"
+                    disabled={saving}
+                    onClick={saveProfile}
+                  >
+                    Save Profile
+                  </button>
+                </div>
+              ) : (
+                <div className="border border-zinc-900 bg-black/60 p-4">
+                  <div className="text-[10px] uppercase tracking-[0.14em] text-zinc-600">Bio</div>
+                  <p className="mt-2 text-sm leading-6 text-zinc-300">{profile.bio || "No bio yet."}</p>
+                </div>
+              )}
+
+              <div className="border border-zinc-900 bg-black/60 p-4">
+                <div className="mb-3 flex items-center justify-between">
+                  <div className="text-[10px] font-semibold uppercase tracking-[0.14em] text-zinc-600">
+                    Comments
+                  </div>
+                  <div className="text-[10px] uppercase tracking-[0.12em] text-zinc-600">
+                    last match {formatDateShort(profile.last_match_at)}
+                  </div>
+                </div>
+                <form className="mb-3 grid grid-cols-[1fr_auto] gap-2" onSubmit={submitComment}>
+                  <input
+                    className="h-10 border border-zinc-800 bg-black/80 px-3 text-xs text-zinc-100 outline-none focus:border-purple-400"
+                    placeholder="Leave a comment"
+                    maxLength={1000}
+                    value={commentDraft}
+                    onChange={(event) => setCommentDraft(event.target.value)}
+                  />
+                  <button
+                    className="h-10 border border-purple-500/50 bg-purple-950/35 px-4 text-[10px] font-semibold uppercase tracking-[0.14em] text-purple-100 disabled:opacity-40"
+                    type="submit"
+                    disabled={saving || !commentDraft.trim()}
+                  >
+                    Post
+                  </button>
+                </form>
+                <div className="space-y-2">
+                  {comments.map((comment) => (
+                    <div className="border border-zinc-900 bg-black/60 p-3" key={comment.id}>
+                      <div className="flex items-center justify-between gap-3 text-[10px] uppercase tracking-[0.12em] text-zinc-500">
+                        <span className="font-semibold text-zinc-300">{comment.author_nickname}</span>
+                        <span>{formatDateShort(comment.created_at)}</span>
+                      </div>
+                      <p className="mt-2 break-words text-xs leading-5 text-zinc-300">{comment.text}</p>
+                    </div>
+                  ))}
+                  {!comments.length && !commentsLoading && (
+                    <div className="text-[10px] uppercase tracking-[0.12em] text-zinc-600">
+                      No comments yet.
+                    </div>
+                  )}
+                </div>
+                {nextCursor && (
+                  <button
+                    className="mt-3 h-10 w-full border border-zinc-800 bg-black/70 text-[10px] font-semibold uppercase tracking-[0.14em] text-zinc-300 transition-colors hover:border-purple-400"
+                    type="button"
+                    disabled={commentsLoading}
+                    onClick={() => loadComments(nextCursor)}
+                  >
+                    Load More
+                  </button>
+                )}
+              </div>
+            </>
+          ) : (
+            <div className="border border-red-500/45 bg-red-950/35 p-4 text-xs text-red-200">
+              Profile not found.
+            </div>
+          )}
+          {error && (
+            <div className="border border-red-500/45 bg-red-950/35 px-3 py-2 text-[10px] font-semibold uppercase tracking-[0.12em] text-red-200">
+              {error}
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function TestLabModal({
   accessToken,
   onClose,
@@ -5307,6 +5670,7 @@ export default function App() {
   const [leaderboardLoading, setLeaderboardLoading] = useState(false);
   const [resultSoundOptions, setResultSoundOptions] = useState<ResultSoundOption[]>([]);
   const [resultSoundLoading, setResultSoundLoading] = useState(false);
+  const [profileUserID, setProfileUserID] = useState<string | null>(null);
   const [backendDownMessage, setBackendDownMessage] = useState<string | null>(null);
   const [legalModal, setLegalModal] = useState<"rules" | "privacy" | null>(null);
   const [showEntryChoice, setShowEntryChoice] = useState(false);
@@ -6038,6 +6402,19 @@ export default function App() {
     setIsAuthOpen(false);
   }, []);
 
+  const handleOpenProfile = useCallback(
+    (userID?: string | null) => {
+      if (!tokens?.accessToken) {
+        handleGuestNicknameClick();
+        return;
+      }
+      const fallbackID = me?.id ? String(me.id) : null;
+      const nextID = userID ?? fallbackID;
+      if (nextID) setProfileUserID(nextID);
+    },
+    [handleGuestNicknameClick, me?.id, tokens?.accessToken],
+  );
+
   return (
     <main className="relative min-h-screen overflow-hidden bg-background text-foreground">
       <div className="pointer-events-auto absolute inset-0 opacity-55">
@@ -6117,7 +6494,9 @@ export default function App() {
                   }
                   if (!tokens) {
                     handleGuestNicknameClick();
+                    return;
                   }
+                  handleOpenProfile();
                 }}
                 className="inline-flex h-5 items-center gap-1 border border-zinc-700 bg-zinc-900/60 px-2 text-[10px] font-semibold uppercase tracking-[0.12em] text-zinc-300 transition-colors hover:border-purple-500/60 hover:text-zinc-100"
               >
@@ -6167,6 +6546,7 @@ export default function App() {
               currentUserName={currentNickname}
               accessToken={tokens?.accessToken ?? null}
               chatBlurred={chatBlurred}
+              onOpenProfile={handleOpenProfile}
             />
           </Panel>
 
@@ -6225,6 +6605,7 @@ export default function App() {
             <TopsLeaderboard
               entries={leaderboardEntries}
               loading={leaderboardLoading}
+              onOpenProfile={handleOpenProfile}
             />
           </Panel>
         </div>
@@ -6246,18 +6627,32 @@ export default function App() {
           chatCustomizationLoading={chatCustomizationLoading}
           chatCustomizationSaving={chatCustomizationSaving}
           chatCustomizationError={chatCustomizationError}
-          gameCustomization={gameCustomization}
           resultSoundOptions={resultSoundOptions}
           resultSoundLoading={resultSoundLoading}
           resultSoundVolume={resultSoundVolume}
           onSelectChatCustomization={handleSelectChatCustomization}
           onClearChatCustomization={handleClearChatCustomization}
-          onChangeGameCustomization={(next) =>
-            setGameCustomization((current) => ({ ...current, ...next }))
-          }
           onChangeResultSoundVolume={setResultSoundVolume}
           onSelectResultSound={handleSelectResultSound}
           onClose={() => setIsCustomizeOpen(false)}
+        />
+      )}
+      {profileUserID && (
+        <ProfileModal
+          accessToken={tokens?.accessToken ?? null}
+          userID={profileUserID}
+          myUserID={me?.id ? String(me.id) : null}
+          onClose={() => setProfileUserID(null)}
+          onProfileUpdated={(profile) => {
+            setMe((current) =>
+              current
+                ? {
+                    ...current,
+                    nickname: profile.nickname ?? current.nickname,
+                  }
+                : current,
+            );
+          }}
         />
       )}
       {isStartModesOpen && (
