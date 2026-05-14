@@ -27,12 +27,14 @@ type Server struct {
 }
 
 type ChatMessage struct {
-	ID             string    `json:"id"`
-	SenderID       string    `json:"sender_id"`
-	SenderNickname string    `json:"sender_nickname"`
-	Text           string    `json:"text"`
-	ChatStyle      any       `json:"chat_style,omitempty"`
-	CreatedAt      time.Time `json:"created_at"`
+	ID              string    `json:"id"`
+	SenderID        string    `json:"sender_id"`
+	SenderNickname  string    `json:"sender_nickname"`
+	SenderRole      string    `json:"sender_role,omitempty"`
+	SenderAvatarURL string    `json:"sender_avatar_url,omitempty"`
+	Text            string    `json:"text"`
+	ChatStyle       any       `json:"chat_style,omitempty"`
+	CreatedAt       time.Time `json:"created_at"`
 }
 
 type postMessageRequest struct {
@@ -47,12 +49,14 @@ type meResponse struct {
 	User struct {
 		ID       string `json:"id"`
 		Nickname string `json:"nickname"`
+		Role     string `json:"role"`
 	} `json:"user"`
 }
 
 type authUser struct {
 	ID       string
 	Nickname string
+	Role     string
 }
 
 type chatStyleInternalResponse struct {
@@ -194,7 +198,7 @@ func (s *Server) resolveUser(authHeader string) (authUser, error) {
 	if me.User.ID == "" {
 		return authUser{}, errors.New("empty_user")
 	}
-	return authUser{ID: me.User.ID, Nickname: me.User.Nickname}, nil
+	return authUser{ID: me.User.ID, Nickname: me.User.Nickname, Role: me.User.Role}, nil
 }
 
 func (s *Server) handleHistory(w http.ResponseWriter, _ *http.Request, _ authUser) {
@@ -244,9 +248,11 @@ func (s *Server) handlePostMessage(w http.ResponseWriter, r *http.Request, user 
 		ID:             fmt.Sprintf("m_%d", time.Now().UnixNano()),
 		SenderID:       user.ID,
 		SenderNickname: user.Nickname,
+		SenderRole:     user.Role,
 		Text:           text,
 		CreatedAt:      time.Now().UTC(),
 	}
+	msg.SenderAvatarURL = s.fetchAvatarURL(user.ID)
 	style, err := s.fetchChatStyle(user.ID)
 	if err == nil {
 		msg.ChatStyle = style
@@ -327,13 +333,15 @@ func (s *Server) handleStream(w http.ResponseWriter, r *http.Request, user authU
 
 func (s *Server) fetchHistory(limit int) ([]ChatMessage, error) {
 	rows, err := s.db.Query(
-		`SELECT id, sender_id, sender_nickname, text, chat_style_json, created_at
+		`SELECT recent.id, recent.sender_id, recent.sender_nickname, COALESCE(u.role, 'user'), COALESCE(up.avatar_url, ''), recent.text, recent.chat_style_json, recent.created_at
 		 FROM (
 		 	SELECT id, sender_id, sender_nickname, text, chat_style_json, created_at
 		 	FROM live_chat_messages
 		 	ORDER BY created_at DESC
 		 	LIMIT ?
 		 ) recent
+		 LEFT JOIN users u ON u.id = CAST(SUBSTRING(recent.sender_id, 3) AS UNSIGNED)
+		 LEFT JOIN user_profiles up ON up.user_id = recent.sender_id
 		 ORDER BY created_at ASC`,
 		limit,
 	)
@@ -346,7 +354,7 @@ func (s *Server) fetchHistory(limit int) ([]ChatMessage, error) {
 	for rows.Next() {
 		var msg ChatMessage
 		var styleRaw sql.NullString
-		if err := rows.Scan(&msg.ID, &msg.SenderID, &msg.SenderNickname, &msg.Text, &styleRaw, &msg.CreatedAt); err != nil {
+		if err := rows.Scan(&msg.ID, &msg.SenderID, &msg.SenderNickname, &msg.SenderRole, &msg.SenderAvatarURL, &msg.Text, &styleRaw, &msg.CreatedAt); err != nil {
 			return nil, err
 		}
 		if styleRaw.Valid && styleRaw.String != "" {
@@ -358,6 +366,12 @@ func (s *Server) fetchHistory(limit int) ([]ChatMessage, error) {
 		messages = append(messages, msg)
 	}
 	return messages, rows.Err()
+}
+
+func (s *Server) fetchAvatarURL(userID string) string {
+	var avatarURL sql.NullString
+	_ = s.db.QueryRow(`SELECT avatar_url FROM user_profiles WHERE user_id = ?`, userID).Scan(&avatarURL)
+	return avatarURL.String
 }
 
 func (s *Server) fetchChatStyle(userID string) (any, error) {

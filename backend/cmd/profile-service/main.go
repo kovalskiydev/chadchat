@@ -45,6 +45,7 @@ type authUser struct {
 	ID        string
 	Nickname  string
 	Type      string
+	Role      string
 	CreatedAt time.Time
 }
 
@@ -53,6 +54,7 @@ type meResponse struct {
 		ID        string    `json:"id"`
 		Nickname  string    `json:"nickname"`
 		Type      string    `json:"type"`
+		Role      string    `json:"role"`
 		CreatedAt time.Time `json:"created_at"`
 	} `json:"user"`
 }
@@ -64,7 +66,8 @@ type profileUpdateRequest struct {
 }
 
 type profileCommentRequest struct {
-	Text string `json:"text"`
+	Text            string `json:"text"`
+	ParentCommentID string `json:"parent_comment_id"`
 }
 
 type avatarUploadRequest struct {
@@ -83,18 +86,20 @@ type avatarUploadResponse struct {
 }
 
 type profileComment struct {
-	ID             string    `json:"id"`
-	AuthorUserID   string    `json:"author_user_id"`
-	AuthorNickname string    `json:"author_nickname"`
-	TargetUserID   string    `json:"target_user_id"`
-	Text           string    `json:"text"`
-	CreatedAt      time.Time `json:"created_at"`
+	ID              string    `json:"id"`
+	AuthorUserID    string    `json:"author_user_id"`
+	AuthorNickname  string    `json:"author_nickname"`
+	TargetUserID    string    `json:"target_user_id"`
+	ParentCommentID string    `json:"parent_comment_id,omitempty"`
+	Text            string    `json:"text"`
+	CreatedAt       time.Time `json:"created_at"`
 }
 
 type profileResponse struct {
 	UserID               string           `json:"user_id"`
 	Nickname             string           `json:"nickname,omitempty"`
 	Type                 string           `json:"type"`
+	Role                 string           `json:"role,omitempty"`
 	AvatarURL            string           `json:"avatar_url,omitempty"`
 	CountryCode          string           `json:"country_code,omitempty"`
 	Bio                  string           `json:"bio,omitempty"`
@@ -195,10 +200,16 @@ func profileSchema() []string {
 			id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
 			author_user_id VARCHAR(64) NOT NULL,
 			target_user_id VARCHAR(64) NOT NULL,
+			parent_comment_id BIGINT UNSIGNED NULL,
 			text TEXT NOT NULL,
 			created_at DATETIME(6) NOT NULL,
-			INDEX idx_profile_comments_target_created (target_user_id, created_at DESC)
+			INDEX idx_profile_comments_target_created (target_user_id, created_at DESC),
+			INDEX idx_profile_comments_parent (parent_comment_id)
 		) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`,
+		`ALTER TABLE profile_comments
+			ADD COLUMN IF NOT EXISTS parent_comment_id BIGINT UNSIGNED NULL AFTER target_user_id`,
+		`ALTER TABLE profile_comments
+			ADD INDEX IF NOT EXISTS idx_profile_comments_parent (parent_comment_id)`,
 	}
 }
 
@@ -247,7 +258,7 @@ func (s *Server) resolveUser(authHeader string) (authUser, error) {
 	if me.User.ID == "" {
 		return authUser{}, errors.New("empty_user")
 	}
-	return authUser{ID: me.User.ID, Nickname: me.User.Nickname, Type: me.User.Type, CreatedAt: me.User.CreatedAt}, nil
+	return authUser{ID: me.User.ID, Nickname: me.User.Nickname, Type: me.User.Type, Role: me.User.Role, CreatedAt: me.User.CreatedAt}, nil
 }
 
 func (s *Server) handleMyProfile(w http.ResponseWriter, _ *http.Request, user authUser) {
@@ -380,7 +391,7 @@ func (s *Server) handleProfileComments(w http.ResponseWriter, r *http.Request, _
 		return
 	}
 	rows, err := s.db.Query(
-		`SELECT pc.id, pc.author_user_id, COALESCE(u.nickname, ''), pc.target_user_id, pc.text, pc.created_at
+		`SELECT pc.id, pc.author_user_id, COALESCE(u.nickname, ''), pc.target_user_id, pc.parent_comment_id, pc.text, pc.created_at
 		 FROM profile_comments pc
 		 LEFT JOIN users u ON u.id = CAST(SUBSTRING(pc.author_user_id, 3) AS UNSIGNED)
 		 WHERE pc.target_user_id = ?
@@ -396,12 +407,16 @@ func (s *Server) handleProfileComments(w http.ResponseWriter, r *http.Request, _
 	comments := make([]profileComment, 0, limit+1)
 	for rows.Next() {
 		var rawID int64
+		var parentID sql.NullInt64
 		var c profileComment
-		if err := rows.Scan(&rawID, &c.AuthorUserID, &c.AuthorNickname, &c.TargetUserID, &c.Text, &c.CreatedAt); err != nil {
+		if err := rows.Scan(&rawID, &c.AuthorUserID, &c.AuthorNickname, &c.TargetUserID, &parentID, &c.Text, &c.CreatedAt); err != nil {
 			writeErr(w, http.StatusInternalServerError, "db_error")
 			return
 		}
 		c.ID = encodeCommentID(rawID)
+		if parentID.Valid {
+			c.ParentCommentID = encodeCommentID(parentID.Int64)
+		}
 		comments = append(comments, c)
 	}
 	nextCursor := ""
@@ -432,6 +447,7 @@ func (s *Server) handlePostProfileComment(w http.ResponseWriter, r *http.Request
 		return
 	}
 	req.Text = strings.TrimSpace(req.Text)
+	req.ParentCommentID = strings.TrimSpace(req.ParentCommentID)
 	if req.Text == "" {
 		writeErr(w, http.StatusBadRequest, "empty_comment")
 		return
@@ -440,11 +456,36 @@ func (s *Server) handlePostProfileComment(w http.ResponseWriter, r *http.Request
 		writeErr(w, http.StatusBadRequest, "comment_too_long")
 		return
 	}
+	var parentCommentID any
+	if req.ParentCommentID != "" {
+		rawParentID, err := decodeCommentID(req.ParentCommentID)
+		if err != nil {
+			writeErr(w, http.StatusBadRequest, "invalid_parent_comment_id")
+			return
+		}
+		var parentTargetUserID string
+		if err := s.db.QueryRow(
+			`SELECT target_user_id FROM profile_comments WHERE id = ?`,
+			rawParentID,
+		).Scan(&parentTargetUserID); err != nil {
+			if errors.Is(err, sql.ErrNoRows) {
+				writeErr(w, http.StatusNotFound, "parent_comment_not_found")
+				return
+			}
+			writeErr(w, http.StatusInternalServerError, "db_error")
+			return
+		}
+		if parentTargetUserID != targetUserID {
+			writeErr(w, http.StatusBadRequest, "parent_comment_target_mismatch")
+			return
+		}
+		parentCommentID = rawParentID
+	}
 	now := time.Now().UTC()
 	res, err := s.db.Exec(
-		`INSERT INTO profile_comments (author_user_id, target_user_id, text, created_at)
-		 VALUES (?, ?, ?, ?)`,
-		user.ID, targetUserID, req.Text, now,
+		`INSERT INTO profile_comments (author_user_id, target_user_id, parent_comment_id, text, created_at)
+		 VALUES (?, ?, ?, ?, ?)`,
+		user.ID, targetUserID, parentCommentID, req.Text, now,
 	)
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, "db_error")
@@ -452,12 +493,13 @@ func (s *Server) handlePostProfileComment(w http.ResponseWriter, r *http.Request
 	}
 	rawID, _ := res.LastInsertId()
 	comment := profileComment{
-		ID:             encodeCommentID(rawID),
-		AuthorUserID:   user.ID,
-		AuthorNickname: user.Nickname,
-		TargetUserID:   targetUserID,
-		Text:           req.Text,
-		CreatedAt:      now,
+		ID:              encodeCommentID(rawID),
+		AuthorUserID:    user.ID,
+		AuthorNickname:  user.Nickname,
+		TargetUserID:    targetUserID,
+		ParentCommentID: req.ParentCommentID,
+		Text:            req.Text,
+		CreatedAt:       now,
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"comment": comment})
 }
@@ -468,7 +510,7 @@ func (s *Server) loadBasicUser(userID string) (authUser, error) {
 		return authUser{}, err
 	}
 	var user authUser
-	err = s.db.QueryRow(`SELECT nickname, type, created_at FROM users WHERE id = ?`, rawID).Scan(&user.Nickname, &user.Type, &user.CreatedAt)
+	err = s.db.QueryRow(`SELECT nickname, type, role, created_at FROM users WHERE id = ?`, rawID).Scan(&user.Nickname, &user.Type, &user.Role, &user.CreatedAt)
 	if err != nil {
 		return authUser{}, err
 	}
@@ -481,6 +523,7 @@ func (s *Server) loadProfile(userID string, user authUser) (*profileResponse, er
 		UserID:         userID,
 		Nickname:       user.Nickname,
 		Type:           user.Type,
+		Role:           user.Role,
 		MemberSince:    user.CreatedAt,
 		AccountAgeDays: int(time.Since(user.CreatedAt).Hours() / 24),
 		SelectedBadges: []map[string]any{},
@@ -727,6 +770,13 @@ func rawUserID(userID string) (int64, error) {
 
 func encodeCommentID(id int64) string {
 	return "pc_" + strconv.FormatInt(id, 10)
+}
+
+func decodeCommentID(commentID string) (int64, error) {
+	if !strings.HasPrefix(commentID, "pc_") {
+		return 0, errors.New("invalid_comment_id")
+	}
+	return strconv.ParseInt(strings.TrimPrefix(commentID, "pc_"), 10, 64)
 }
 
 func nullableString(v string) any {

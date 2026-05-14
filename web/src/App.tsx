@@ -1737,6 +1737,7 @@ function LiveChat({
   const [draft, setDraft] = useState("");
   const [sending, setSending] = useState(false);
   const [avatarByUserId, setAvatarByUserId] = useState<Record<string, string | null>>({});
+  const requestedAvatarUserIdsRef = useRef<Set<string>>(new Set());
   const chatEndRef = useRef<HTMLDivElement>(null);
   const nextIdRef = useRef(initialChatMessages.length + 1);
 
@@ -1851,10 +1852,18 @@ function LiveChat({
       new Set(
         messages
           .map((message) => message.userId)
-          .filter((id): id is string => Boolean(id && !(id in avatarByUserId))),
+          .filter(
+            (id): id is string =>
+              Boolean(
+                id &&
+                  !(id in avatarByUserId) &&
+                  !requestedAvatarUserIdsRef.current.has(id),
+              ),
+          ),
       ),
     );
     if (!missingIds.length) return;
+    missingIds.forEach((id) => requestedAvatarUserIdsRef.current.add(id));
 
     let cancelled = false;
     void Promise.all(
@@ -2675,7 +2684,7 @@ function TopsLeaderboard({
   entries: LeaderboardEntry[];
   loading: boolean;
   onOpenProfile: (userID: string) => void;
-  avatarByUserId: Record<string, string>;
+  avatarByUserId: Record<string, string | null>;
 }) {
   const [page, setPage] = useState(0);
   const sortedPlayers = [...entries].sort((a, b) => b.rating - a.rating);
@@ -2731,7 +2740,7 @@ function TopsLeaderboard({
                 <PositionAvatar
                   position={position}
                   user={player.nickname}
-                  avatarUrl={player.avatar_url ?? avatarByUserId[player.user_id]}
+                  avatarUrl={player.avatar_url ?? avatarByUserId[player.user_id] ?? undefined}
                   onClick={() => onOpenProfile(player.user_id)}
                 />
                 <div className="min-w-0">
@@ -5892,7 +5901,9 @@ export default function App() {
   const [ratingDataLoading, setRatingDataLoading] = useState(false);
   const [leaderboardEntries, setLeaderboardEntries] = useState<LeaderboardEntry[]>([]);
   const [leaderboardLoading, setLeaderboardLoading] = useState(false);
-  const [leaderboardAvatarByUserId, setLeaderboardAvatarByUserId] = useState<Record<string, string>>({});
+  const [leaderboardAvatarByUserId, setLeaderboardAvatarByUserId] =
+    useState<Record<string, string | null>>({});
+  const requestedLeaderboardAvatarIdsRef = useRef<Set<string>>(new Set());
   const [resultSoundOptions, setResultSoundOptions] = useState<ResultSoundOption[]>([]);
   const [resultSoundLoading, setResultSoundLoading] = useState(false);
   const [profileUserID, setProfileUserID] = useState<string | null>(null);
@@ -6268,10 +6279,16 @@ export default function App() {
   useEffect(() => {
     if (!tokens?.accessToken || !leaderboardEntries.length) return;
     const missingIds = leaderboardEntries
-      .filter((entry) => !entry.avatar_url && !leaderboardAvatarByUserId[entry.user_id])
+      .filter(
+        (entry) =>
+          !entry.avatar_url &&
+          !(entry.user_id in leaderboardAvatarByUserId) &&
+          !requestedLeaderboardAvatarIdsRef.current.has(entry.user_id),
+      )
       .map((entry) => entry.user_id);
     const uniqueIds = Array.from(new Set(missingIds));
     if (!uniqueIds.length) return;
+    uniqueIds.forEach((id) => requestedLeaderboardAvatarIdsRef.current.add(id));
 
     let cancelled = false;
     void Promise.all(
@@ -6283,7 +6300,7 @@ export default function App() {
       if (cancelled) return;
       setLeaderboardAvatarByUserId((current) => ({
         ...current,
-        ...Object.fromEntries(entries.filter(([, avatarUrl]) => avatarUrl)),
+        ...Object.fromEntries(entries.map(([id, avatarUrl]) => [id, avatarUrl || null])),
       }));
     });
 

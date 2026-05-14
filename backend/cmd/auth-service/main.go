@@ -26,6 +26,8 @@ import (
 const (
 	userTypeAnonymous  = "anonymous"
 	userTypeRegistered = "registered"
+	userRoleUser       = "user"
+	userRoleAdmin      = "admin"
 	accessTokenTTL     = 15 * time.Minute
 	refreshTokenTTL    = 30 * 24 * time.Hour
 )
@@ -35,6 +37,7 @@ type User struct {
 	Nickname           string    `json:"nickname,omitempty"`
 	PasswordHash       string    `json:"-"`
 	Type               string    `json:"type"`
+	Role               string    `json:"role"`
 	VerificationStatus string    `json:"verification_status"`
 	CreatedAt          time.Time `json:"created_at"`
 	UpdatedAt          time.Time `json:"updated_at"`
@@ -137,10 +140,12 @@ func authSchema() []string {
 			nickname VARCHAR(64) NULL UNIQUE,
 			password_hash VARCHAR(255) NULL,
 			type VARCHAR(32) NOT NULL,
+			role VARCHAR(32) NOT NULL DEFAULT 'user',
 			verification_status VARCHAR(32) NOT NULL,
 			created_at DATETIME(6) NOT NULL,
 			updated_at DATETIME(6) NOT NULL
 		) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`,
+		`ALTER TABLE users ADD COLUMN IF NOT EXISTS role VARCHAR(32) NOT NULL DEFAULT 'user' AFTER type`,
 		`CREATE TABLE IF NOT EXISTS refresh_sessions (
 			token_hash CHAR(64) NOT NULL PRIMARY KEY,
 			user_id VARCHAR(64) NOT NULL,
@@ -178,9 +183,9 @@ func (s *Server) handleAnonymous(w http.ResponseWriter, r *http.Request) {
 	defer tx.Rollback()
 
 	res, err := tx.Exec(
-		`INSERT INTO users (nickname, password_hash, type, verification_status, created_at, updated_at)
-		 VALUES (?, ?, ?, ?, ?, ?)`,
-		nil, nil, userTypeAnonymous, "passed", now, now,
+		`INSERT INTO users (nickname, password_hash, type, role, verification_status, created_at, updated_at)
+		 VALUES (?, ?, ?, ?, ?, ?, ?)`,
+		nil, nil, userTypeAnonymous, userRoleUser, "passed", now, now,
 	)
 	if err != nil {
 		writeErr(w, 500, "db_error")
@@ -208,6 +213,7 @@ func (s *Server) handleAnonymous(w http.ResponseWriter, r *http.Request) {
 		ID:                 userID,
 		Nickname:           nickname,
 		Type:               userTypeAnonymous,
+		Role:               userRoleUser,
 		VerificationStatus: "passed",
 		CreatedAt:          now,
 		UpdatedAt:          now,
@@ -247,9 +253,9 @@ func (s *Server) handleRegister(w http.ResponseWriter, r *http.Request) {
 
 	now := time.Now().UTC()
 	res, err := s.db.Exec(
-		`INSERT INTO users (nickname, password_hash, type, verification_status, created_at, updated_at)
-		 VALUES (?, ?, ?, ?, ?, ?)`,
-		nick, hash, userTypeRegistered, "passed", now, now,
+		`INSERT INTO users (nickname, password_hash, type, role, verification_status, created_at, updated_at)
+		 VALUES (?, ?, ?, ?, ?, ?, ?)`,
+		nick, hash, userTypeRegistered, userRoleUser, "passed", now, now,
 	)
 	if err != nil {
 		if isDuplicateErr(err) {
@@ -269,6 +275,7 @@ func (s *Server) handleRegister(w http.ResponseWriter, r *http.Request) {
 		Nickname:           nick,
 		PasswordHash:       hash,
 		Type:               userTypeRegistered,
+		Role:               userRoleUser,
 		VerificationStatus: "passed",
 		CreatedAt:          now,
 		UpdatedAt:          now,
@@ -533,12 +540,12 @@ func (s *Server) findUserByID(id string) (*User, error) {
 	var user User
 	var nickname, passwordHash sql.NullString
 	var createdAt, updatedAt time.Time
-	var userType, verificationStatus string
+	var userType, role, verificationStatus string
 	err = s.db.QueryRow(
-		`SELECT nickname, password_hash, type, verification_status, created_at, updated_at
+		`SELECT nickname, password_hash, type, role, verification_status, created_at, updated_at
 		 FROM users WHERE id = ?`,
 		rawID,
-	).Scan(&nickname, &passwordHash, &userType, &verificationStatus, &createdAt, &updatedAt)
+	).Scan(&nickname, &passwordHash, &userType, &role, &verificationStatus, &createdAt, &updatedAt)
 	if err != nil {
 		return nil, err
 	}
@@ -548,6 +555,7 @@ func (s *Server) findUserByID(id string) (*User, error) {
 		Nickname:           nickname.String,
 		PasswordHash:       passwordHash.String,
 		Type:               userType,
+		Role:               normalizeUserRole(role),
 		VerificationStatus: verificationStatus,
 		CreatedAt:          createdAt,
 		UpdatedAt:          updatedAt,
@@ -558,13 +566,13 @@ func (s *Server) findUserByID(id string) (*User, error) {
 func (s *Server) findUserByNickname(nickname string) (*User, error) {
 	var rawID int64
 	var nick, passwordHash sql.NullString
-	var userType, verificationStatus string
+	var userType, role, verificationStatus string
 	var createdAt, updatedAt time.Time
 	err := s.db.QueryRow(
-		`SELECT id, nickname, password_hash, type, verification_status, created_at, updated_at
+		`SELECT id, nickname, password_hash, type, role, verification_status, created_at, updated_at
 		 FROM users WHERE nickname = ?`,
 		nickname,
-	).Scan(&rawID, &nick, &passwordHash, &userType, &verificationStatus, &createdAt, &updatedAt)
+	).Scan(&rawID, &nick, &passwordHash, &userType, &role, &verificationStatus, &createdAt, &updatedAt)
 	if err != nil {
 		return nil, err
 	}
@@ -573,6 +581,7 @@ func (s *Server) findUserByNickname(nickname string) (*User, error) {
 		Nickname:           nick.String,
 		PasswordHash:       passwordHash.String,
 		Type:               userType,
+		Role:               normalizeUserRole(role),
 		VerificationStatus: verificationStatus,
 		CreatedAt:          createdAt,
 		UpdatedAt:          updatedAt,
@@ -614,6 +623,15 @@ func secretOrRandom(key string) []byte {
 }
 
 func normalizeNickname(n string) string { return strings.ToLower(strings.TrimSpace(n)) }
+
+func normalizeUserRole(role string) string {
+	switch strings.TrimSpace(strings.ToLower(role)) {
+	case userRoleAdmin:
+		return userRoleAdmin
+	default:
+		return userRoleUser
+	}
+}
 
 func validateNickname(n string) (string, error) {
 	nn := normalizeNickname(n)

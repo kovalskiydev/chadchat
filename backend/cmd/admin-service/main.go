@@ -34,6 +34,7 @@ type adminUserRow struct {
 	RawID              int64
 	Nickname           sql.NullString
 	Type               string
+	Role               string
 	VerificationStatus string
 	CreatedAt          time.Time
 	UpdatedAt          time.Time
@@ -50,6 +51,7 @@ type userListItem struct {
 	ID                 string    `json:"id"`
 	Nickname           string    `json:"nickname,omitempty"`
 	Type               string    `json:"type"`
+	Role               string    `json:"role"`
 	VerificationStatus string    `json:"verification_status"`
 	CreatedAt          time.Time `json:"created_at"`
 	UpdatedAt          time.Time `json:"updated_at"`
@@ -143,6 +145,10 @@ type resultSoundOwner struct {
 	Selected   bool      `json:"selected"`
 }
 
+type setUserRoleRequest struct {
+	Role string `json:"role"`
+}
+
 func main() {
 	db, err := mysqlutil.OpenFromEnv()
 	if err != nil {
@@ -166,6 +172,7 @@ func main() {
 	mux.HandleFunc("GET /admin/dashboard/summary", s.withAdmin(s.handleDashboardSummary))
 	mux.HandleFunc("GET /admin/users", s.withAdmin(s.handleUsers))
 	mux.HandleFunc("GET /admin/users/{userID}", s.withAdmin(s.handleUserDetail))
+	mux.HandleFunc("POST /admin/users/{userID}/role", s.withAdmin(s.handleSetUserRole))
 	mux.HandleFunc("GET /admin/users/{userID}/matches", s.withAdmin(s.handleUserMatches))
 	mux.HandleFunc("GET /admin/users/{userID}/rating-history", s.withAdmin(s.handleUserRatingHistory))
 	mux.HandleFunc("GET /admin/ratings/leaderboard", s.withAdmin(s.handleAdminLeaderboard))
@@ -269,6 +276,7 @@ func (s *Server) handleUsers(w http.ResponseWriter, r *http.Request) {
 
 	sqlQuery := fmt.Sprintf(`
 		SELECT u.id, u.nickname, u.type, u.verification_status, u.created_at, u.updated_at,
+		       u.role,
 		       ur.rating, ur.peak_rating,
 		       COALESCE(stats.matches, 0), COALESCE(stats.wins, 0), COALESCE(stats.losses, 0),
 		       us.selected_sound_id, rs.title
@@ -301,6 +309,7 @@ func (s *Server) handleUsers(w http.ResponseWriter, r *http.Request) {
 		var row adminUserRow
 		if err := rows.Scan(
 			&row.RawID, &row.Nickname, &row.Type, &row.VerificationStatus, &row.CreatedAt, &row.UpdatedAt,
+			&row.Role,
 			&row.Rating, &row.PeakRating, &row.Matches, &row.Wins, &row.Losses, &row.SelectedSoundID, &row.SelectedSoundTitle,
 		); err != nil {
 			writeErr(w, http.StatusInternalServerError, "db_error")
@@ -331,6 +340,7 @@ func (s *Server) handleUserDetail(w http.ResponseWriter, r *http.Request) {
 	row := adminUserRow{}
 	err = s.db.QueryRow(`
 		SELECT u.id, u.nickname, u.type, u.verification_status, u.created_at, u.updated_at,
+		       u.role,
 		       ur.rating, ur.peak_rating,
 		       COALESCE(stats.matches, 0), COALESCE(stats.wins, 0), COALESCE(stats.losses, 0),
 		       us.selected_sound_id, rs.title
@@ -348,12 +358,71 @@ func (s *Server) handleUserDetail(w http.ResponseWriter, r *http.Request) {
 		LEFT JOIN result_sounds rs ON rs.id = us.selected_sound_id
 		WHERE u.id = ?`, rawID).Scan(
 		&row.RawID, &row.Nickname, &row.Type, &row.VerificationStatus, &row.CreatedAt, &row.UpdatedAt,
+		&row.Role,
 		&row.Rating, &row.PeakRating, &row.Matches, &row.Wins, &row.Losses, &row.SelectedSoundID, &row.SelectedSoundTitle,
 	)
 	if err == sql.ErrNoRows {
 		writeErr(w, http.StatusNotFound, "user_not_found")
 		return
 	}
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, "db_error")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"user": rowToUserItem(row)})
+}
+
+func (s *Server) handleSetUserRole(w http.ResponseWriter, r *http.Request) {
+	userID := strings.TrimSpace(r.PathValue("userID"))
+	rawID, err := rawUserID(userID)
+	if err != nil {
+		writeErr(w, http.StatusBadRequest, "invalid_user_id")
+		return
+	}
+	var req setUserRoleRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeErr(w, http.StatusBadRequest, "invalid_json")
+		return
+	}
+	role := normalizeUserRole(req.Role)
+	if role == "" {
+		writeErr(w, http.StatusBadRequest, "invalid_role")
+		return
+	}
+	result, err := s.db.Exec(`UPDATE users SET role = ?, updated_at = ? WHERE id = ?`, role, time.Now().UTC(), rawID)
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, "db_error")
+		return
+	}
+	affected, _ := result.RowsAffected()
+	if affected == 0 {
+		writeErr(w, http.StatusNotFound, "user_not_found")
+		return
+	}
+	row := adminUserRow{}
+	err = s.db.QueryRow(`
+		SELECT u.id, u.nickname, u.type, u.verification_status, u.created_at, u.updated_at,
+		       u.role,
+		       ur.rating, ur.peak_rating,
+		       COALESCE(stats.matches, 0), COALESCE(stats.wins, 0), COALESCE(stats.losses, 0),
+		       us.selected_sound_id, rs.title
+		FROM users u
+		LEFT JOIN user_ratings ur ON ur.user_id = CONCAT('u_', u.id)
+		LEFT JOIN (
+			SELECT user_id,
+			       COUNT(*) AS matches,
+			       SUM(CASE WHEN result = 'win' THEN 1 ELSE 0 END) AS wins,
+			       SUM(CASE WHEN result = 'loss' THEN 1 ELSE 0 END) AS losses
+			FROM user_match_history
+			GROUP BY user_id
+		) stats ON stats.user_id = CONCAT('u_', u.id)
+		LEFT JOIN user_result_sound_settings us ON us.user_id = CONCAT('u_', u.id)
+		LEFT JOIN result_sounds rs ON rs.id = us.selected_sound_id
+		WHERE u.id = ?`, rawID).Scan(
+		&row.RawID, &row.Nickname, &row.Type, &row.VerificationStatus, &row.CreatedAt, &row.UpdatedAt,
+		&row.Role,
+		&row.Rating, &row.PeakRating, &row.Matches, &row.Wins, &row.Losses, &row.SelectedSoundID, &row.SelectedSoundTitle,
+	)
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, "db_error")
 		return
@@ -920,6 +989,7 @@ func rowToUserItem(row adminUserRow) userListItem {
 		ID:                 fmt.Sprintf("u_%d", row.RawID),
 		Nickname:           row.Nickname.String,
 		Type:               row.Type,
+		Role:               normalizeUserRole(row.Role),
 		VerificationStatus: row.VerificationStatus,
 		CreatedAt:          row.CreatedAt,
 		UpdatedAt:          row.UpdatedAt,
@@ -1032,6 +1102,15 @@ func rawUserID(userID string) (int64, error) {
 		return 0, fmt.Errorf("invalid_user_id")
 	}
 	return strconv.ParseInt(strings.TrimPrefix(userID, "u_"), 10, 64)
+}
+
+func normalizeUserRole(role string) string {
+	switch strings.TrimSpace(strings.ToLower(role)) {
+	case "user", "admin":
+		return strings.TrimSpace(strings.ToLower(role))
+	default:
+		return ""
+	}
 }
 
 func periodStart(period string) time.Time {
