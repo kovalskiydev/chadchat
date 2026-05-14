@@ -85,6 +85,12 @@ import {
 } from "@/lib/duel";
 import { getApiHealth } from "@/lib/health";
 import {
+  getFaceLandmarker,
+  preloadFaceLandmarker,
+  retryFaceLandmarker,
+  type ChadFaceLandmarker,
+} from "@/lib/faceLandmarker";
+import {
   getLeaderboard,
   getMyMatches,
   getQueueInfo,
@@ -2276,6 +2282,7 @@ function VerificationModal({
   const [timeLeft, setTimeLeft] = useState(session.expires_in_sec);
   const [cameraState, setCameraState] = useState<"loading" | "ready" | "error">("loading");
   const [trackerState, setTrackerState] = useState<"loading" | "ready" | "error">("loading");
+  const [trackerRetryKey, setTrackerRetryKey] = useState(0);
   const autoSubmittedRef = useRef(false);
 
   useEffect(() => {
@@ -2304,13 +2311,7 @@ function VerificationModal({
     let mounted = true;
     let rafId = 0;
     let lastVideoTime = -1;
-    let faceLandmarker: {
-      detectForVideo: (video: HTMLVideoElement, now: number) => {
-        faceLandmarks?: Array<Array<{ x: number; y: number; z?: number }>>;
-        facialTransformationMatrixes?: Array<{ data?: number[] } | number[]>;
-      };
-      close?: () => void;
-    } | null = null;
+    let faceLandmarker: ChadFaceLandmarker | null = null;
     let blinkArmed = true;
     let lastBlinkTs = 0;
     let leftArmed = true;
@@ -2465,52 +2466,9 @@ function VerificationModal({
         }
         setCameraState("ready");
 
-        const importFromUrl = new Function(
-          "url",
-          "return import(url)",
-        ) as (url: string) => Promise<unknown>;
-        const vision = (await importFromUrl(
-          "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14",
-        )) as {
-          FilesetResolver: {
-            forVisionTasks: (
-              basePath: string,
-            ) => Promise<unknown>;
-          };
-          FaceLandmarker: {
-            createFromOptions: (
-              fileset: unknown,
-              options: Record<string, unknown>,
-            ) => Promise<{
-              detectForVideo: (
-                video: HTMLVideoElement,
-                now: number,
-              ) => {
-                faceLandmarks?: Array<Array<{ x: number; y: number; z?: number }>>;
-                facialTransformationMatrixes?: Array<{ data?: number[] } | number[]>;
-              };
-              close?: () => void;
-            }>;
-          };
-        };
-
-        const fileset = await vision.FilesetResolver.forVisionTasks(
-          "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/wasm",
-        );
-
-        faceLandmarker = await vision.FaceLandmarker.createFromOptions(fileset, {
-          baseOptions: {
-            modelAssetPath:
-              "https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task",
-          },
-          runningMode: "VIDEO",
-          numFaces: 1,
-          outputFaceBlendshapes: false,
-          outputFacialTransformationMatrixes: true,
-          minFaceDetectionConfidence: 0.5,
-          minFacePresenceConfidence: 0.5,
-          minTrackingConfidence: 0.5,
-        });
+        faceLandmarker = trackerRetryKey > 0
+          ? await retryFaceLandmarker()
+          : await getFaceLandmarker();
 
         setTrackerState("ready");
         detectLoop();
@@ -2526,11 +2484,10 @@ function VerificationModal({
     return () => {
       mounted = false;
       if (rafId) window.cancelAnimationFrame(rafId);
-      faceLandmarker?.close?.();
       streamRef.current?.getTracks().forEach((track) => track.stop());
       streamRef.current = null;
     };
-  }, [session.blink_count, session.turn_left, session.turn_right, setDetected]);
+  }, [session.blink_count, session.turn_left, session.turn_right, setDetected, trackerRetryKey]);
 
   return (
     <div
@@ -2577,7 +2534,7 @@ function VerificationModal({
                   )}
                   {cameraState === "ready" && trackerState === "loading" && (
                     <div className="text-[10px] font-semibold uppercase tracking-[0.14em] text-zinc-300">
-                      Loading face tracker...
+                      Preparing face engine...
                     </div>
                   )}
                   {cameraState === "error" && (
@@ -2586,8 +2543,20 @@ function VerificationModal({
                     </div>
                   )}
                   {cameraState !== "error" && trackerState === "error" && (
-                    <div className="text-[10px] font-semibold uppercase tracking-[0.14em] text-red-300">
-                      Face tracker failed to load
+                    <div className="space-y-3">
+                      <div className="text-[10px] font-semibold uppercase tracking-[0.14em] text-red-300">
+                        Face engine failed to load
+                      </div>
+                      <button
+                        className="inline-flex h-8 items-center justify-center border border-red-400/45 bg-red-950/35 px-3 text-[10px] font-semibold uppercase tracking-[0.12em] text-red-100 transition-colors hover:border-red-300 hover:text-white"
+                        type="button"
+                        onClick={() => {
+                          setTrackerState("loading");
+                          setTrackerRetryKey((current) => current + 1);
+                        }}
+                      >
+                        Retry
+                      </button>
                     </div>
                   )}
                 </div>
@@ -2615,7 +2584,7 @@ function VerificationModal({
             <div className="grid gap-2">
               {trackerState === "error" && (
                 <div className="border border-red-500/45 bg-red-950/35 px-3 py-2 text-[10px] font-semibold uppercase tracking-[0.12em] text-red-200">
-                  Verification cannot continue until the face tracker loads. Close this window and try again.
+                  Verification cannot continue until the face engine loads. Check your connection and retry.
                 </div>
               )}
               <div
@@ -5295,12 +5264,7 @@ function TestLabModal({
     let mounted = true;
     let rafId = 0;
     let lastVideoTime = -1;
-    let faceLandmarker: {
-      detectForVideo: (video: HTMLVideoElement, now: number) => {
-        faceLandmarks?: Array<Array<{ x: number; y: number; z?: number }>>;
-      };
-      close?: () => void;
-    } | null = null;
+    let faceLandmarker: ChadFaceLandmarker | null = null;
 
     const drawLoop = () => {
       if (!mounted) return;
@@ -5366,43 +5330,7 @@ function TestLabModal({
 
     const init = async () => {
       try {
-        const importFromUrl = new Function(
-          "url",
-          "return import(url)",
-        ) as (url: string) => Promise<unknown>;
-        const vision = (await importFromUrl(
-          "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14",
-        )) as {
-          FilesetResolver: { forVisionTasks: (basePath: string) => Promise<unknown> };
-          FaceLandmarker: {
-            createFromOptions: (
-              fileset: unknown,
-              options: Record<string, unknown>,
-            ) => Promise<{
-              detectForVideo: (
-                video: HTMLVideoElement,
-                now: number,
-              ) => { faceLandmarks?: Array<Array<{ x: number; y: number; z?: number }>> };
-              close?: () => void;
-            }>;
-          };
-        };
-        const fileset = await vision.FilesetResolver.forVisionTasks(
-          "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/wasm",
-        );
-        faceLandmarker = await vision.FaceLandmarker.createFromOptions(fileset, {
-          baseOptions: {
-            modelAssetPath:
-              "https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task",
-          },
-          runningMode: "VIDEO",
-          numFaces: 1,
-          outputFaceBlendshapes: false,
-          outputFacialTransformationMatrixes: false,
-          minFaceDetectionConfidence: 0.5,
-          minFacePresenceConfidence: 0.5,
-          minTrackingConfidence: 0.5,
-        });
+        faceLandmarker = await getFaceLandmarker();
       } catch {
         // keep decorative scan overlay only if model fails
       } finally {
@@ -5414,7 +5342,6 @@ function TestLabModal({
     return () => {
       mounted = false;
       if (rafId) window.cancelAnimationFrame(rafId);
-      faceLandmarker?.close?.();
     };
   }, []);
 
@@ -6216,6 +6143,37 @@ export default function App() {
   const isCurrentUserAdmin = isAdminRole(typeof me?.role === "string" ? me.role : null);
   const statsSnapshot = buildStatsSnapshot(ratingProfile, statsSummary);
   const currentChatStyle = getSelectedChatStyle(chatCatalog, chatSelection);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    let cancelled = false;
+    const warmup = () => {
+      if (cancelled) return;
+      void preloadFaceLandmarker().catch(() => {
+        // Verification and Test Lab expose retry UI if the warmup fails.
+      });
+    };
+    const idleWindow = window as Window & {
+      requestIdleCallback?: (
+        callback: IdleRequestCallback,
+        options?: IdleRequestOptions,
+      ) => number;
+      cancelIdleCallback?: (handle: number) => void;
+    };
+    let handle: number;
+    if (idleWindow.requestIdleCallback) {
+      handle = idleWindow.requestIdleCallback(warmup, { timeout: 3000 });
+      return () => {
+        cancelled = true;
+        idleWindow.cancelIdleCallback?.(handle);
+      };
+    }
+    handle = window.setTimeout(warmup, 1500);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(handle);
+    };
+  }, []);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
