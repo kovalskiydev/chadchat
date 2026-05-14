@@ -157,6 +157,9 @@ func main() {
 	if err := mysqlutil.ExecStatements(db, profileSchema()); err != nil {
 		log.Fatalf("profile schema: %v", err)
 	}
+	if err := ensureProfileSchema(db); err != nil {
+		log.Fatalf("profile schema: %v", err)
+	}
 
 	s := &Server{
 		db:                db,
@@ -206,11 +209,29 @@ func profileSchema() []string {
 			INDEX idx_profile_comments_target_created (target_user_id, created_at DESC),
 			INDEX idx_profile_comments_parent (parent_comment_id)
 		) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`,
-		`ALTER TABLE profile_comments
-			ADD COLUMN IF NOT EXISTS parent_comment_id BIGINT UNSIGNED NULL AFTER target_user_id`,
-		`ALTER TABLE profile_comments
-			ADD INDEX IF NOT EXISTS idx_profile_comments_parent (parent_comment_id)`,
 	}
+}
+
+func ensureProfileSchema(db *sql.DB) error {
+	hasParentColumn, err := mysqlutil.ColumnExists(db, "profile_comments", "parent_comment_id")
+	if err != nil {
+		return err
+	}
+	if !hasParentColumn {
+		if _, err := db.Exec(`ALTER TABLE profile_comments ADD COLUMN parent_comment_id BIGINT UNSIGNED NULL AFTER target_user_id`); err != nil {
+			return err
+		}
+	}
+	hasParentIndex, err := mysqlutil.IndexExists(db, "profile_comments", "idx_profile_comments_parent")
+	if err != nil {
+		return err
+	}
+	if !hasParentIndex {
+		if _, err := db.Exec(`ALTER TABLE profile_comments ADD INDEX idx_profile_comments_parent (parent_comment_id)`); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func (s *Server) handleHealth(w http.ResponseWriter, _ *http.Request) {

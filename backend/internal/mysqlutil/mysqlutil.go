@@ -47,3 +47,31 @@ func Ping(db *sql.DB) error {
 	defer cancel()
 	return db.PingContext(ctx)
 }
+
+func ColumnExists(db *sql.DB, tableName, columnName string) (bool, error) {
+	var exists int
+	err := db.QueryRow(
+		`SELECT COUNT(*)
+		 FROM information_schema.columns
+		 WHERE table_schema = DATABASE() AND table_name = ? AND column_name = ?`,
+		tableName, columnName,
+	).Scan(&exists)
+	if err != nil {
+		return false, err
+	}
+	return exists > 0, nil
+}
+
+func IndexExists(db *sql.DB, tableName, indexName string) (bool, error) {
+	var exists int
+	err := db.QueryRow(
+		`SELECT COUNT(*)
+		 FROM information_schema.statistics
+		 WHERE table_schema = DATABASE() AND table_name = ? AND index_name = ?`,
+		tableName, indexName,
+	).Scan(&exists)
+	if err != nil {
+		return false, err
+	}
+	return exists > 0, nil
+}

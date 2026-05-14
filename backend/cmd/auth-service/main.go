@@ -90,6 +90,9 @@ func main() {
 	if err := mysqlutil.ExecStatements(db, authSchema()); err != nil {
 		log.Fatalf("auth schema: %v", err)
 	}
+	if err := ensureAuthSchema(db); err != nil {
+		log.Fatalf("auth schema: %v", err)
+	}
 
 	s := &Server{
 		db:                  db,
@@ -145,7 +148,6 @@ func authSchema() []string {
 			created_at DATETIME(6) NOT NULL,
 			updated_at DATETIME(6) NOT NULL
 		) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`,
-		`ALTER TABLE users ADD COLUMN IF NOT EXISTS role VARCHAR(32) NOT NULL DEFAULT 'user' AFTER type`,
 		`CREATE TABLE IF NOT EXISTS refresh_sessions (
 			token_hash CHAR(64) NOT NULL PRIMARY KEY,
 			user_id VARCHAR(64) NOT NULL,
@@ -155,6 +157,19 @@ func authSchema() []string {
 			INDEX idx_refresh_user_id (user_id)
 		) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`,
 	}
+}
+
+func ensureAuthSchema(db *sql.DB) error {
+	hasRole, err := mysqlutil.ColumnExists(db, "users", "role")
+	if err != nil {
+		return err
+	}
+	if !hasRole {
+		if _, err := db.Exec(`ALTER TABLE users ADD COLUMN role VARCHAR(32) NOT NULL DEFAULT 'user' AFTER type`); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func (s *Server) handleAnonymous(w http.ResponseWriter, r *http.Request) {
