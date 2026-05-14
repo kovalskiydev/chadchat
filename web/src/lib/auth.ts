@@ -8,6 +8,7 @@ export type AuthUser = {
   nickname?: string;
   is_anonymous?: boolean;
   type?: string;
+  role?: string;
   verification_status?: string;
   [key: string]: unknown;
 };

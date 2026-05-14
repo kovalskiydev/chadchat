@@ -11,6 +11,7 @@ export type Profile = {
   user_id: string;
   nickname?: string;
   type?: string;
+  role?: string;
   avatar_url?: string;
   country_code?: string;
   bio?: string;

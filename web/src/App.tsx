@@ -173,6 +173,7 @@ type UiPeriodStats = {
 type ChatMessage = {
   id: number | string;
   userId?: string;
+  role?: string;
   avatarUrl?: string;
   createdAt?: string;
   user: string;
@@ -399,6 +400,19 @@ function Avatar({
     >
       {getAvatarInitials(user)}
     </div>
+  );
+}
+
+function AdminBadge({ className }: { className?: string }) {
+  return (
+    <span
+      className={cn(
+        "inline-flex shrink-0 items-center border border-red-400/70 bg-red-950/55 px-1.5 py-0.5 text-[8px] font-black uppercase tracking-[0.12em] text-red-100 shadow-[0_0_14px_rgba(248,113,113,0.25)]",
+        className,
+      )}
+    >
+      ADMIN
+    </span>
   );
 }
 
@@ -861,7 +875,8 @@ function ChatMessageItem({
   const titleInlineStyle = getInlineColorStyle(titleStyle);
   const nicknameInlineStyle = getInlineColorStyle(nicknameStyle);
   const textInlineStyle = textStyle?.color ? { color: textStyle.color } : undefined;
-  const avatarUrl = avatarStyle?.url ?? message.avatarUrl;
+  const avatarUrl = avatarStyle?.url || message.avatarUrl;
+  const isAdmin = message.role === "admin";
 
   useEffect(() => {
     const id = window.requestAnimationFrame(() => setEntered(true));
@@ -916,6 +931,7 @@ function ChatMessageItem({
                 {badge.label ?? badge.id}
               </span>
             ))}
+            {isAdmin && <AdminBadge />}
             <span
               className={cn(
                 "truncate text-[10px] font-semibold uppercase tracking-[0.14em] text-zinc-500",
@@ -1704,6 +1720,7 @@ function LiveChat({
   chatCustomization,
   currentChatStyle,
   currentUserName,
+  currentUserRole,
   accessToken,
   chatBlurred,
   onOpenProfile,
@@ -1711,6 +1728,7 @@ function LiveChat({
   chatCustomization: ChatCustomization;
   currentChatStyle: ChatStyleSnapshot | null;
   currentUserName: string;
+  currentUserRole?: string;
   accessToken: string | null;
   chatBlurred: boolean;
   onOpenProfile: (userID: string) => void;
@@ -1718,7 +1736,7 @@ function LiveChat({
   const [messages, setMessages] = useState<ChatMessage[]>(initialChatMessages);
   const [draft, setDraft] = useState("");
   const [sending, setSending] = useState(false);
-  const [avatarByUserId, setAvatarByUserId] = useState<Record<string, string>>({});
+  const [avatarByUserId, setAvatarByUserId] = useState<Record<string, string | null>>({});
   const chatEndRef = useRef<HTMLDivElement>(null);
   const nextIdRef = useRef(initialChatMessages.length + 1);
 
@@ -1755,9 +1773,10 @@ function LiveChat({
           msg.sender_id ??
           `${user}|${msg.text ?? ""}|${msg.created_at ?? ""}`,
         userId,
+        role: msg.sender_role,
         avatarUrl:
-          msg.sender_avatar_url ??
-          msg.avatar_url ??
+          msg.sender_avatar_url ||
+          msg.avatar_url ||
           msg.chat_style?.avatar?.url,
         createdAt: msg.created_at,
         user,
@@ -1832,7 +1851,7 @@ function LiveChat({
       new Set(
         messages
           .map((message) => message.userId)
-          .filter((id): id is string => Boolean(id && !avatarByUserId[id])),
+          .filter((id): id is string => Boolean(id && !(id in avatarByUserId))),
       ),
     );
     if (!missingIds.length) return;
@@ -1847,7 +1866,7 @@ function LiveChat({
       if (cancelled) return;
       setAvatarByUserId((current) => ({
         ...current,
-        ...Object.fromEntries(entries.filter(([, avatarUrl]) => avatarUrl)),
+        ...Object.fromEntries(entries.map(([id, avatarUrl]) => [id, avatarUrl || null])),
       }));
       setMessages((current) =>
         current.map((message) => {
@@ -1878,6 +1897,7 @@ function LiveChat({
       {
         id: optimisticId,
         user: currentUserName,
+        role: currentUserRole,
         text,
         chatStyle: currentChatStyle,
         mine: true,
@@ -4546,6 +4566,7 @@ function ProfileModal({
   };
 
   const progress = Math.max(0, Math.min(100, profile?.progress_percent ?? 0));
+  const isAdminProfile = profile?.role === "admin";
   const rootComments = comments.filter((comment) => !comment.parent_comment_id);
   const repliesByParent = comments.reduce<Record<string, ProfileComment[]>>(
     (acc, comment) => {
@@ -4558,6 +4579,72 @@ function ProfileModal({
     },
     {},
   );
+
+  const renderComment = (comment: ProfileComment, depth = 0): React.ReactNode => {
+    const replies = repliesByParent[comment.id] ?? [];
+    const isReplying = replyingTo === comment.id;
+
+    return (
+      <div
+        className={cn(
+          "border bg-black/60 p-3",
+          depth === 0 ? "border-zinc-900" : "border-zinc-800/80",
+        )}
+        key={comment.id}
+      >
+        <div className="flex items-center justify-between gap-3 text-[10px] uppercase tracking-[0.12em] text-zinc-500">
+          <span className="font-semibold text-zinc-300">{comment.author_nickname}</span>
+          <span>{formatDateShort(comment.created_at)}</span>
+        </div>
+        {comment.parent_comment_id && (
+          <div className="mt-2 inline-flex border border-purple-500/30 bg-purple-950/20 px-2 py-1 text-[9px] font-semibold uppercase tracking-[0.1em] text-purple-200">
+            Reply in thread
+          </div>
+        )}
+        <p className="mt-2 break-words text-xs leading-5 text-zinc-300">{comment.text}</p>
+        <button
+          className="mt-2 text-[10px] font-semibold uppercase tracking-[0.12em] text-purple-300 transition-colors hover:text-purple-100"
+          type="button"
+          onClick={() =>
+            setReplyingTo((current) =>
+              current === comment.id ? null : comment.id,
+            )
+          }
+        >
+          Reply
+        </button>
+        {isReplying && (
+          <div className="mt-3 grid grid-cols-[1fr_auto] gap-2">
+            <input
+              className="h-9 border border-zinc-800 bg-black/80 px-3 text-xs text-zinc-100 outline-none focus:border-purple-400"
+              placeholder={`Reply to ${comment.author_nickname}`}
+              maxLength={1000}
+              value={replyDrafts[comment.id] ?? ""}
+              onChange={(event) =>
+                setReplyDrafts((current) => ({
+                  ...current,
+                  [comment.id]: event.target.value,
+                }))
+              }
+            />
+            <button
+              className="h-9 border border-purple-500/50 bg-purple-950/35 px-3 text-[10px] font-semibold uppercase tracking-[0.14em] text-purple-100 disabled:opacity-40"
+              type="button"
+              disabled={saving || !(replyDrafts[comment.id] ?? "").trim()}
+              onClick={() => submitReply(comment.id)}
+            >
+              Send
+            </button>
+          </div>
+        )}
+        {Boolean(replies.length) && (
+          <div className="mt-3 space-y-2 border-l border-purple-500/25 pl-3">
+            {replies.map((reply) => renderComment(reply, depth + 1))}
+          </div>
+        )}
+      </div>
+    );
+  };
 
   return (
     <div
@@ -4636,8 +4723,13 @@ function ProfileModal({
                   >
                     {profile.nickname ?? profile.user_id}
                   </div>
+                  {isAdminProfile && (
+                    <div className="mt-2">
+                      <AdminBadge className="px-2.5 py-1 text-[10px]" />
+                    </div>
+                  )}
                   <div className="mt-2 text-[10px] uppercase tracking-[0.12em] text-zinc-500">
-                    {profile.country_code ?? "--"} / {profile.type ?? "user"} / {profile.account_age_days ?? 0}d
+                    {profile.country_code ?? "--"} / {isAdminProfile ? "admin" : (profile.type ?? "user")} / {profile.account_age_days ?? 0}d
                   </div>
                 </div>
 
@@ -4784,63 +4876,7 @@ function ProfileModal({
                   </button>
                 </form>
                 <div className="space-y-2">
-                  {rootComments.map((comment) => (
-                    <div className="border border-zinc-900 bg-black/60 p-3" key={comment.id}>
-                      <div className="flex items-center justify-between gap-3 text-[10px] uppercase tracking-[0.12em] text-zinc-500">
-                        <span className="font-semibold text-zinc-300">{comment.author_nickname}</span>
-                        <span>{formatDateShort(comment.created_at)}</span>
-                      </div>
-                      <p className="mt-2 break-words text-xs leading-5 text-zinc-300">{comment.text}</p>
-                      <button
-                        className="mt-2 text-[10px] font-semibold uppercase tracking-[0.12em] text-purple-300 transition-colors hover:text-purple-100"
-                        type="button"
-                        onClick={() =>
-                          setReplyingTo((current) =>
-                            current === comment.id ? null : comment.id,
-                          )
-                        }
-                      >
-                        Reply
-                      </button>
-                      {replyingTo === comment.id && (
-                        <div className="mt-3 grid grid-cols-[1fr_auto] gap-2">
-                          <input
-                            className="h-9 border border-zinc-800 bg-black/80 px-3 text-xs text-zinc-100 outline-none focus:border-purple-400"
-                            placeholder={`Reply to ${comment.author_nickname}`}
-                            maxLength={1000}
-                            value={replyDrafts[comment.id] ?? ""}
-                            onChange={(event) =>
-                              setReplyDrafts((current) => ({
-                                ...current,
-                                [comment.id]: event.target.value,
-                              }))
-                            }
-                          />
-                          <button
-                            className="h-9 border border-purple-500/50 bg-purple-950/35 px-3 text-[10px] font-semibold uppercase tracking-[0.14em] text-purple-100 disabled:opacity-40"
-                            type="button"
-                            disabled={saving || !(replyDrafts[comment.id] ?? "").trim()}
-                            onClick={() => submitReply(comment.id)}
-                          >
-                            Send
-                          </button>
-                        </div>
-                      )}
-                      {Boolean(repliesByParent[comment.id]?.length) && (
-                        <div className="mt-3 space-y-2 border-l border-zinc-800 pl-3">
-                          {repliesByParent[comment.id].map((reply) => (
-                            <div className="border border-zinc-900 bg-zinc-950/60 p-3" key={reply.id}>
-                              <div className="flex items-center justify-between gap-3 text-[10px] uppercase tracking-[0.12em] text-zinc-500">
-                                <span className="font-semibold text-zinc-300">{reply.author_nickname}</span>
-                                <span>{formatDateShort(reply.created_at)}</span>
-                              </div>
-                              <p className="mt-2 break-words text-xs leading-5 text-zinc-300">{reply.text}</p>
-                            </div>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-                  ))}
+                  {rootComments.map((comment) => renderComment(comment))}
                   {!comments.length && !commentsLoading && (
                     <div className="text-[10px] uppercase tracking-[0.12em] text-zinc-600">
                       No comments yet.
@@ -6766,6 +6802,7 @@ export default function App() {
               chatCustomization={chatCustomization}
               currentChatStyle={currentChatStyle}
               currentUserName={currentNickname}
+              currentUserRole={typeof me?.role === "string" ? me.role : undefined}
               accessToken={tokens?.accessToken ?? null}
               chatBlurred={chatBlurred}
               onOpenProfile={handleOpenProfile}

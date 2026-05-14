@@ -6,6 +6,7 @@ export type LiveChatMessage = {
   id?: string | number;
   sender_id?: string | number;
   sender_nickname?: string;
+  sender_role?: string;
   sender_avatar_url?: string;
   avatar_url?: string;
   nickname?: string;
