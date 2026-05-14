@@ -2766,6 +2766,7 @@ function StartModesModal({
       description:
         "Other players watch and rate both participants to decide who takes the win.",
       icon: Trophy,
+      disabled: true,
     },
     {
       id: "test-lab",
@@ -2813,7 +2814,8 @@ function StartModesModal({
           {modes.map((mode) => {
             const Icon = mode.icon;
             const isActive = searchingMode === mode.id;
-            const isDisabled = Boolean(searchingMode) && !isActive;
+            const isInDevelopment = Boolean(mode.disabled);
+            const isDisabled = isInDevelopment || (Boolean(searchingMode) && !isActive);
             return (
               <button
                 key={mode.id}
@@ -2825,6 +2827,7 @@ function StartModesModal({
                 )}
                 disabled={isDisabled}
                 onClick={() => {
+                  if (isInDevelopment) return;
                   if (mode.id === "1v1") {
                     onOpenDuel();
                     onClose();
@@ -2845,6 +2848,7 @@ function StartModesModal({
                     className={cn(
                       "h-2 w-2 bg-zinc-800",
                       isActive && "animate-pulse bg-purple-300",
+                      isInDevelopment && "bg-amber-400/60",
                     )}
                   />
                 </div>
@@ -2854,6 +2858,11 @@ function StartModesModal({
                 <p className="mt-3 text-xs leading-5 text-zinc-500">
                   {mode.description}
                 </p>
+                {isInDevelopment && (
+                  <div className="mt-4 inline-flex border border-amber-400/35 bg-amber-950/30 px-2 py-1 text-[9px] font-black uppercase tracking-[0.12em] text-amber-200">
+                    In Development
+                  </div>
+                )}
               </button>
             );
           })}
@@ -4301,6 +4310,11 @@ function formatScoreOutOfTen(value: number | null) {
   return `${Number.isInteger(rounded) ? rounded.toFixed(0) : rounded.toFixed(1)}/10`;
 }
 
+function formatProfileScore(value?: number | null) {
+  if (value === null || value === undefined || !Number.isFinite(value)) return "--";
+  return `${Math.max(0, Math.min(10, value * 2)).toFixed(2)}/10`;
+}
+
 function formatDateShort(value?: string | null) {
   if (!value) return "Never";
   const date = new Date(value);
@@ -4562,15 +4576,19 @@ function ProfileModal({
                     ))}
                   </div>
 
-                  <div className="grid gap-3 sm:grid-cols-3">
+                  <div className="grid gap-3 sm:grid-cols-5">
                     {[
-                      ["Avg", profile.average_score ?? 0],
-                      ["Best", profile.best_score ?? 0],
-                      ["Test lab", profile.test_lab_best ?? 0],
+                      ["Avg", profile.average_score],
+                      ["Best", profile.best_score],
+                      ["Recent", profile.recent_score],
+                      ["Lab Best", profile.test_lab_best],
+                      ["Lab Avg", profile.test_lab_average],
                     ].map(([label, value]) => (
                       <div className="border border-zinc-900 bg-black/60 p-3" key={label}>
                         <div className="text-[10px] uppercase tracking-[0.12em] text-zinc-600">{label}</div>
-                        <div className="mt-2 text-lg font-black tabular-nums text-zinc-100">{Number(value).toFixed(2)}</div>
+                        <div className="mt-2 text-lg font-black tabular-nums text-zinc-100">
+                          {formatProfileScore(typeof value === "number" ? value : null)}
+                        </div>
                       </div>
                     ))}
                   </div>
