@@ -97,6 +97,8 @@ Flow:
 - `PROD_ADMIN_API_SECRET`
 - `PROD_MYSQL_PASSWORD`
 - `PROD_MYSQL_ROOT_PASSWORD`
+- `PROD_STORAGE_ACCESS_KEY`
+- `PROD_STORAGE_SECRET_KEY`
 
 ### Required GitHub Variables
 
@@ -105,6 +107,11 @@ Flow:
 - `PROD_WEB_PUBLIC_PORT` optional, default `80`
 - `PROD_ADMIN_WEB_PUBLIC_PORT` optional, default `8082`
 - `PROD_DEFAULT_RESULT_SOUND_URL`
+- `PROD_STORAGE_BUCKET` optional, default `chadchat`
+- `PROD_STORAGE_ENDPOINT` optional, default `https://ams1.vultrobjects.com`
+- `PROD_STORAGE_REGION` optional, default `us-east-1`
+- `PROD_STORAGE_PUBLIC_BASE_URL`
+- `PROD_STORAGE_AVATAR_PREFIX` optional, default `avatars`
 
 ### VPS prerequisites
 
@@ -149,6 +156,8 @@ The gateway and services already support this through env variables.
 - Set persistent `AUTH_ACCESS_TOKEN_SECRET` and `AUTH_REFRESH_TOKEN_SECRET`, otherwise every auth-service restart invalidates user tokens.
 - Set persistent `VERIFICATION_INTERNAL_SECRET`, otherwise internal verification consume flow is not safe for production.
 - `mysql` is now part of the API stack baseline; app state for auth, verification, live chat, and test lab depends on `MYSQL_DSN`.
+- `profile-service` avatar uploads depend on object storage settings; `STORAGE_PUBLIC_BASE_URL` must be publicly reachable, and the bucket should allow public reads for avatar objects.
+- Configure bucket CORS so your frontend origins can upload directly to object storage.
 - Keep private service ports closed if the service stays behind the gateway.
 - `duel-service` queue/live match state, SSE subscribers, and rate limiting are still in memory.
 - Public API health is available at `/health` on `api-gateway`; it aggregates health of auth, verification, test lab, live chat, duel, and ML services.

@@ -182,6 +182,13 @@ services:
     environment:
       - MYSQL_DSN=app:app@tcp(mysql:3306)/chadchat?parseTime=true&multiStatements=true&charset=utf8mb4
       - AUTH_SERVICE_URL=http://auth-service:8081
+      - STORAGE_BUCKET=chadchat
+      - STORAGE_ENDPOINT=https://ams1.vultrobjects.com
+      - STORAGE_REGION=us-east-1
+      - STORAGE_PUBLIC_BASE_URL=https://chadchat.ams1.vultrobjects.com
+      - STORAGE_AVATAR_PREFIX=avatars
+      - STORAGE_ACCESS_KEY=change-me
+      - STORAGE_SECRET_KEY=change-me
     depends_on:
       - mysql
       - auth-service

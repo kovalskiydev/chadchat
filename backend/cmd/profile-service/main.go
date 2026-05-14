@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"database/sql"
 	"encoding/base64"
 	"encoding/json"
@@ -14,6 +15,11 @@ import (
 	"time"
 
 	"backend/internal/mysqlutil"
+
+	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/config"
+	"github.com/aws/aws-sdk-go-v2/credentials"
+	"github.com/aws/aws-sdk-go-v2/service/s3"
 )
 
 const (
@@ -21,13 +27,18 @@ const (
 	maxProfileLimit     = 100
 	maxBioLength        = 280
 	maxCommentLength    = 1000
+	maxAvatarFileSize   = 5 * 1024 * 1024
 )
 
 var countryCodeRE = regexp.MustCompile(`^[A-Z]{2}$`)
 
 type Server struct {
-	db             *sql.DB
-	authServiceURL string
+	db                *sql.DB
+	authServiceURL    string
+	storageBucket     string
+	storagePublicBase string
+	storageKeyPrefix  string
+	presignClient     *s3.PresignClient
 }
 
 type authUser struct {
@@ -54,6 +65,21 @@ type profileUpdateRequest struct {
 
 type profileCommentRequest struct {
 	Text string `json:"text"`
+}
+
+type avatarUploadRequest struct {
+	FileName    string `json:"file_name"`
+	ContentType string `json:"content_type"`
+	FileSize    int64  `json:"file_size"`
+}
+
+type avatarUploadResponse struct {
+	UploadURL    string            `json:"upload_url"`
+	FileURL      string            `json:"file_url"`
+	ObjectKey    string            `json:"object_key"`
+	Method       string            `json:"method"`
+	Headers      map[string]string `json:"headers"`
+	ExpiresInSec int64             `json:"expires_in_sec"`
 }
 
 type profileComment struct {
@@ -128,14 +154,25 @@ func main() {
 	}
 
 	s := &Server{
-		db:             db,
-		authServiceURL: envOr("AUTH_SERVICE_URL", "http://localhost:8081"),
+		db:                db,
+		authServiceURL:    envOr("AUTH_SERVICE_URL", "http://localhost:8081"),
+		storageBucket:     envOr("STORAGE_BUCKET", ""),
+		storagePublicBase: strings.TrimRight(envOr("STORAGE_PUBLIC_BASE_URL", ""), "/"),
+		storageKeyPrefix:  strings.Trim(strings.TrimSpace(envOr("STORAGE_AVATAR_PREFIX", "avatars")), "/"),
+	}
+	if s.storageBucket != "" {
+		presignClient, err := buildPresignClient()
+		if err != nil {
+			log.Fatalf("build storage presign client: %v", err)
+		}
+		s.presignClient = presignClient
 	}
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /health", s.handleHealth)
 	mux.HandleFunc("GET /profiles/me", s.withAuth(s.handleMyProfile))
 	mux.HandleFunc("PATCH /profiles/me", s.withAuth(s.handleUpdateMyProfile))
+	mux.HandleFunc("POST /profiles/me/avatar-upload", s.withAuth(s.handleAvatarUploadURL))
 	mux.HandleFunc("GET /profiles/{userID}", s.withAuth(s.handlePublicProfile))
 	mux.HandleFunc("GET /profiles/{userID}/comments", s.withAuth(s.handleProfileComments))
 	mux.HandleFunc("POST /profiles/{userID}/comments", s.withAuth(s.handlePostProfileComment))
@@ -277,6 +314,53 @@ func (s *Server) handleUpdateMyProfile(w http.ResponseWriter, r *http.Request, u
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"profile": profile})
+}
+
+func (s *Server) handleAvatarUploadURL(w http.ResponseWriter, r *http.Request, user authUser) {
+	if s.presignClient == nil || s.storageBucket == "" || s.storagePublicBase == "" {
+		writeErr(w, http.StatusServiceUnavailable, "storage_not_configured")
+		return
+	}
+	var req avatarUploadRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeErr(w, http.StatusBadRequest, "invalid_json")
+		return
+	}
+	req.FileName = strings.TrimSpace(req.FileName)
+	req.ContentType = strings.TrimSpace(strings.ToLower(req.ContentType))
+	if req.FileName == "" || req.ContentType == "" {
+		writeErr(w, http.StatusBadRequest, "missing_file_metadata")
+		return
+	}
+	if req.FileSize <= 0 || req.FileSize > maxAvatarFileSize {
+		writeErr(w, http.StatusBadRequest, "invalid_file_size")
+		return
+	}
+	ext, ok := avatarExtension(req.ContentType)
+	if !ok {
+		writeErr(w, http.StatusBadRequest, "unsupported_content_type")
+		return
+	}
+	objectKey := s.storageKeyPrefix + "/" + user.ID + "/" + strconv.FormatInt(time.Now().UTC().UnixNano(), 10) + ext
+	presigned, err := s.presignClient.PresignPutObject(r.Context(), &s3.PutObjectInput{
+		Bucket:      aws.String(s.storageBucket),
+		Key:         aws.String(objectKey),
+		ContentType: aws.String(req.ContentType),
+	}, func(opts *s3.PresignOptions) {
+		opts.Expires = 10 * time.Minute
+	})
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, "presign_failed")
+		return
+	}
+	writeJSON(w, http.StatusOK, avatarUploadResponse{
+		UploadURL:    presigned.URL,
+		FileURL:      s.storagePublicBase + "/" + objectKey,
+		ObjectKey:    objectKey,
+		Method:       http.MethodPut,
+		Headers:      map[string]string{"Content-Type": req.ContentType},
+		ExpiresInSec: 600,
+	})
 }
 
 func (s *Server) handleProfileComments(w http.ResponseWriter, r *http.Request, _ authUser) {
@@ -661,6 +745,42 @@ func envOr(k, d string) string {
 		return v
 	}
 	return d
+}
+
+func buildPresignClient() (*s3.PresignClient, error) {
+	accessKey := envOr("STORAGE_ACCESS_KEY", "")
+	secretKey := envOr("STORAGE_SECRET_KEY", "")
+	endpoint := strings.TrimRight(envOr("STORAGE_ENDPOINT", ""), "/")
+	region := envOr("STORAGE_REGION", "us-east-1")
+	if accessKey == "" || secretKey == "" || endpoint == "" {
+		return nil, errors.New("missing_storage_env")
+	}
+	cfg, err := config.LoadDefaultConfig(
+		context.Background(),
+		config.WithRegion(region),
+		config.WithCredentialsProvider(credentials.NewStaticCredentialsProvider(accessKey, secretKey, "")),
+	)
+	if err != nil {
+		return nil, err
+	}
+	client := s3.NewFromConfig(cfg, func(o *s3.Options) {
+		o.BaseEndpoint = aws.String(endpoint)
+		o.UsePathStyle = false
+	})
+	return s3.NewPresignClient(client), nil
+}
+
+func avatarExtension(contentType string) (string, bool) {
+	switch contentType {
+	case "image/jpeg", "image/jpg":
+		return ".jpg", true
+	case "image/png":
+		return ".png", true
+	case "image/webp":
+		return ".webp", true
+	default:
+		return "", false
+	}
 }
 
 func withJSON(next http.Handler) http.Handler {

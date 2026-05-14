@@ -97,6 +97,7 @@ import {
   type StatsSummary,
 } from "@/lib/rating";
 import {
+  createAvatarUpload,
   getMyProfile,
   getProfileComments,
   getPublicProfile,
@@ -4359,7 +4360,7 @@ function ProfileModal({
   const [commentDraft, setCommentDraft] = useState("");
   const [editBio, setEditBio] = useState("");
   const [editCountry, setEditCountry] = useState("");
-  const [editAvatar, setEditAvatar] = useState("");
+  const [avatarFile, setAvatarFile] = useState<File | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const loadComments = useCallback(
@@ -4398,7 +4399,7 @@ function ProfileModal({
         setProfile(loaded);
         setEditBio(loaded?.bio ?? "");
         setEditCountry(loaded?.country_code ?? "");
-        setEditAvatar(loaded?.avatar_url ?? "");
+        setAvatarFile(null);
         await loadComments();
       } catch (error) {
         if (!cancelled) {
@@ -4420,13 +4421,31 @@ function ProfileModal({
     setSaving(true);
     setError(null);
     try {
+      let avatarUrl = profile?.avatar_url ?? "";
+      if (avatarFile) {
+        const upload = await createAvatarUpload(accessToken, {
+          file_name: avatarFile.name,
+          content_type: avatarFile.type,
+          file_size: avatarFile.size,
+        });
+        const uploadResponse = await fetch(upload.upload_url, {
+          method: upload.method ?? "PUT",
+          headers: upload.headers ?? { "Content-Type": avatarFile.type },
+          body: avatarFile,
+        });
+        if (!uploadResponse.ok) {
+          throw new Error(`Avatar upload failed: ${uploadResponse.status}`);
+        }
+        avatarUrl = upload.file_url;
+      }
       const updated = await updateMyProfile(accessToken, {
-        avatar_url: editAvatar.trim(),
+        avatar_url: avatarUrl,
         country_code: editCountry.trim().toUpperCase(),
         bio: editBio.trim(),
       });
       if (updated) {
         setProfile(updated);
+        setAvatarFile(null);
         onProfileUpdated?.(updated);
       }
     } catch (error) {
@@ -4600,12 +4619,30 @@ function ProfileModal({
                   <div className="text-[10px] font-semibold uppercase tracking-[0.14em] text-zinc-600">
                     Edit Profile
                   </div>
-                  <input
-                    className="h-10 border border-zinc-800 bg-black/80 px-3 text-xs text-zinc-100 outline-none focus:border-purple-400"
-                    placeholder="Avatar URL"
-                    value={editAvatar}
-                    onChange={(event) => setEditAvatar(event.target.value)}
-                  />
+                  <label className="grid gap-2 border border-zinc-800 bg-black/80 p-3 text-xs text-zinc-100 transition-colors hover:border-purple-400">
+                    <span className="text-[10px] font-semibold uppercase tracking-[0.12em] text-zinc-500">
+                      Avatar Image
+                    </span>
+                    <input
+                      className="text-[10px] text-zinc-400 file:mr-3 file:border file:border-zinc-700 file:bg-zinc-900 file:px-3 file:py-1.5 file:text-[10px] file:font-semibold file:uppercase file:tracking-[0.12em] file:text-zinc-200"
+                      type="file"
+                      accept="image/jpeg,image/png,image/webp"
+                      onChange={(event) => {
+                        const file = event.target.files?.[0] ?? null;
+                        if (file && file.size > 5 * 1024 * 1024) {
+                          setError("Avatar must be 5 MB or smaller");
+                          event.target.value = "";
+                          setAvatarFile(null);
+                          return;
+                        }
+                        setError(null);
+                        setAvatarFile(file);
+                      }}
+                    />
+                    <span className="text-[10px] uppercase tracking-[0.12em] text-zinc-600">
+                      {avatarFile ? avatarFile.name : "PNG, JPG, or WEBP up to 5 MB"}
+                    </span>
+                  </label>
                   <input
                     className="h-10 border border-zinc-800 bg-black/80 px-3 text-xs uppercase text-zinc-100 outline-none focus:border-purple-400"
                     placeholder="Country code"

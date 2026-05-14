@@ -248,6 +248,13 @@ jobs:
             DEFAULT_RESULT_SOUND_URL=${{ vars.PROD_DEFAULT_RESULT_SOUND_URL }}
             DEFAULT_QUEUE_TYPE=${{ vars.PROD_DEFAULT_QUEUE_TYPE || 'duel' }}
             DEFAULT_REGION=${{ vars.PROD_DEFAULT_REGION || 'global' }}
+            STORAGE_BUCKET=${{ vars.PROD_STORAGE_BUCKET || 'chadchat' }}
+            STORAGE_ENDPOINT=${{ vars.PROD_STORAGE_ENDPOINT || 'https://ams1.vultrobjects.com' }}
+            STORAGE_REGION=${{ vars.PROD_STORAGE_REGION || 'us-east-1' }}
+            STORAGE_PUBLIC_BASE_URL=${{ vars.PROD_STORAGE_PUBLIC_BASE_URL }}
+            STORAGE_AVATAR_PREFIX=${{ vars.PROD_STORAGE_AVATAR_PREFIX || 'avatars' }}
+            STORAGE_ACCESS_KEY=${{ secrets.PROD_STORAGE_ACCESS_KEY }}
+            STORAGE_SECRET_KEY=${{ secrets.PROD_STORAGE_SECRET_KEY }}
             MYSQL_DATABASE=chadchat
             MYSQL_USER=app
             MYSQL_PASSWORD=${{ secrets.PROD_MYSQL_PASSWORD }}

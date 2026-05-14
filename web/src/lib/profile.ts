@@ -66,6 +66,21 @@ export type ProfileComment = {
   created_at: string;
 };
 
+export type AvatarUploadRequest = {
+  file_name: string;
+  content_type: string;
+  file_size: number;
+};
+
+export type AvatarUploadResponse = {
+  upload_url: string;
+  file_url: string;
+  object_key?: string;
+  method?: string;
+  headers?: Record<string, string>;
+  expires_in_sec?: number;
+};
+
 type ProfilePayload = {
   profile?: Profile;
 };
@@ -97,6 +112,21 @@ export async function updateMyProfile(
     accessToken,
   );
   return payload.profile ?? null;
+}
+
+export async function createAvatarUpload(
+  accessToken: string,
+  body: AvatarUploadRequest,
+) {
+  return authorizedRequest<AvatarUploadResponse>(
+    "/profiles/me/avatar-upload",
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    },
+    accessToken,
+  );
 }
 
 export async function getPublicProfile(accessToken: string, userID: string) {

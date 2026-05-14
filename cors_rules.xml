@@ -3,7 +3,8 @@
       <AllowedOrigin>https://chadchat.fun</AllowedOrigin>
       <AllowedMethod>GET</AllowedMethod>
       <AllowedMethod>HEAD</AllowedMethod>
-      <MaxAgeSeconds>3000</MaxAgeSeconds>
+      <AllowedMethod>PUT</AllowedMethod>
       <AllowedHeader>*</AllowedHeader>
+      <MaxAgeSeconds>3000</MaxAgeSeconds>
     </CORSRule>
   </CORSConfiguration>
