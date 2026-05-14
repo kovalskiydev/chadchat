@@ -62,6 +62,7 @@ export type ProfileComment = {
   author_user_id: string;
   author_nickname: string;
   target_user_id: string;
+  parent_comment_id?: string | null;
   text: string;
   created_at: string;
 };
@@ -166,13 +167,17 @@ export async function postProfileComment(
   accessToken: string,
   userID: string,
   text: string,
+  parentCommentID?: string | null,
 ) {
   const payload = await authorizedRequest<{ comment?: ProfileComment }>(
     `/profiles/${encodeURIComponent(userID)}/comments`,
     {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ text }),
+      body: JSON.stringify({
+        text,
+        ...(parentCommentID ? { parent_comment_id: parentCommentID } : {}),
+      }),
     },
     accessToken,
   );

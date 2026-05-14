@@ -4367,7 +4367,7 @@ function formatScoreOutOfTen(value: number | null) {
 
 function formatProfileScore(value?: number | null) {
   if (value === null || value === undefined || !Number.isFinite(value)) return "--";
-  return `${Math.max(0, Math.min(10, value * 2)).toFixed(2)}/10`;
+  return `${Math.max(0, Math.min(10, value * 2)).toFixed(1)}/10`;
 }
 
 function formatDateShort(value?: string | null) {
@@ -4412,6 +4412,8 @@ function ProfileModal({
   const [commentsLoading, setCommentsLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [commentDraft, setCommentDraft] = useState("");
+  const [replyDrafts, setReplyDrafts] = useState<Record<string, string>>({});
+  const [replyingTo, setReplyingTo] = useState<string | null>(null);
   const [editBio, setEditBio] = useState("");
   const [editCountry, setEditCountry] = useState("");
   const [avatarFile, setAvatarFile] = useState<File | null>(null);
@@ -4526,7 +4528,36 @@ function ProfileModal({
     }
   };
 
+  const submitReply = async (parentCommentID: string) => {
+    if (!accessToken || !userID) return;
+    const text = (replyDrafts[parentCommentID] ?? "").trim();
+    if (!text) return;
+    setSaving(true);
+    try {
+      const comment = await postProfileComment(accessToken, userID, text, parentCommentID);
+      if (comment) setComments((current) => [...current, comment]);
+      setReplyDrafts((current) => ({ ...current, [parentCommentID]: "" }));
+      setReplyingTo(null);
+    } catch (error) {
+      setError(error instanceof Error ? error.message : "Failed to post reply");
+    } finally {
+      setSaving(false);
+    }
+  };
+
   const progress = Math.max(0, Math.min(100, profile?.progress_percent ?? 0));
+  const rootComments = comments.filter((comment) => !comment.parent_comment_id);
+  const repliesByParent = comments.reduce<Record<string, ProfileComment[]>>(
+    (acc, comment) => {
+      if (!comment.parent_comment_id) return acc;
+      acc[comment.parent_comment_id] = [
+        ...(acc[comment.parent_comment_id] ?? []),
+        comment,
+      ];
+      return acc;
+    },
+    {},
+  );
 
   return (
     <div
@@ -4753,13 +4784,61 @@ function ProfileModal({
                   </button>
                 </form>
                 <div className="space-y-2">
-                  {comments.map((comment) => (
+                  {rootComments.map((comment) => (
                     <div className="border border-zinc-900 bg-black/60 p-3" key={comment.id}>
                       <div className="flex items-center justify-between gap-3 text-[10px] uppercase tracking-[0.12em] text-zinc-500">
                         <span className="font-semibold text-zinc-300">{comment.author_nickname}</span>
                         <span>{formatDateShort(comment.created_at)}</span>
                       </div>
                       <p className="mt-2 break-words text-xs leading-5 text-zinc-300">{comment.text}</p>
+                      <button
+                        className="mt-2 text-[10px] font-semibold uppercase tracking-[0.12em] text-purple-300 transition-colors hover:text-purple-100"
+                        type="button"
+                        onClick={() =>
+                          setReplyingTo((current) =>
+                            current === comment.id ? null : comment.id,
+                          )
+                        }
+                      >
+                        Reply
+                      </button>
+                      {replyingTo === comment.id && (
+                        <div className="mt-3 grid grid-cols-[1fr_auto] gap-2">
+                          <input
+                            className="h-9 border border-zinc-800 bg-black/80 px-3 text-xs text-zinc-100 outline-none focus:border-purple-400"
+                            placeholder={`Reply to ${comment.author_nickname}`}
+                            maxLength={1000}
+                            value={replyDrafts[comment.id] ?? ""}
+                            onChange={(event) =>
+                              setReplyDrafts((current) => ({
+                                ...current,
+                                [comment.id]: event.target.value,
+                              }))
+                            }
+                          />
+                          <button
+                            className="h-9 border border-purple-500/50 bg-purple-950/35 px-3 text-[10px] font-semibold uppercase tracking-[0.14em] text-purple-100 disabled:opacity-40"
+                            type="button"
+                            disabled={saving || !(replyDrafts[comment.id] ?? "").trim()}
+                            onClick={() => submitReply(comment.id)}
+                          >
+                            Send
+                          </button>
+                        </div>
+                      )}
+                      {Boolean(repliesByParent[comment.id]?.length) && (
+                        <div className="mt-3 space-y-2 border-l border-zinc-800 pl-3">
+                          {repliesByParent[comment.id].map((reply) => (
+                            <div className="border border-zinc-900 bg-zinc-950/60 p-3" key={reply.id}>
+                              <div className="flex items-center justify-between gap-3 text-[10px] uppercase tracking-[0.12em] text-zinc-500">
+                                <span className="font-semibold text-zinc-300">{reply.author_nickname}</span>
+                                <span>{formatDateShort(reply.created_at)}</span>
+                              </div>
+                              <p className="mt-2 break-words text-xs leading-5 text-zinc-300">{reply.text}</p>
+                            </div>
+                          ))}
+                        </div>
+                      )}
                     </div>
                   ))}
                   {!comments.length && !commentsLoading && (
