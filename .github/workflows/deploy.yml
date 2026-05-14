@@ -248,6 +248,10 @@ jobs:
             DEFAULT_RESULT_SOUND_URL=${{ vars.PROD_DEFAULT_RESULT_SOUND_URL }}
             DEFAULT_QUEUE_TYPE=${{ vars.PROD_DEFAULT_QUEUE_TYPE || 'duel' }}
             DEFAULT_REGION=${{ vars.PROD_DEFAULT_REGION || 'global' }}
+            WEBRTC_STUN_URL=${{ vars.PROD_WEBRTC_STUN_URL || 'stun:stun.l.google.com:19302' }}
+            WEBRTC_TURN_URLS=${{ vars.PROD_WEBRTC_TURN_URLS }}
+            WEBRTC_TURN_USERNAME=${{ secrets.PROD_WEBRTC_TURN_USERNAME }}
+            WEBRTC_TURN_CREDENTIAL=${{ secrets.PROD_WEBRTC_TURN_CREDENTIAL }}
             STORAGE_BUCKET=${{ vars.PROD_STORAGE_BUCKET || 'chadchat' }}
             STORAGE_ENDPOINT=${{ vars.PROD_STORAGE_ENDPOINT || 'https://ams1.vultrobjects.com' }}
             STORAGE_REGION=${{ vars.PROD_STORAGE_REGION || 'us-east-1' }}

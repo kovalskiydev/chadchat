@@ -78,6 +78,7 @@ import {
   duelMediaReady,
   duelQueueJoin,
   duelQueueLeave,
+  duelRtcConfig,
   duelScoreFrame,
   duelSignal,
   duelStream,
@@ -3151,6 +3152,8 @@ function DuelModal({
   const makingOfferRef = useRef(false);
   const ignoreOfferRef = useRef(false);
   const mediaReadySentRef = useRef(false);
+  const remoteStreamAttachedRef = useRef(false);
+  const iceConnectedRef = useRef(false);
   const searchAudioRef = useRef<HTMLAudioElement | null>(null);
   const searchAudioFadeRef = useRef<number | null>(null);
   const lastQueueTrackIndexRef = useRef<number | null>(null);
@@ -3177,13 +3180,20 @@ function DuelModal({
   } | null>(null);
   const [mediaReadyMap, setMediaReadyMap] = useState<Record<string, boolean>>({});
   const [queueRunKey, setQueueRunKey] = useState(0);
+  const [mediaRunKey, setMediaRunKey] = useState(0);
+  const [peerReadyKey, setPeerReadyKey] = useState(0);
   const [searchSoundEnabled, setSearchSoundEnabled] = useState(true);
   const [searchVolume, setSearchVolume] = useState(0.18);
   const [showFinalResult, setShowFinalResult] = useState(false);
   const [myScorePulse, setMyScorePulse] = useState(false);
   const [oppScorePulse, setOppScorePulse] = useState(false);
   const [phaseFlash, setPhaseFlash] = useState(false);
+  const [matchCancelled, setMatchCancelled] = useState<{
+    reason: string;
+    message: string;
+  } | null>(null);
   const finishedRef = useRef(false);
+  const resultSoundPlayedRef = useRef(false);
   const resultRevealMatchRef = useRef<string | null>(null);
   const lastPhaseRef = useRef<string | null>(null);
 
@@ -3224,6 +3234,8 @@ function DuelModal({
               ? "Post Chat"
               : phase === "finished"
                 ? "Finished"
+                : phase === "cancelled"
+                  ? "Cancelled"
               : "Queue";
   const phaseToneClass =
     phase === "awaiting_media"
@@ -3236,6 +3248,8 @@ function DuelModal({
             ? "border-amber-300/75 bg-amber-950/45 text-amber-100 animate-pulse"
             : phase === "result" || phase === "post_chat" || phase === "finished"
               ? "border-[#d4af37]/70 bg-[#d4af37]/12 text-[#f5d76e]"
+              : phase === "cancelled"
+                ? "border-red-500/55 bg-red-950/35 text-red-200"
               : "border-zinc-800 bg-zinc-950 text-zinc-400";
   const phaseCommand =
     phase === "awaiting_media"
@@ -3248,6 +3262,8 @@ function DuelModal({
             ? "SUDDEN DEATH"
             : phase === "result" || phase === "post_chat" || phase === "finished"
               ? "FINAL JUDGMENT"
+              : phase === "cancelled"
+                ? "MATCH CANCELLED"
               : "QUEUE ACTIVE";
   const isResultPhase =
     phase === "result" || phase === "post_chat" || phase === "finished";
@@ -3345,6 +3361,34 @@ function DuelModal({
     [ensureDuelAudioContext, preloadResultSound, resultSoundEnabled, resultSoundVolume],
   );
 
+  const maybeSendMediaReady = useCallback(() => {
+    if (!accessToken || !matchID || !streamRef.current) return;
+    if (mediaReadySentRef.current) return;
+    if (!remoteStreamAttachedRef.current) return;
+    if (!iceConnectedRef.current) return;
+
+    mediaReadySentRef.current = true;
+    void duelMediaReady(accessToken, matchID).catch((error: unknown) => {
+      mediaReadySentRef.current = false;
+      setError(error instanceof Error ? error.message : "Failed to confirm media");
+    });
+  }, [accessToken, matchID]);
+
+  const closePeerConnection = useCallback(() => {
+    peerRef.current?.close();
+    peerRef.current = null;
+    remoteStreamRef.current = null;
+    mediaReadySentRef.current = false;
+    remoteStreamAttachedRef.current = false;
+    iceConnectedRef.current = false;
+    pendingCandidatesRef.current = [];
+    makingOfferRef.current = false;
+    ignoreOfferRef.current = false;
+    if (remoteVideoRef.current) {
+      remoteVideoRef.current.srcObject = null;
+    }
+  }, []);
+
   const stopResultSound = useCallback(() => {
     if (activeResultSoundSourceRef.current) {
       activeResultSoundSourceRef.current.stop();
@@ -3367,6 +3411,7 @@ function DuelModal({
     const players = match.players as Array<Record<string, unknown>> | undefined;
     const mediaReady = match.media_ready as Record<string, boolean> | undefined;
     const rawResultSounds = match.result_sounds as Record<string, unknown> | undefined;
+    let normalizedResultSounds: Record<string, DuelResultSound> = {};
     if (mediaReady && typeof mediaReady === "object") {
       setMediaReadyMap(
         Object.fromEntries(
@@ -3375,12 +3420,12 @@ function DuelModal({
       );
     }
     if (rawResultSounds && typeof rawResultSounds === "object") {
-      const normalized = Object.fromEntries(
+      normalizedResultSounds = Object.fromEntries(
         Object.entries(rawResultSounds)
           .map(([userID, value]) => [userID, normalizeDuelResultSound(value)])
           .filter((entry): entry is [string, DuelResultSound] => Boolean(entry[1])),
       );
-      preloadResultSoundsMap(normalized);
+      preloadResultSoundsMap(normalizedResultSounds);
     }
     if (Array.isArray(players) && myUserId) {
       const mine = players.find((player) => String(player.user_id ?? "") === myUserId);
@@ -3408,8 +3453,9 @@ function DuelModal({
 
       const result = match.result as Record<string, unknown> | undefined;
       if (result) {
+        const winnerId = result.winner_id ? String(result.winner_id) : null;
         setResultSummary({
-          winnerId: result.winner_id ? String(result.winner_id) : null,
+          winnerId,
           loserId: result.loser_id ? String(result.loser_id) : null,
           reason: result.reason ? String(result.reason) : null,
           myFinal:
@@ -3428,6 +3474,11 @@ function DuelModal({
           oppNickname: opponent?.nickname ? String(opponent.nickname) : null,
           ratingDelta: null,
         });
+        if (nextPhase === "result" && winnerId && !resultSoundPlayedRef.current) {
+          const winnerSound = normalizedResultSounds[winnerId];
+          resultSoundPlayedRef.current = true;
+          void playPreloadedResultSound(winnerSound?.id, winnerSound);
+        }
       }
     }
 
@@ -3440,16 +3491,20 @@ function DuelModal({
     if (directOpponent) {
       setOpponentUserId(directOpponent);
     }
-  }, [extractMatchRecord, extractPhase, myUserId, preloadResultSoundsMap]);
+  }, [extractMatchRecord, extractPhase, myUserId, playPreloadedResultSound, preloadResultSoundsMap]);
 
   const resetMatchFlow = useCallback(() => {
     stopResultSound();
     finishedRef.current = false;
+    resultSoundPlayedRef.current = false;
     resultRevealMatchRef.current = null;
     lastPhaseRef.current = null;
     mediaReadySentRef.current = false;
+    remoteStreamAttachedRef.current = false;
+    iceConnectedRef.current = false;
     setQueueing(false);
     setMatchID("");
+    setPeerReadyKey(0);
     setPhase("queue");
     setSecondsLeft(null);
     setMyAvg(null);
@@ -3462,10 +3517,14 @@ function DuelModal({
     setStatus("Joining queue...");
     setError(null);
     setShowFinalResult(false);
+    setMatchCancelled(null);
     remoteStreamRef.current = null;
     preloadedSoundBuffersRef.current.clear();
     if (remoteVideoRef.current) {
       remoteVideoRef.current.srcObject = null;
+    }
+    if (!streamRef.current) {
+      setMediaRunKey((current) => current + 1);
     }
     setQueueRunKey((current) => current + 1);
   }, [stopResultSound]);
@@ -3618,7 +3677,7 @@ function DuelModal({
       streamRef.current?.getTracks().forEach((t) => t.stop());
       streamRef.current = null;
     };
-  }, []);
+  }, [mediaRunKey]);
 
   useEffect(() => {
     const attachLocal = async () => {
@@ -3648,75 +3707,107 @@ function DuelModal({
 
   useEffect(() => {
     if (!accessToken || !matchID || !streamRef.current) return;
-    const pc = new RTCPeerConnection({
-      iceServers: [{ urls: "stun:stun.l.google.com:19302" }],
-    });
-    peerRef.current = pc;
-    makingOfferRef.current = false;
-    ignoreOfferRef.current = false;
-    pendingCandidatesRef.current = [];
+    let cancelled = false;
+    let pc: RTCPeerConnection | null = null;
 
-    for (const track of streamRef.current.getTracks()) {
-      pc.addTrack(track, streamRef.current);
-    }
-
-    pc.ontrack = (event) => {
-      const [remoteStream] = event.streams;
-      if (!remoteStream) return;
-      remoteStreamRef.current = remoteStream;
-      if (remoteVideoRef.current) {
-        remoteVideoRef.current.srcObject = remoteStream;
-        void remoteVideoRef.current.play().catch(() => {});
-        if (
-          accessToken &&
-          matchID &&
-          streamRef.current &&
-          remoteVideoRef.current.srcObject &&
-          !mediaReadySentRef.current
-        ) {
-          mediaReadySentRef.current = true;
-          void duelMediaReady(accessToken, matchID).catch((error: unknown) => {
-            mediaReadySentRef.current = false;
-            setError(error instanceof Error ? error.message : "Failed to confirm media");
-          });
+    const waitForRemoteVideo = (video: HTMLVideoElement) =>
+      new Promise<void>((resolve) => {
+        if (video.readyState >= 2) {
+          resolve();
+          return;
         }
-      }
-      pushDebug(`ontrack: remote tracks=${remoteStream.getTracks().length}`);
-    };
+        let settled = false;
+        const done = () => {
+          if (settled) return;
+          settled = true;
+          video.removeEventListener("loadeddata", done);
+          video.removeEventListener("playing", done);
+          resolve();
+        };
+        video.addEventListener("loadeddata", done, { once: true });
+        video.addEventListener("playing", done, { once: true });
+        window.setTimeout(done, 3000);
+      });
 
-    pc.onicecandidate = (event) => {
-      if (!event.candidate) return;
-      pushDebug("local ICE candidate -> signal");
-      void duelSignal(accessToken, matchID, {
-        type: "ice-candidate",
-        candidate: event.candidate.candidate,
-        sdp_mid: event.candidate.sdpMid,
-        sdp_mline_index: event.candidate.sdpMLineIndex,
-      }).catch(() => {});
-    };
-
-    pc.onconnectionstatechange = () => {
-      pushDebug(`pc.connectionState=${pc.connectionState}`);
-    };
-    pc.oniceconnectionstatechange = () => {
-      pushDebug(`pc.iceConnectionState=${pc.iceConnectionState}`);
-    };
-    pc.onsignalingstatechange = () => {
-      pushDebug(`pc.signalingState=${pc.signalingState}`);
-    };
-
-    // offer is sent explicitly by deterministic offerer (myUserId < opponentUserId)
-
-    return () => {
-      peerRef.current?.close();
-      peerRef.current = null;
-      remoteStreamRef.current = null;
-      mediaReadySentRef.current = false;
-      pendingCandidatesRef.current = [];
+    const initPeer = async () => {
+      const rtcConfig = await duelRtcConfig(accessToken).catch(() => null);
+      if (cancelled) return;
+      pc = new RTCPeerConnection({
+        iceServers: rtcConfig?.ice_servers?.length
+          ? rtcConfig.ice_servers
+          : [{ urls: ["stun:stun.l.google.com:19302"] }],
+      });
+      peerRef.current = pc;
       makingOfferRef.current = false;
       ignoreOfferRef.current = false;
+      mediaReadySentRef.current = false;
+      remoteStreamAttachedRef.current = false;
+      iceConnectedRef.current = false;
+      pendingCandidatesRef.current = [];
+
+      const localStream = streamRef.current;
+      if (!localStream) return;
+      for (const track of localStream.getTracks()) {
+        pc.addTrack(track, localStream);
+      }
+      setPeerReadyKey((current) => current + 1);
+
+      pc.ontrack = (event) => {
+        const [remoteStream] = event.streams;
+        if (!remoteStream) return;
+        remoteStreamRef.current = remoteStream;
+        const remoteVideo = remoteVideoRef.current;
+        if (remoteVideo) {
+          remoteVideo.autoplay = true;
+          remoteVideo.playsInline = true;
+          remoteVideo.srcObject = remoteStream;
+          void (async () => {
+            await remoteVideo.play().catch(() => {});
+            await waitForRemoteVideo(remoteVideo);
+            if (cancelled) return;
+            remoteStreamAttachedRef.current = true;
+            maybeSendMediaReady();
+          })();
+        }
+        pushDebug(`ontrack: remote tracks=${remoteStream.getTracks().length}`);
+      };
+
+      pc.onicecandidate = (event) => {
+        if (!event.candidate) return;
+        pushDebug("local ICE candidate -> signal");
+        void duelSignal(accessToken, matchID, {
+          type: "ice-candidate",
+          candidate: event.candidate.candidate,
+          sdp_mid: event.candidate.sdpMid,
+          sdp_mline_index: event.candidate.sdpMLineIndex,
+        }).catch(() => {});
+      };
+
+      pc.onconnectionstatechange = () => {
+        pushDebug(`pc.connectionState=${pc?.connectionState}`);
+      };
+      pc.oniceconnectionstatechange = () => {
+        const state = pc?.iceConnectionState;
+        pushDebug(`pc.iceConnectionState=${state}`);
+        if (state === "connected" || state === "completed") {
+          iceConnectedRef.current = true;
+          maybeSendMediaReady();
+        }
+      };
+      pc.onsignalingstatechange = () => {
+        pushDebug(`pc.signalingState=${pc?.signalingState}`);
+      };
     };
-  }, [accessToken, matchID, pushDebug]);
+
+    void initPeer().catch((error: unknown) => {
+      if (!cancelled) setError(error instanceof Error ? error.message : "Failed to start call");
+    });
+
+    return () => {
+      cancelled = true;
+      closePeerConnection();
+    };
+  }, [accessToken, matchID, pushDebug, maybeSendMediaReady, closePeerConnection]);
 
   useEffect(() => {
     if (!accessToken || !matchID || !peerRef.current) return;
@@ -3744,7 +3835,7 @@ function DuelModal({
         makingOfferRef.current = false;
       }
     })();
-  }, [accessToken, matchID, isOfferer, pushDebug, opponentUserId]);
+  }, [accessToken, matchID, isOfferer, pushDebug, opponentUserId, peerReadyKey]);
 
   useEffect(() => {
     if (!accessToken) return;
@@ -3858,6 +3949,32 @@ function DuelModal({
             if (p === "post_chat") setStatus("Post chat");
             if (p === "finished") setStatus("Match finished");
           }
+          if (
+            msgType === "media_ready_update" &&
+            (payload.media_grace_phase === true || body.media_grace_phase === true)
+          ) {
+            setStatus("Stabilizing connection...");
+          }
+        }
+        if (msgType === "match_cancelled") {
+          const reason = String(payload.reason ?? body.reason ?? "media_disconnect");
+          stopSearchAudio();
+          stopResultSound();
+          closePeerConnection();
+          streamRef.current?.getTracks().forEach((track) => track.stop());
+          streamRef.current = null;
+          setQueueing(false);
+          setPhase("cancelled");
+          setStatus("Match cancelled");
+          setSecondsLeft(null);
+          setMatchCancelled({
+            reason,
+            message:
+              reason === "media_disconnect"
+                ? "Opponent disconnected before media was ready"
+                : "The match was cancelled before it started",
+          });
+          return;
         }
         if (msgType === "timer") {
           if (typeof payload.seconds_left === "number") setSecondsLeft(payload.seconds_left);
@@ -3881,7 +3998,10 @@ function DuelModal({
           const winnerSound =
             normalizeDuelResultSound(payload.winner_result_sound) ??
             normalizeDuelResultSound(body.winner_result_sound);
-          void playPreloadedResultSound(winnerSoundId, winnerSound);
+          if (!resultSoundPlayedRef.current) {
+            resultSoundPlayedRef.current = true;
+            void playPreloadedResultSound(winnerSoundId, winnerSound);
+          }
           if (!finishedRef.current) {
             finishedRef.current = true;
             void Promise.resolve(onFinished?.()).then((latestMatch) => {
@@ -4009,7 +4129,7 @@ function DuelModal({
       if (poll) window.clearInterval(poll);
       controller.abort();
     };
-  }, [accessToken, matchID, pushDebug, pickSignalPayload, myUserId, extractUsersFromMatch, onFinished, applyMatchSnapshot, extractPhase, playPreloadedResultSound]);
+  }, [accessToken, matchID, pushDebug, pickSignalPayload, myUserId, extractUsersFromMatch, onFinished, applyMatchSnapshot, extractPhase, playPreloadedResultSound, stopSearchAudio, stopResultSound, closePeerConnection]);
 
   useEffect(() => {
     if (!accessToken || !matchID) return;
@@ -4085,7 +4205,41 @@ function DuelModal({
           </button>
         </div>
         <div className="min-h-0 flex-1 overflow-hidden p-3 sm:p-4">
-          {isQueueScreen ? (
+          {matchCancelled ? (
+            <div className="flex min-h-[72vh] flex-col items-center justify-center border border-red-500/35 bg-black/85 px-6 text-center">
+              <div className="text-[10px] font-semibold uppercase tracking-[0.18em] text-red-300">
+                Match Cancelled
+              </div>
+              <div className="mt-4 text-3xl font-black uppercase tracking-[0.14em] text-zinc-100">
+                Connection Lost
+              </div>
+              <div className="mt-3 max-w-md text-sm uppercase tracking-[0.12em] text-zinc-500">
+                {matchCancelled.message}
+              </div>
+              <div className="mt-4 border border-zinc-800 bg-zinc-950 px-4 py-2 text-[10px] font-semibold uppercase tracking-[0.12em] text-zinc-500">
+                Reason: {matchCancelled.reason}
+              </div>
+              <div className="mt-8 grid w-full max-w-md gap-2 sm:grid-cols-2">
+                <button
+                  type="button"
+                  onClick={resetMatchFlow}
+                  className="inline-flex h-11 items-center justify-center border border-purple-500/50 bg-purple-950/35 px-4 text-[10px] font-semibold uppercase tracking-[0.14em] text-purple-100 transition-colors hover:border-purple-300 hover:text-white"
+                >
+                  Find Another Match
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    stopResultSound();
+                    onClose();
+                  }}
+                  className="inline-flex h-11 items-center justify-center border border-zinc-800 bg-black/70 px-4 text-[10px] font-semibold uppercase tracking-[0.14em] text-zinc-400 transition-colors hover:border-zinc-600 hover:text-zinc-200"
+                >
+                  Close
+                </button>
+              </div>
+            </div>
+          ) : isQueueScreen ? (
             <div className="flex min-h-[72vh] flex-col items-center justify-center border border-zinc-800 bg-black/80 px-6 text-center">
               <div className="text-[10px] font-semibold uppercase tracking-[0.18em] text-zinc-600">
                 Matchmaking

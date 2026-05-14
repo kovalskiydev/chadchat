@@ -31,6 +31,7 @@ const (
 	scoringDuration         = 10 * time.Second
 	overtimeDuration        = 5 * time.Second
 	postChatDuration        = 10 * time.Second
+	mediaReadyGraceDuration = 2 * time.Second
 	tieThreshold            = 0.15
 	scoreRateLimitPerMinute = 210
 )
@@ -43,6 +44,7 @@ type Server struct {
 	ratingServiceURL        string
 	ratingInternalSecret    string
 	defaultResultSoundURL   string
+	iceServers              []map[string]any
 	store                   *Store
 	limiter                 *rateutil.Limiter
 }
@@ -68,6 +70,7 @@ type Match struct {
 	Subscribers  map[string]chan []byte     `json:"-"`
 	Connections  map[string]int             `json:"-"`
 	Recorded     bool                       `json:"-"`
+	Cancelled    bool                       `json:"-"`
 }
 
 type PlayerProgress struct {
@@ -137,6 +140,10 @@ type signalRequest struct {
 	SDPMLine  int    `json:"sdp_mline_index,omitempty"`
 }
 
+type rtcConfigResponse struct {
+	ICEServers []map[string]any `json:"ice_servers"`
+}
+
 type mlPredictResponse struct {
 	Score float64 `json:"score"`
 }
@@ -150,6 +157,7 @@ func main() {
 		ratingServiceURL:        envOr("RATING_SERVICE_URL", "http://localhost:8086"),
 		ratingInternalSecret:    envOr("RATING_INTERNAL_SECRET", "dev-rating-secret-change-me"),
 		defaultResultSoundURL:   envOr("DEFAULT_RESULT_SOUND_URL", "https://cdn.chadchat.example/sounds/default_win.mp3"),
+		iceServers:              buildICEServers(),
 		store: &Store{
 			queue:         []authUser{},
 			matches:       map[string]*Match{},
@@ -165,6 +173,7 @@ func main() {
 	mux.HandleFunc("GET /duel/match/current", s.withAuth(s.handleCurrentMatch))
 	mux.HandleFunc("GET /duel/match/{matchID}", s.withAuth(s.handleGetMatch))
 	mux.HandleFunc("GET /duel/match/{matchID}/stream", s.withAuth(s.handleStream))
+	mux.HandleFunc("GET /duel/rtc-config", s.withAuth(s.handleRTCConfig))
 	mux.HandleFunc("POST /duel/match/{matchID}/media-ready", s.withAuth(s.handleMediaReady))
 	mux.HandleFunc("POST /duel/match/{matchID}/signal", s.withAuth(s.handleSignal))
 	mux.HandleFunc("POST /duel/match/{matchID}/score-frame", s.withRateLimit(scoreRateLimitPerMinute, time.Minute, s.withAuth(s.handleScoreFrame)))
@@ -338,6 +347,10 @@ func (s *Server) handleGetMatch(w http.ResponseWriter, r *http.Request, user aut
 	writeJSON(w, http.StatusOK, map[string]any{"match": snapshotMatch(m)})
 }
 
+func (s *Server) handleRTCConfig(w http.ResponseWriter, _ *http.Request, _ authUser) {
+	writeJSON(w, http.StatusOK, rtcConfigResponse{ICEServers: s.iceServers})
+}
+
 func (s *Server) handleScoreFrame(w http.ResponseWriter, r *http.Request, user authUser) {
 	mid := r.PathValue("matchID")
 	var req scoreFrameRequest
@@ -488,9 +501,13 @@ func (s *Server) handleMediaReady(w http.ResponseWriter, r *http.Request, user a
 
 	m.MediaReady[user.ID] = true
 	if m.MediaReady[m.PlayerA] && m.MediaReady[m.PlayerB] && m.Phase == phaseAwaitingMedia {
-		m.Phase = phasePreStart
-		m.PhaseEndsAt = time.Now().UTC().Add(preStartDuration)
-		s.broadcastLocked(m, map[string]any{"type": "phase_changed", "phase": m.Phase, "match": snapshotMatch(m)})
+		m.PhaseEndsAt = time.Now().UTC().Add(mediaReadyGraceDuration)
+		s.broadcastLocked(m, map[string]any{
+			"type":              "media_ready_update",
+			"match":             snapshotMatch(m),
+			"pre_start_in_sec":  int64(mediaReadyGraceDuration / time.Second),
+			"media_grace_phase": true,
+		})
 	} else {
 		s.broadcastLocked(m, map[string]any{
 			"type":  "media_ready_update",
@@ -612,6 +629,10 @@ func (s *Server) runMatchLifecycle(matchID string) {
 
 func (s *Server) syncPhaseLocked(m *Match) {
 	if m.Phase == phaseAwaitingMedia {
+		if m.MediaReady[m.PlayerA] && m.MediaReady[m.PlayerB] && !m.PhaseEndsAt.IsZero() && !time.Now().UTC().Before(m.PhaseEndsAt) {
+			m.Phase = phasePreStart
+			m.PhaseEndsAt = time.Now().UTC().Add(preStartDuration)
+		}
 		return
 	}
 	now := time.Now().UTC()
@@ -659,6 +680,21 @@ func (s *Server) handleDisconnectLocked(m *Match, userID string) {
 		return
 	}
 	if m.Phase == phaseFinished || m.Phase == phaseResult || m.Phase == phasePostChat {
+		return
+	}
+	if m.Phase == phaseAwaitingMedia || !m.MediaReady[userID] || !m.MediaReady[m.PlayerA] || !m.MediaReady[m.PlayerB] {
+		m.Cancelled = true
+		m.Recorded = true
+		m.Result = nil
+		m.Phase = phaseFinished
+		m.PhaseEndsAt = time.Now().UTC()
+		delete(s.store.userToMatchID, m.PlayerA)
+		delete(s.store.userToMatchID, m.PlayerB)
+		s.broadcastLocked(m, map[string]any{
+			"type":   "match_cancelled",
+			"reason": "media_disconnect",
+			"match":  snapshotMatch(m),
+		})
 		return
 	}
 	opponent := m.PlayerA
@@ -903,6 +939,36 @@ func buildDuelRecord(m *Match) duelRecordRequest {
 		}
 	}
 	return req
+}
+
+func buildICEServers() []map[string]any {
+	servers := []map[string]any{}
+	if stunURL := strings.TrimSpace(envOr("WEBRTC_STUN_URL", "stun:stun.l.google.com:19302")); stunURL != "" {
+		servers = append(servers, map[string]any{"urls": []string{stunURL}})
+	}
+	turnURLs := splitCSV(envOr("WEBRTC_TURN_URLS", ""))
+	turnUsername := strings.TrimSpace(envOr("WEBRTC_TURN_USERNAME", ""))
+	turnCredential := strings.TrimSpace(envOr("WEBRTC_TURN_CREDENTIAL", ""))
+	if len(turnURLs) > 0 && turnUsername != "" && turnCredential != "" {
+		servers = append(servers, map[string]any{
+			"urls":       turnURLs,
+			"username":   turnUsername,
+			"credential": turnCredential,
+		})
+	}
+	return servers
+}
+
+func splitCSV(raw string) []string {
+	parts := strings.Split(raw, ",")
+	out := make([]string, 0, len(parts))
+	for _, part := range parts {
+		part = strings.TrimSpace(part)
+		if part != "" {
+			out = append(out, part)
+		}
+	}
+	return out
 }
 
 func (s *Server) recordFinishedMatch(req duelRecordRequest) {

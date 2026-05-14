@@ -13,6 +13,14 @@ export type DuelMatch = {
   [key: string]: unknown;
 };
 
+export type DuelRtcConfig = {
+  ice_servers?: RTCIceServer[];
+};
+
+export async function duelRtcConfig(accessToken: string) {
+  return authorizedRequest<DuelRtcConfig>("/duel/rtc-config", undefined, accessToken);
+}
+
 export async function duelQueueJoin(accessToken: string) {
   return authorizedRequest<JsonRecord>("/duel/queue/join", { method: "POST" }, accessToken);
 }
