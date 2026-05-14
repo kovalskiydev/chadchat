@@ -97,8 +97,7 @@ Flow:
 - `PROD_ADMIN_API_SECRET`
 - `PROD_MYSQL_PASSWORD`
 - `PROD_MYSQL_ROOT_PASSWORD`
-- `PROD_WEBRTC_TURN_USERNAME`
-- `PROD_WEBRTC_TURN_CREDENTIAL`
+- `PROD_WEBRTC_TURN_SHARED_SECRET`
 - `PROD_STORAGE_ACCESS_KEY`
 - `PROD_STORAGE_SECRET_KEY`
 
@@ -111,6 +110,7 @@ Flow:
 - `PROD_DEFAULT_RESULT_SOUND_URL`
 - `PROD_WEBRTC_STUN_URL` optional, default `stun:stun.l.google.com:19302`
 - `PROD_WEBRTC_TURN_URLS`
+- `PROD_WEBRTC_TURN_TTL_SEC` optional, default `600`
 - `PROD_STORAGE_BUCKET` optional, default `chadchat`
 - `PROD_STORAGE_ENDPOINT` optional, default `https://ams1.vultrobjects.com`
 - `PROD_STORAGE_REGION` optional, default `us-east-1`
@@ -164,7 +164,7 @@ The gateway and services already support this through env variables.
 - Configure bucket CORS so your frontend origins can upload directly to object storage.
 - Keep private service ports closed if the service stays behind the gateway.
 - `duel-service` queue/live match state, SSE subscribers, and rate limiting are still in memory.
-- `duel-service` WebRTC relay config comes from `WEBRTC_STUN_URL`, `WEBRTC_TURN_URLS`, `WEBRTC_TURN_USERNAME`, and `WEBRTC_TURN_CREDENTIAL`.
+- `duel-service` WebRTC relay config comes from `WEBRTC_STUN_URL`, `WEBRTC_TURN_URLS`, `WEBRTC_TURN_SHARED_SECRET`, and `WEBRTC_TURN_TTL_SEC`.
 - Public API health is available at `/health` on `api-gateway`; it aggregates health of auth, verification, test lab, live chat, duel, and ML services.
 
 ## MySQL rollout

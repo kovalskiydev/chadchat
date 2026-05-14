@@ -3730,12 +3730,13 @@ function DuelModal({
       });
 
     const initPeer = async () => {
-      const rtcConfig = await duelRtcConfig(accessToken).catch(() => null);
+      const rtcConfig = await duelRtcConfig(accessToken);
       if (cancelled) return;
+      if (!rtcConfig.ice_servers?.length) {
+        throw new Error("RTC config is missing ICE servers");
+      }
       pc = new RTCPeerConnection({
-        iceServers: rtcConfig?.ice_servers?.length
-          ? rtcConfig.ice_servers
-          : [{ urls: ["stun:stun.l.google.com:19302"] }],
+        iceServers: rtcConfig.ice_servers,
       });
       peerRef.current = pc;
       makingOfferRef.current = false;

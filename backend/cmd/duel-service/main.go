@@ -2,6 +2,9 @@ package main
 
 import (
 	"bytes"
+	"crypto/hmac"
+	"crypto/sha1"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -11,6 +14,7 @@ import (
 	"net/http"
 	"os"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -44,7 +48,12 @@ type Server struct {
 	ratingServiceURL        string
 	ratingInternalSecret    string
 	defaultResultSoundURL   string
-	iceServers              []map[string]any
+	stunURL                 string
+	turnURLs                []string
+	turnUsername            string
+	turnCredential          string
+	turnSharedSecret        string
+	turnCredentialTTL       time.Duration
 	store                   *Store
 	limiter                 *rateutil.Limiter
 }
@@ -157,7 +166,12 @@ func main() {
 		ratingServiceURL:        envOr("RATING_SERVICE_URL", "http://localhost:8086"),
 		ratingInternalSecret:    envOr("RATING_INTERNAL_SECRET", "dev-rating-secret-change-me"),
 		defaultResultSoundURL:   envOr("DEFAULT_RESULT_SOUND_URL", "https://cdn.chadchat.example/sounds/default_win.mp3"),
-		iceServers:              buildICEServers(),
+		stunURL:                 strings.TrimSpace(envOr("WEBRTC_STUN_URL", "stun:stun.l.google.com:19302")),
+		turnURLs:                splitCSV(envOr("WEBRTC_TURN_URLS", "")),
+		turnUsername:            strings.TrimSpace(envOr("WEBRTC_TURN_USERNAME", "")),
+		turnCredential:          strings.TrimSpace(envOr("WEBRTC_TURN_CREDENTIAL", "")),
+		turnSharedSecret:        strings.TrimSpace(envOr("WEBRTC_TURN_SHARED_SECRET", "")),
+		turnCredentialTTL:       turnCredentialTTL(),
 		store: &Store{
 			queue:         []authUser{},
 			matches:       map[string]*Match{},
@@ -348,7 +362,7 @@ func (s *Server) handleGetMatch(w http.ResponseWriter, r *http.Request, user aut
 }
 
 func (s *Server) handleRTCConfig(w http.ResponseWriter, _ *http.Request, _ authUser) {
-	writeJSON(w, http.StatusOK, rtcConfigResponse{ICEServers: s.iceServers})
+	writeJSON(w, http.StatusOK, rtcConfigResponse{ICEServers: s.buildICEServers()})
 }
 
 func (s *Server) handleScoreFrame(w http.ResponseWriter, r *http.Request, user authUser) {
@@ -941,22 +955,39 @@ func buildDuelRecord(m *Match) duelRecordRequest {
 	return req
 }
 
-func buildICEServers() []map[string]any {
+func (s *Server) buildICEServers() []map[string]any {
 	servers := []map[string]any{}
-	if stunURL := strings.TrimSpace(envOr("WEBRTC_STUN_URL", "stun:stun.l.google.com:19302")); stunURL != "" {
-		servers = append(servers, map[string]any{"urls": []string{stunURL}})
+	if s.stunURL != "" {
+		servers = append(servers, map[string]any{"urls": []string{s.stunURL}})
 	}
-	turnURLs := splitCSV(envOr("WEBRTC_TURN_URLS", ""))
-	turnUsername := strings.TrimSpace(envOr("WEBRTC_TURN_USERNAME", ""))
-	turnCredential := strings.TrimSpace(envOr("WEBRTC_TURN_CREDENTIAL", ""))
-	if len(turnURLs) > 0 && turnUsername != "" && turnCredential != "" {
-		servers = append(servers, map[string]any{
-			"urls":       turnURLs,
-			"username":   turnUsername,
-			"credential": turnCredential,
-		})
+	if len(s.turnURLs) > 0 {
+		if username, credential, ok := s.generateTurnCredentials(); ok {
+			servers = append(servers, map[string]any{
+				"urls":       s.turnURLs,
+				"username":   username,
+				"credential": credential,
+			})
+		} else if s.turnUsername != "" && s.turnCredential != "" {
+			servers = append(servers, map[string]any{
+				"urls":       s.turnURLs,
+				"username":   s.turnUsername,
+				"credential": s.turnCredential,
+			})
+		}
 	}
 	return servers
+}
+
+func (s *Server) generateTurnCredentials() (string, string, bool) {
+	if s.turnSharedSecret == "" || len(s.turnURLs) == 0 {
+		return "", "", false
+	}
+	expiry := time.Now().UTC().Add(s.turnCredentialTTL).Unix()
+	username := fmt.Sprintf("%d", expiry)
+	mac := hmac.New(sha1.New, []byte(s.turnSharedSecret))
+	_, _ = mac.Write([]byte(username))
+	credential := base64.StdEncoding.EncodeToString(mac.Sum(nil))
+	return username, credential, true
 }
 
 func splitCSV(raw string) []string {
@@ -969,6 +1000,16 @@ func splitCSV(raw string) []string {
 		}
 	}
 	return out
+}
+
+func turnCredentialTTL() time.Duration {
+	ttlSec := 600
+	if raw := strings.TrimSpace(envOr("WEBRTC_TURN_TTL_SEC", "")); raw != "" {
+		if n, err := strconv.Atoi(raw); err == nil && n > 0 {
+			return time.Duration(n) * time.Second
+		}
+	}
+	return time.Duration(ttlSec) * time.Second
 }
 
 func (s *Server) recordFinishedMatch(req duelRecordRequest) {
