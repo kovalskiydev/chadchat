@@ -20,6 +20,7 @@ export type LeaderboardEntry = {
   rating: number;
   peak_rating: number;
   rank: string;
+  avatar_url?: string;
   position?: number;
   updated_at?: string;
 };

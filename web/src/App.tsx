@@ -173,6 +173,7 @@ type UiPeriodStats = {
 type ChatMessage = {
   id: number | string;
   userId?: string;
+  avatarUrl?: string;
   createdAt?: string;
   user: string;
   text: string;
@@ -372,10 +373,22 @@ function getAvatarClass(user: string) {
 function Avatar({
   user,
   className,
+  src,
 }: {
   user: string;
   className?: string;
+  src?: string | null;
 }) {
+  if (src) {
+    return (
+      <img
+        alt=""
+        className={cn("shrink-0 border border-white/10 object-cover", className)}
+        src={src}
+      />
+    );
+  }
+
   return (
     <div
       className={cn(
@@ -583,10 +596,12 @@ function normalizeDuelResultSound(value: unknown): DuelResultSound | null {
 function PositionAvatar({
   position,
   user,
+  avatarUrl,
   onClick,
 }: {
   position: number;
   user: string;
+  avatarUrl?: string;
   onClick?: () => void;
 }) {
   return (
@@ -597,7 +612,7 @@ function PositionAvatar({
       disabled={!onClick}
       aria-label={`Open ${user} profile`}
     >
-      <Avatar user={user} className="h-9 w-9" />
+      <Avatar user={user} className="h-9 w-9" src={avatarUrl} />
       <span
         className={cn(
           "absolute -bottom-1 -right-1 flex h-5 min-w-5 items-center justify-center border px-1 text-[9px] font-black tabular-nums",
@@ -846,6 +861,7 @@ function ChatMessageItem({
   const titleInlineStyle = getInlineColorStyle(titleStyle);
   const nicknameInlineStyle = getInlineColorStyle(nicknameStyle);
   const textInlineStyle = textStyle?.color ? { color: textStyle.color } : undefined;
+  const avatarUrl = avatarStyle?.url ?? message.avatarUrl;
 
   useEffect(() => {
     const id = window.requestAnimationFrame(() => setEntered(true));
@@ -868,15 +884,7 @@ function ChatMessageItem({
         onClick={() => message.userId && onOpenProfile?.(message.userId)}
         aria-label={`Open ${message.user} profile`}
       >
-        {avatarStyle?.url ? (
-          <img
-            alt=""
-            className="h-7 w-7 border border-zinc-800 object-cover"
-            src={avatarStyle.url}
-          />
-        ) : (
-          <Avatar user={message.user} className="h-7 w-7" />
-        )}
+        <Avatar user={message.user} className="h-7 w-7" src={avatarUrl} />
       </button>
       <div className="min-w-0">
         <div className="mb-1 flex items-center justify-between gap-2">
@@ -1710,6 +1718,7 @@ function LiveChat({
   const [messages, setMessages] = useState<ChatMessage[]>(initialChatMessages);
   const [draft, setDraft] = useState("");
   const [sending, setSending] = useState(false);
+  const [avatarByUserId, setAvatarByUserId] = useState<Record<string, string>>({});
   const chatEndRef = useRef<HTMLDivElement>(null);
   const nextIdRef = useRef(initialChatMessages.length + 1);
 
@@ -1738,13 +1747,18 @@ function LiveChat({
 
     const mapIncoming = (msg: LiveChatMessage): ChatMessage => {
       const user = (msg.sender_nickname ?? msg.nickname ?? msg.user ?? "USER").toString();
+      const userId = msg.sender_id !== undefined ? String(msg.sender_id) : undefined;
       const mine = user.toLowerCase() === currentUserName.toLowerCase();
       return {
         id:
           msg.id ??
           msg.sender_id ??
           `${user}|${msg.text ?? ""}|${msg.created_at ?? ""}`,
-        userId: msg.sender_id !== undefined ? String(msg.sender_id) : undefined,
+        userId,
+        avatarUrl:
+          msg.sender_avatar_url ??
+          msg.avatar_url ??
+          msg.chat_style?.avatar?.url,
         createdAt: msg.created_at,
         user,
         text: msg.text ?? "",
@@ -1811,6 +1825,43 @@ function LiveChat({
       controller.abort();
     };
   }, [accessToken, currentUserName]);
+
+  useEffect(() => {
+    if (!accessToken) return;
+    const missingIds = Array.from(
+      new Set(
+        messages
+          .map((message) => message.userId)
+          .filter((id): id is string => Boolean(id && !avatarByUserId[id])),
+      ),
+    );
+    if (!missingIds.length) return;
+
+    let cancelled = false;
+    void Promise.all(
+      missingIds.map(async (id) => {
+        const profile = await getPublicProfile(accessToken, id).catch(() => null);
+        return [id, profile?.avatar_url ?? ""] as const;
+      }),
+    ).then((entries) => {
+      if (cancelled) return;
+      setAvatarByUserId((current) => ({
+        ...current,
+        ...Object.fromEntries(entries.filter(([, avatarUrl]) => avatarUrl)),
+      }));
+      setMessages((current) =>
+        current.map((message) => {
+          if (message.avatarUrl || !message.userId) return message;
+          const avatarUrl = entries.find(([id]) => id === message.userId)?.[1];
+          return avatarUrl ? { ...message, avatarUrl } : message;
+        }),
+      );
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [accessToken, avatarByUserId, messages]);
 
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ block: "end" });
@@ -2599,10 +2650,12 @@ function TopsLeaderboard({
   entries,
   loading,
   onOpenProfile,
+  avatarByUserId,
 }: {
   entries: LeaderboardEntry[];
   loading: boolean;
   onOpenProfile: (userID: string) => void;
+  avatarByUserId: Record<string, string>;
 }) {
   const [page, setPage] = useState(0);
   const sortedPlayers = [...entries].sort((a, b) => b.rating - a.rating);
@@ -2658,6 +2711,7 @@ function TopsLeaderboard({
                 <PositionAvatar
                   position={position}
                   user={player.nickname}
+                  avatarUrl={player.avatar_url ?? avatarByUserId[player.user_id]}
                   onClick={() => onOpenProfile(player.user_id)}
                 />
                 <div className="min-w-0">
@@ -5723,6 +5777,7 @@ export default function App() {
   const [ratingDataLoading, setRatingDataLoading] = useState(false);
   const [leaderboardEntries, setLeaderboardEntries] = useState<LeaderboardEntry[]>([]);
   const [leaderboardLoading, setLeaderboardLoading] = useState(false);
+  const [leaderboardAvatarByUserId, setLeaderboardAvatarByUserId] = useState<Record<string, string>>({});
   const [resultSoundOptions, setResultSoundOptions] = useState<ResultSoundOption[]>([]);
   const [resultSoundLoading, setResultSoundLoading] = useState(false);
   const [profileUserID, setProfileUserID] = useState<string | null>(null);
@@ -5788,6 +5843,7 @@ export default function App() {
         setRecentForm([]);
         setQueueInfo(null);
         setLeaderboardEntries([]);
+        setLeaderboardAvatarByUserId({});
         setChatCatalog(null);
         setChatSelection(null);
         setChatCustomizationError(null);
@@ -6016,7 +6072,10 @@ export default function App() {
         setStatsPeriodData({});
         setRecentForm([]);
         setQueueInfo(null);
-        if (includeLeaderboard) setLeaderboardEntries([]);
+        if (includeLeaderboard) {
+          setLeaderboardEntries([]);
+          setLeaderboardAvatarByUserId({});
+        }
         return null;
       } finally {
         if (!shouldCancel() && options?.setLoading) {
@@ -6037,6 +6096,7 @@ export default function App() {
       setRecentForm([]);
       setQueueInfo(null);
       setLeaderboardEntries([]);
+      setLeaderboardAvatarByUserId({});
       setLeaderboardLoading(false);
       setResultSoundOptions([]);
       setResultSoundLoading(false);
@@ -6089,6 +6149,33 @@ export default function App() {
       cancelled = true;
     };
   }, [tokens?.accessToken]);
+
+  useEffect(() => {
+    if (!tokens?.accessToken || !leaderboardEntries.length) return;
+    const missingIds = leaderboardEntries
+      .filter((entry) => !entry.avatar_url && !leaderboardAvatarByUserId[entry.user_id])
+      .map((entry) => entry.user_id);
+    const uniqueIds = Array.from(new Set(missingIds));
+    if (!uniqueIds.length) return;
+
+    let cancelled = false;
+    void Promise.all(
+      uniqueIds.map(async (id) => {
+        const profile = await getPublicProfile(tokens.accessToken, id).catch(() => null);
+        return [id, profile?.avatar_url ?? ""] as const;
+      }),
+    ).then((entries) => {
+      if (cancelled) return;
+      setLeaderboardAvatarByUserId((current) => ({
+        ...current,
+        ...Object.fromEntries(entries.filter(([, avatarUrl]) => avatarUrl)),
+      }));
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [leaderboardAvatarByUserId, leaderboardEntries, tokens?.accessToken]);
 
   const handleSelectResultSound = useCallback(
     async (sound: ResultSoundOption) => {
@@ -6400,6 +6487,7 @@ export default function App() {
       setRecentForm([]);
       setQueueInfo(null);
       setLeaderboardEntries([]);
+      setLeaderboardAvatarByUserId({});
       setShowEntryChoice(true);
       setAuthMode("login");
       setAuthNickname("");
@@ -6661,6 +6749,7 @@ export default function App() {
               entries={leaderboardEntries}
               loading={leaderboardLoading}
               onOpenProfile={handleOpenProfile}
+              avatarByUserId={leaderboardAvatarByUserId}
             />
           </Panel>
         </div>
