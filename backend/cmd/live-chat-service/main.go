@@ -34,6 +34,7 @@ type ChatMessage struct {
 	SenderAvatarURL string    `json:"sender_avatar_url,omitempty"`
 	Text            string    `json:"text"`
 	ChatStyle       any       `json:"chat_style,omitempty"`
+	IsDeleted       bool      `json:"is_deleted,omitempty"`
 	CreatedAt       time.Time `json:"created_at"`
 }
 
@@ -90,6 +91,7 @@ func main() {
 	mux.HandleFunc("POST /live-chat/history", s.withAuth(s.handleHistoryWithLimit))
 	mux.HandleFunc("GET /live-chat/stream", s.withAuth(s.handleStream))
 	mux.HandleFunc("POST /live-chat/messages", s.withRateLimit(30, time.Minute, s.withAuth(s.handlePostMessage)))
+	mux.HandleFunc("DELETE /live-chat/messages/{messageID}", s.withAuth(s.handleDeleteMessage))
 
 	addr := ":" + envOr("PORT", "8084")
 	log.Printf("live-chat-service on %s", addr)
@@ -122,6 +124,8 @@ func liveChatSchema() []string {
 			sender_nickname VARCHAR(64) NOT NULL,
 			text TEXT NOT NULL,
 			chat_style_json JSON NULL,
+			deleted_at DATETIME(6) NULL,
+			deleted_by_user_id VARCHAR(64) NULL,
 			created_at DATETIME(6) NOT NULL,
 			INDEX idx_live_chat_created_at (created_at)
 		) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`,
@@ -140,12 +144,38 @@ func ensureLiveChatColumns(db *sql.DB) error {
 		return fmt.Errorf("check chat_style_json column: %w", err)
 	}
 	if count > 0 {
-		return nil
+		goto ensureDeleteColumns
 	}
 	if _, err := db.Exec(
 		`ALTER TABLE live_chat_messages ADD COLUMN chat_style_json JSON NULL AFTER text`,
 	); err != nil {
 		return fmt.Errorf("add chat_style_json column: %w", err)
+	}
+ensureDeleteColumns:
+	if err := ensureLiveChatDeleteColumns(db); err != nil {
+		return err
+	}
+	return nil
+}
+
+func ensureLiveChatDeleteColumns(db *sql.DB) error {
+	hasDeletedAt, err := mysqlutil.ColumnExists(db, "live_chat_messages", "deleted_at")
+	if err != nil {
+		return fmt.Errorf("check deleted_at column: %w", err)
+	}
+	if !hasDeletedAt {
+		if _, err := db.Exec(`ALTER TABLE live_chat_messages ADD COLUMN deleted_at DATETIME(6) NULL AFTER chat_style_json`); err != nil {
+			return fmt.Errorf("add deleted_at column: %w", err)
+		}
+	}
+	hasDeletedBy, err := mysqlutil.ColumnExists(db, "live_chat_messages", "deleted_by_user_id")
+	if err != nil {
+		return fmt.Errorf("check deleted_by_user_id column: %w", err)
+	}
+	if !hasDeletedBy {
+		if _, err := db.Exec(`ALTER TABLE live_chat_messages ADD COLUMN deleted_by_user_id VARCHAR(64) NULL AFTER deleted_at`); err != nil {
+			return fmt.Errorf("add deleted_by_user_id column: %w", err)
+		}
 	}
 	return nil
 }
@@ -276,6 +306,46 @@ func (s *Server) handlePostMessage(w http.ResponseWriter, r *http.Request, user 
 	writeJSON(w, http.StatusOK, map[string]any{"message": msg})
 }
 
+func (s *Server) handleDeleteMessage(w http.ResponseWriter, r *http.Request, user authUser) {
+	if user.Role != "admin" {
+		writeErr(w, http.StatusForbidden, "forbidden")
+		return
+	}
+	messageID := strings.TrimSpace(r.PathValue("messageID"))
+	if messageID == "" {
+		writeErr(w, http.StatusBadRequest, "missing_message_id")
+		return
+	}
+	var deletedAt sql.NullTime
+	err := s.db.QueryRow(`SELECT deleted_at FROM live_chat_messages WHERE id = ?`, messageID).Scan(&deletedAt)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			writeErr(w, http.StatusNotFound, "message_not_found")
+			return
+		}
+		writeErr(w, http.StatusInternalServerError, "db_error")
+		return
+	}
+	if !deletedAt.Valid {
+		if _, err := s.db.Exec(
+			`UPDATE live_chat_messages
+			 SET text = '', deleted_at = ?, deleted_by_user_id = ?
+			 WHERE id = ?`,
+			time.Now().UTC(), user.ID, messageID,
+		); err != nil {
+			writeErr(w, http.StatusInternalServerError, "db_error")
+			return
+		}
+	}
+	payload, _ := json.Marshal(map[string]any{
+		"type":       "message_deleted",
+		"message_id": messageID,
+		"is_deleted": true,
+	})
+	s.broadcast(payload)
+	writeJSON(w, http.StatusOK, map[string]any{"status": "ok", "message_id": messageID, "is_deleted": true})
+}
+
 func (s *Server) handleStream(w http.ResponseWriter, r *http.Request, user authUser) {
 	flusher, ok := w.(http.Flusher)
 	if !ok {
@@ -333,9 +403,9 @@ func (s *Server) handleStream(w http.ResponseWriter, r *http.Request, user authU
 
 func (s *Server) fetchHistory(limit int) ([]ChatMessage, error) {
 	rows, err := s.db.Query(
-		`SELECT recent.id, recent.sender_id, recent.sender_nickname, COALESCE(u.role, 'user'), COALESCE(up.avatar_url, ''), recent.text, recent.chat_style_json, recent.created_at
+		`SELECT recent.id, recent.sender_id, recent.sender_nickname, COALESCE(u.role, 'user'), COALESCE(up.avatar_url, ''), recent.text, recent.chat_style_json, recent.deleted_at, recent.created_at
 		 FROM (
-		 	SELECT id, sender_id, sender_nickname, text, chat_style_json, created_at
+		 	SELECT id, sender_id, sender_nickname, text, chat_style_json, deleted_at, created_at
 		 	FROM live_chat_messages
 		 	ORDER BY created_at DESC
 		 	LIMIT ?
@@ -354,8 +424,13 @@ func (s *Server) fetchHistory(limit int) ([]ChatMessage, error) {
 	for rows.Next() {
 		var msg ChatMessage
 		var styleRaw sql.NullString
-		if err := rows.Scan(&msg.ID, &msg.SenderID, &msg.SenderNickname, &msg.SenderRole, &msg.SenderAvatarURL, &msg.Text, &styleRaw, &msg.CreatedAt); err != nil {
+		var deletedAt sql.NullTime
+		if err := rows.Scan(&msg.ID, &msg.SenderID, &msg.SenderNickname, &msg.SenderRole, &msg.SenderAvatarURL, &msg.Text, &styleRaw, &deletedAt, &msg.CreatedAt); err != nil {
 			return nil, err
+		}
+		if deletedAt.Valid {
+			msg.IsDeleted = true
+			msg.Text = ""
 		}
 		if styleRaw.Valid && styleRaw.String != "" {
 			var style any

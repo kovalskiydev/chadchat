@@ -586,7 +586,7 @@ func (s *Server) handleDeleteProfileComment(w http.ResponseWriter, r *http.Reque
 		writeErr(w, http.StatusBadRequest, "comment_target_mismatch")
 		return
 	}
-	if user.ID != authorUserID && user.ID != targetUserID {
+	if user.ID != authorUserID && user.ID != targetUserID && user.Role != "admin" {
 		writeErr(w, http.StatusForbidden, "forbidden")
 		return
 	}

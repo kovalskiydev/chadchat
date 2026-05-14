@@ -55,6 +55,7 @@ import {
   type TestLabRoom,
 } from "@/lib/testLab";
 import {
+  deleteLiveChatMessage,
   getLiveChatHistory,
   sendLiveChatMessage,
   streamLiveChat,
@@ -180,6 +181,7 @@ type ChatMessage = {
   createdAt?: string;
   user: string;
   text: string;
+  isDeleted?: boolean;
   chatStyle?: ChatStyleSnapshot | null;
   mine?: boolean;
   pending?: boolean;
@@ -866,10 +868,14 @@ function ChatMessageItem({
   message,
   chatCustomization,
   onOpenProfile,
+  canDelete,
+  onDelete,
 }: {
   message: ChatMessage;
   chatCustomization: ChatCustomization;
   onOpenProfile?: (userID: string) => void;
+  canDelete?: boolean;
+  onDelete?: (messageID: string | number) => void;
 }) {
   const [entered, setEntered] = useState(false);
   const style = message.chatStyle;
@@ -884,6 +890,7 @@ function ChatMessageItem({
   const textInlineStyle = textStyle?.color ? { color: textStyle.color } : undefined;
   const avatarUrl = avatarStyle?.url || message.avatarUrl;
   const isAdmin = isAdminRole(message.role);
+  const showDelete = Boolean(canDelete && !message.isDeleted && !message.pending);
 
   useEffect(() => {
     const id = window.requestAnimationFrame(() => setEntered(true));
@@ -962,28 +969,45 @@ function ChatMessageItem({
             </span>
             {isAdmin && <AdminBadge />}
           </div>
-          <span
-            className={cn(
-              "h-1.5 w-1.5 shrink-0 rounded-full shadow-[0_0_10px_rgba(168,85,247,0.85)]",
-              message.pending ? "bg-zinc-300" : "bg-purple-400",
+          <div className="flex shrink-0 items-center gap-1.5">
+            {showDelete && (
+              <button
+                className="inline-flex h-5 w-5 items-center justify-center border border-red-500/35 bg-red-950/20 text-red-300 transition-colors hover:border-red-400 hover:text-red-100"
+                type="button"
+                title="Delete message"
+                aria-label="Delete message"
+                onClick={() => onDelete?.(message.id)}
+              >
+                <Trash2 className="h-3 w-3" aria-hidden="true" />
+              </button>
             )}
-          />
+            <span
+              className={cn(
+                "h-1.5 w-1.5 shrink-0 rounded-full shadow-[0_0_10px_rgba(168,85,247,0.85)]",
+                message.pending ? "bg-zinc-300" : "bg-purple-400",
+              )}
+            />
+          </div>
         </div>
-        <p
-          className={cn(
-            "break-words text-xs leading-5 transition-opacity duration-200",
-            textStyle
-              ? getChatStyleTextClass(textStyle.style)
-              : message.mine
-                ? getChatTextClass(chatCustomization.textStyle)
-                : "text-zinc-300",
-            textStyle?.animated && "animate-pulse",
-            message.pending && "opacity-75",
-          )}
-          style={textInlineStyle}
-        >
-          {message.text}
-        </p>
+        {message.isDeleted ? (
+          <p className="text-xs italic leading-5 text-zinc-600">Message deleted by moderator</p>
+        ) : (
+          <p
+            className={cn(
+              "break-words text-xs leading-5 transition-opacity duration-200",
+              textStyle
+                ? getChatStyleTextClass(textStyle.style)
+                : message.mine
+                  ? getChatTextClass(chatCustomization.textStyle)
+                  : "text-zinc-300",
+              textStyle?.animated && "animate-pulse",
+              message.pending && "opacity-75",
+            )}
+            style={textInlineStyle}
+          >
+            {message.text}
+          </p>
+        )}
       </div>
     </div>
   );
@@ -1747,6 +1771,7 @@ function LiveChat({
   const requestedAvatarUserIdsRef = useRef<Set<string>>(new Set());
   const chatEndRef = useRef<HTMLDivElement>(null);
   const nextIdRef = useRef(initialChatMessages.length + 1);
+  const isChatAdmin = isAdminRole(currentUserRole);
 
   useEffect(() => {
     if (!accessToken) return;
@@ -1789,6 +1814,7 @@ function LiveChat({
         createdAt: msg.created_at,
         user,
         text: msg.text ?? "",
+        isDeleted: msg.is_deleted,
         chatStyle: msg.chat_style ?? null,
         mine,
       };
@@ -1817,10 +1843,25 @@ function LiveChat({
               setMessages(dedupeMessages(history.map(mapIncoming)).slice(-40));
               return;
             }
+            if (event === "message_deleted" || payload.type === "message_deleted") {
+              const messageID =
+                payload.message_id ??
+                payload.id ??
+                (payload.message as { id?: string | number } | undefined)?.id;
+              if (messageID === undefined || messageID === null) return;
+              setMessages((current) =>
+                current.map((message) =>
+                  String(message.id) === String(messageID)
+                    ? { ...message, text: "", isDeleted: true, pending: false }
+                    : message,
+                ),
+              );
+              return;
+            }
             if (event === "message") {
               const msg = (payload.message as LiveChatMessage | undefined) ??
                 (payload as unknown as LiveChatMessage);
-              if (!msg?.text) return;
+              if (!msg?.text && !msg?.is_deleted) return;
               const incoming = mapIncoming(msg);
               const incomingSignature = messageSignature(incoming.user, incoming.text);
               setMessages((current) =>
@@ -1935,6 +1976,22 @@ function LiveChat({
     }
   };
 
+  const handleDeleteMessage = async (messageID: string | number) => {
+    if (!accessToken || !isChatAdmin) return;
+    setMessages((current) =>
+      current.map((message) =>
+        String(message.id) === String(messageID)
+          ? { ...message, text: "", isDeleted: true, pending: false }
+          : message,
+      ),
+    );
+    try {
+      await deleteLiveChatMessage(accessToken, messageID);
+    } catch {
+      // The next history/stream update will restore the canonical state if delete failed.
+    }
+  };
+
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       <div className="relative flex min-h-0 flex-1 overflow-hidden">
@@ -1950,6 +2007,8 @@ function LiveChat({
               key={message.id}
               message={message}
               onOpenProfile={onOpenProfile}
+              canDelete={isChatAdmin}
+              onDelete={handleDeleteMessage}
             />
           ))}
           <div ref={chatEndRef} />
@@ -4431,12 +4490,14 @@ function ProfileModal({
   accessToken,
   userID,
   myUserID,
+  currentUserRole,
   onClose,
   onProfileUpdated,
 }: {
   accessToken: string | null;
   userID: string | null;
   myUserID: string | null;
+  currentUserRole?: string;
   onClose: () => void;
   onProfileUpdated?: (profile: Profile) => void;
 }) {
@@ -4605,6 +4666,7 @@ function ProfileModal({
 
   const progress = Math.max(0, Math.min(100, profile?.progress_percent ?? 0));
   const isAdminProfile = isAdminRole(profile?.role);
+  const canModerateProfiles = isAdminRole(currentUserRole);
   const rootComments = comments.filter((comment) => !comment.parent_comment_id);
   const repliesByParent = comments.reduce<Record<string, ProfileComment[]>>(
     (acc, comment) => {
@@ -4625,7 +4687,9 @@ function ProfileModal({
       !comment.is_deleted &&
       Boolean(
         myUserID &&
-          (comment.author_user_id === myUserID || comment.target_user_id === myUserID),
+          (comment.author_user_id === myUserID ||
+            comment.target_user_id === myUserID ||
+            canModerateProfiles),
       );
     const isDeleting = deletingCommentID === comment.id;
 
@@ -6980,6 +7044,7 @@ export default function App() {
           accessToken={tokens?.accessToken ?? null}
           userID={profileUserID}
           myUserID={me?.id ? String(me.id) : null}
+          currentUserRole={typeof me?.role === "string" ? me.role : undefined}
           onClose={() => setProfileUserID(null)}
           onProfileUpdated={(profile) => {
             setMe((current) =>

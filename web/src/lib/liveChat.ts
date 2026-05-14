@@ -12,6 +12,7 @@ export type LiveChatMessage = {
   nickname?: string;
   user?: string;
   text: string;
+  is_deleted?: boolean;
   created_at?: string;
   chat_style?: ChatStyleSnapshot | null;
 };
@@ -71,6 +72,16 @@ export async function sendLiveChatMessage(accessToken: string, text: string) {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ text }),
   }, accessToken);
+}
+
+export async function deleteLiveChatMessage(accessToken: string, messageID: string | number) {
+  await authorizedRequest(
+    `/live-chat/messages/${encodeURIComponent(String(messageID))}`,
+    {
+      method: "DELETE",
+    },
+    accessToken,
+  );
 }
 
 export async function streamLiveChat(
