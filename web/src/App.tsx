@@ -406,6 +406,7 @@ function Avatar({
 function AdminBadge({ className }: { className?: string }) {
   return (
     <span
+      title="Administrator"
       className={cn(
         "inline-flex shrink-0 items-center border border-red-400/70 bg-red-950/55 px-1.5 py-0.5 text-[8px] font-black uppercase tracking-[0.12em] text-red-100 shadow-[0_0_14px_rgba(248,113,113,0.25)]",
         className,
@@ -414,6 +415,10 @@ function AdminBadge({ className }: { className?: string }) {
       ADMIN
     </span>
   );
+}
+
+function isAdminRole(role?: string | null) {
+  return role?.toLowerCase() === "admin";
 }
 
 function getNickColorClass(nameColor: string) {
@@ -876,7 +881,7 @@ function ChatMessageItem({
   const nicknameInlineStyle = getInlineColorStyle(nicknameStyle);
   const textInlineStyle = textStyle?.color ? { color: textStyle.color } : undefined;
   const avatarUrl = avatarStyle?.url || message.avatarUrl;
-  const isAdmin = message.role === "admin";
+  const isAdmin = isAdminRole(message.role);
 
   useEffect(() => {
     const id = window.requestAnimationFrame(() => setEntered(true));
@@ -931,7 +936,6 @@ function ChatMessageItem({
                 {badge.label ?? badge.id}
               </span>
             ))}
-            {isAdmin && <AdminBadge />}
             <span
               className={cn(
                 "truncate text-[10px] font-semibold uppercase tracking-[0.14em] text-zinc-500",
@@ -954,6 +958,7 @@ function ChatMessageItem({
             >
               {message.user}
             </span>
+            {isAdmin && <AdminBadge />}
           </div>
           <span
             className={cn(
@@ -4575,7 +4580,7 @@ function ProfileModal({
   };
 
   const progress = Math.max(0, Math.min(100, profile?.progress_percent ?? 0));
-  const isAdminProfile = profile?.role === "admin";
+  const isAdminProfile = isAdminRole(profile?.role);
   const rootComments = comments.filter((comment) => !comment.parent_comment_id);
   const repliesByParent = comments.reduce<Record<string, ProfileComment[]>>(
     (acc, comment) => {
@@ -4671,9 +4676,12 @@ function ProfileModal({
             <div className="text-[10px] font-semibold uppercase tracking-[0.18em] text-zinc-600">
               {isMine ? "My Profile" : "Public Profile"}
             </div>
-            <h2 className="mt-2 text-lg font-black uppercase tracking-[0.14em] text-zinc-100">
-              {profile?.nickname ?? "Loading..."}
-            </h2>
+            <div className="mt-2 flex flex-wrap items-center gap-2">
+              <h2 className="text-lg font-black uppercase tracking-[0.14em] text-zinc-100">
+                {profile?.nickname ?? "Loading..."}
+              </h2>
+              {isAdminProfile && <AdminBadge className="px-2 py-1 text-[9px]" />}
+            </div>
           </div>
           <button
             className="inline-flex h-10 w-10 items-center justify-center border border-zinc-800 bg-black/80 text-zinc-400 transition-colors hover:border-purple-400 hover:text-white"
@@ -4723,20 +4731,18 @@ function ProfileModal({
                       </span>
                     ))}
                   </div>
-                  <div
-                    className={cn(
-                      "mt-3 text-xl font-black uppercase tracking-[0.12em]",
-                      profile.nickname_style?.animated && "animate-pulse",
-                    )}
-                    style={getInlineColorStyle(profile.nickname_style)}
-                  >
-                    {profile.nickname ?? profile.user_id}
-                  </div>
-                  {isAdminProfile && (
-                    <div className="mt-2">
-                      <AdminBadge className="px-2.5 py-1 text-[10px]" />
+                  <div className="mt-3 flex flex-wrap items-center gap-2">
+                    <div
+                      className={cn(
+                        "min-w-0 truncate text-xl font-black uppercase tracking-[0.12em]",
+                        profile.nickname_style?.animated && "animate-pulse",
+                      )}
+                      style={getInlineColorStyle(profile.nickname_style)}
+                    >
+                      {profile.nickname ?? profile.user_id}
                     </div>
-                  )}
+                    {isAdminProfile && <AdminBadge className="px-2.5 py-1 text-[10px]" />}
+                  </div>
                   <div className="mt-2 text-[10px] uppercase tracking-[0.12em] text-zinc-500">
                     {profile.country_code ?? "--"} / {isAdminProfile ? "admin" : (profile.type ?? "user")} / {profile.account_age_days ?? 0}d
                   </div>
@@ -5935,6 +5941,7 @@ export default function App() {
   const currentNickname =
     (me?.nickname && String(me.nickname)) ||
     (isAnonymousUser ? "ANONYMOUS" : "GUEST");
+  const isCurrentUserAdmin = isAdminRole(typeof me?.role === "string" ? me.role : null);
   const statsSnapshot = buildStatsSnapshot(ratingProfile, statsSummary);
   const currentChatStyle = getSelectedChatStyle(chatCatalog, chatSelection);
 
@@ -6778,6 +6785,7 @@ export default function App() {
                 <User className="h-3 w-3" aria-hidden="true" />
                 {authLoading ? "..." : currentNickname}
               </button>
+              {isCurrentUserAdmin && <AdminBadge className="h-5 px-2 text-[8px]" />}
               {!isAnonymousUser && (
                 <button
                   type="button"
