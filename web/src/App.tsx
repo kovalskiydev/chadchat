@@ -23,6 +23,7 @@ import Crosshair from "@/components/Crosshair";
 import GradientText from "@/components/GradientText";
 import { GlobalSpotlight, ParticleCard } from "@/components/MagicBento";
 import PixelBlast from "@/components/PixelBlast";
+import Shuffle from "@/components/Shuffle";
 import track1 from "@/track-1.m4a";
 import track2 from "@/track-2.m4a";
 import track3 from "@/track-3.m4a";
@@ -125,7 +126,6 @@ const magicBlockClass =
   "magic-bento-card magic-bento-wire magic-bento-card--border-glow";
 const magicGlow = "132, 0, 255";
 const duelQueueTracks = [track1, track2, track3];
-const logoUrl = new URL("../logo.PNG", import.meta.url).href;
 const leaderboardPageSize = 6;
 const statsByPeriod = {
   today: {
@@ -6976,10 +6976,22 @@ export default function App() {
               <a className="transition-colors hover:text-zinc-100" href="#community">
                 Community
               </a>
-              <img
-                src={logoUrl}
-                alt="ChadChat"
-                className="h-10 w-auto max-w-[190px] object-contain drop-shadow-[0_0_14px_rgba(168,85,247,0.35)]"
+              <Shuffle
+                text="CHADCHAT"
+                shuffleDirection="right"
+                duration={0.35}
+                animationMode="evenodd"
+                shuffleTimes={1}
+                ease="power3.out"
+                stagger={0.03}
+                threshold={0.1}
+                triggerOnce
+                triggerOnHover
+                respectReducedMotion
+                loop={false}
+                loopDelay={0}
+                tag="span"
+                className="nav-logo text-zinc-100"
               />
               <a
                 className="grid grid-cols-[auto_16px] items-center gap-2 transition-colors hover:text-zinc-100"
