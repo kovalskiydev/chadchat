@@ -65,6 +65,7 @@ export type ProfileComment = {
   target_user_id: string;
   parent_comment_id?: string | null;
   text: string;
+  is_deleted?: boolean;
   created_at: string;
 };
 
@@ -183,4 +184,18 @@ export async function postProfileComment(
     accessToken,
   );
   return payload.comment ?? null;
+}
+
+export async function deleteProfileComment(
+  accessToken: string,
+  userID: string,
+  commentID: string,
+) {
+  await authorizedRequest(
+    `/profiles/${encodeURIComponent(userID)}/comments/${encodeURIComponent(commentID)}`,
+    {
+      method: "DELETE",
+    },
+    accessToken,
+  );
 }

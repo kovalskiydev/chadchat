@@ -14,6 +14,7 @@ import {
   LogOut,
   User,
   Camera,
+  Trash2,
   Volume2,
   VolumeX,
 } from "lucide-react";
@@ -98,6 +99,7 @@ import {
 } from "@/lib/rating";
 import {
   createAvatarUpload,
+  deleteProfileComment,
   getMyProfile,
   getProfileComments,
   getPublicProfile,
@@ -4448,6 +4450,7 @@ function ProfileModal({
   const [commentDraft, setCommentDraft] = useState("");
   const [replyDrafts, setReplyDrafts] = useState<Record<string, string>>({});
   const [replyingTo, setReplyingTo] = useState<string | null>(null);
+  const [deletingCommentID, setDeletingCommentID] = useState<string | null>(null);
   const [editBio, setEditBio] = useState("");
   const [editCountry, setEditCountry] = useState("");
   const [avatarFile, setAvatarFile] = useState<File | null>(null);
@@ -4579,6 +4582,27 @@ function ProfileModal({
     }
   };
 
+  const deleteComment = async (commentID: string) => {
+    if (!accessToken || !userID) return;
+    setDeletingCommentID(commentID);
+    setError(null);
+    try {
+      await deleteProfileComment(accessToken, userID, commentID);
+      setComments((current) =>
+        current.map((comment) =>
+          comment.id === commentID
+            ? { ...comment, text: "", is_deleted: true }
+            : comment,
+        ),
+      );
+      setReplyingTo((current) => (current === commentID ? null : current));
+    } catch (error) {
+      setError(error instanceof Error ? error.message : "Failed to delete comment");
+    } finally {
+      setDeletingCommentID(null);
+    }
+  };
+
   const progress = Math.max(0, Math.min(100, profile?.progress_percent ?? 0));
   const isAdminProfile = isAdminRole(profile?.role);
   const rootComments = comments.filter((comment) => !comment.parent_comment_id);
@@ -4597,6 +4621,13 @@ function ProfileModal({
   const renderComment = (comment: ProfileComment, depth = 0): React.ReactNode => {
     const replies = repliesByParent[comment.id] ?? [];
     const isReplying = replyingTo === comment.id;
+    const canDelete =
+      !comment.is_deleted &&
+      Boolean(
+        myUserID &&
+          (comment.author_user_id === myUserID || comment.target_user_id === myUserID),
+      );
+    const isDeleting = deletingCommentID === comment.id;
 
     return (
       <div
@@ -4607,26 +4638,48 @@ function ProfileModal({
         key={comment.id}
       >
         <div className="flex items-center justify-between gap-3 text-[10px] uppercase tracking-[0.12em] text-zinc-500">
-          <span className="font-semibold text-zinc-300">{comment.author_nickname}</span>
-          <span>{formatDateShort(comment.created_at)}</span>
+          <span className={cn("font-semibold", comment.is_deleted ? "text-zinc-600" : "text-zinc-300")}>
+            {comment.author_nickname}
+          </span>
+          <div className="flex shrink-0 items-center gap-2">
+            <span>{formatDateShort(comment.created_at)}</span>
+            {canDelete && (
+              <button
+                className="inline-flex h-6 w-6 items-center justify-center border border-red-500/35 bg-red-950/20 text-red-300 transition-colors hover:border-red-400 hover:bg-red-950/40 hover:text-red-100 disabled:cursor-wait disabled:opacity-50"
+                type="button"
+                title="Delete comment"
+                aria-label="Delete comment"
+                disabled={isDeleting}
+                onClick={() => deleteComment(comment.id)}
+              >
+                <Trash2 className="h-3 w-3" aria-hidden="true" />
+              </button>
+            )}
+          </div>
         </div>
         {comment.parent_comment_id && (
           <div className="mt-2 inline-flex border border-purple-500/30 bg-purple-950/20 px-2 py-1 text-[9px] font-semibold uppercase tracking-[0.1em] text-purple-200">
             Reply in thread
           </div>
         )}
-        <p className="mt-2 break-words text-xs leading-5 text-zinc-300">{comment.text}</p>
-        <button
-          className="mt-2 text-[10px] font-semibold uppercase tracking-[0.12em] text-purple-300 transition-colors hover:text-purple-100"
-          type="button"
-          onClick={() =>
-            setReplyingTo((current) =>
-              current === comment.id ? null : comment.id,
-            )
-          }
-        >
-          Reply
-        </button>
+        {comment.is_deleted ? (
+          <p className="mt-2 text-xs italic leading-5 text-zinc-600">Deleted comment</p>
+        ) : (
+          <>
+            <p className="mt-2 break-words text-xs leading-5 text-zinc-300">{comment.text}</p>
+            <button
+              className="mt-2 text-[10px] font-semibold uppercase tracking-[0.12em] text-purple-300 transition-colors hover:text-purple-100"
+              type="button"
+              onClick={() =>
+                setReplyingTo((current) =>
+                  current === comment.id ? null : comment.id,
+                )
+              }
+            >
+              Reply
+            </button>
+          </>
+        )}
         {isReplying && (
           <div className="mt-3 grid grid-cols-[1fr_auto] gap-2">
             <input

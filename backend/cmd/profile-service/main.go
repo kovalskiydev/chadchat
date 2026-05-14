@@ -92,6 +92,7 @@ type profileComment struct {
 	TargetUserID    string    `json:"target_user_id"`
 	ParentCommentID string    `json:"parent_comment_id,omitempty"`
 	Text            string    `json:"text"`
+	IsDeleted       bool      `json:"is_deleted,omitempty"`
 	CreatedAt       time.Time `json:"created_at"`
 }
 
@@ -184,6 +185,7 @@ func main() {
 	mux.HandleFunc("GET /profiles/{userID}", s.withAuth(s.handlePublicProfile))
 	mux.HandleFunc("GET /profiles/{userID}/comments", s.withAuth(s.handleProfileComments))
 	mux.HandleFunc("POST /profiles/{userID}/comments", s.withAuth(s.handlePostProfileComment))
+	mux.HandleFunc("DELETE /profiles/{userID}/comments/{commentID}", s.withAuth(s.handleDeleteProfileComment))
 
 	addr := ":" + envOr("PORT", "8089")
 	log.Printf("profile-service on %s", addr)
@@ -205,6 +207,8 @@ func profileSchema() []string {
 			target_user_id VARCHAR(64) NOT NULL,
 			parent_comment_id BIGINT UNSIGNED NULL,
 			text TEXT NOT NULL,
+			deleted_at DATETIME(6) NULL,
+			deleted_by_user_id VARCHAR(64) NULL,
 			created_at DATETIME(6) NOT NULL,
 			INDEX idx_profile_comments_target_created (target_user_id, created_at DESC),
 			INDEX idx_profile_comments_parent (parent_comment_id)
@@ -228,6 +232,24 @@ func ensureProfileSchema(db *sql.DB) error {
 	}
 	if !hasParentIndex {
 		if _, err := db.Exec(`ALTER TABLE profile_comments ADD INDEX idx_profile_comments_parent (parent_comment_id)`); err != nil {
+			return err
+		}
+	}
+	hasDeletedAt, err := mysqlutil.ColumnExists(db, "profile_comments", "deleted_at")
+	if err != nil {
+		return err
+	}
+	if !hasDeletedAt {
+		if _, err := db.Exec(`ALTER TABLE profile_comments ADD COLUMN deleted_at DATETIME(6) NULL AFTER text`); err != nil {
+			return err
+		}
+	}
+	hasDeletedBy, err := mysqlutil.ColumnExists(db, "profile_comments", "deleted_by_user_id")
+	if err != nil {
+		return err
+	}
+	if !hasDeletedBy {
+		if _, err := db.Exec(`ALTER TABLE profile_comments ADD COLUMN deleted_by_user_id VARCHAR(64) NULL AFTER deleted_at`); err != nil {
 			return err
 		}
 	}
@@ -412,7 +434,7 @@ func (s *Server) handleProfileComments(w http.ResponseWriter, r *http.Request, _
 		return
 	}
 	rows, err := s.db.Query(
-		`SELECT pc.id, pc.author_user_id, COALESCE(u.nickname, ''), pc.target_user_id, pc.parent_comment_id, pc.text, pc.created_at
+		`SELECT pc.id, pc.author_user_id, COALESCE(u.nickname, ''), pc.target_user_id, pc.parent_comment_id, pc.text, pc.deleted_at, pc.created_at
 		 FROM profile_comments pc
 		 LEFT JOIN users u ON u.id = CAST(SUBSTRING(pc.author_user_id, 3) AS UNSIGNED)
 		 WHERE pc.target_user_id = ?
@@ -429,14 +451,19 @@ func (s *Server) handleProfileComments(w http.ResponseWriter, r *http.Request, _
 	for rows.Next() {
 		var rawID int64
 		var parentID sql.NullInt64
+		var deletedAt sql.NullTime
 		var c profileComment
-		if err := rows.Scan(&rawID, &c.AuthorUserID, &c.AuthorNickname, &c.TargetUserID, &parentID, &c.Text, &c.CreatedAt); err != nil {
+		if err := rows.Scan(&rawID, &c.AuthorUserID, &c.AuthorNickname, &c.TargetUserID, &parentID, &c.Text, &deletedAt, &c.CreatedAt); err != nil {
 			writeErr(w, http.StatusInternalServerError, "db_error")
 			return
 		}
 		c.ID = encodeCommentID(rawID)
 		if parentID.Valid {
 			c.ParentCommentID = encodeCommentID(parentID.Int64)
+		}
+		if deletedAt.Valid {
+			c.IsDeleted = true
+			c.Text = ""
 		}
 		comments = append(comments, c)
 	}
@@ -485,10 +512,11 @@ func (s *Server) handlePostProfileComment(w http.ResponseWriter, r *http.Request
 			return
 		}
 		var parentTargetUserID string
+		var parentDeletedAt sql.NullTime
 		if err := s.db.QueryRow(
-			`SELECT target_user_id FROM profile_comments WHERE id = ?`,
+			`SELECT target_user_id, deleted_at FROM profile_comments WHERE id = ?`,
 			rawParentID,
-		).Scan(&parentTargetUserID); err != nil {
+		).Scan(&parentTargetUserID, &parentDeletedAt); err != nil {
 			if errors.Is(err, sql.ErrNoRows) {
 				writeErr(w, http.StatusNotFound, "parent_comment_not_found")
 				return
@@ -498,6 +526,10 @@ func (s *Server) handlePostProfileComment(w http.ResponseWriter, r *http.Request
 		}
 		if parentTargetUserID != targetUserID {
 			writeErr(w, http.StatusBadRequest, "parent_comment_target_mismatch")
+			return
+		}
+		if parentDeletedAt.Valid {
+			writeErr(w, http.StatusBadRequest, "parent_comment_deleted")
 			return
 		}
 		parentCommentID = rawParentID
@@ -523,6 +555,53 @@ func (s *Server) handlePostProfileComment(w http.ResponseWriter, r *http.Request
 		CreatedAt:       now,
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"comment": comment})
+}
+
+func (s *Server) handleDeleteProfileComment(w http.ResponseWriter, r *http.Request, user authUser) {
+	targetUserID := strings.TrimSpace(r.PathValue("userID"))
+	commentID := strings.TrimSpace(r.PathValue("commentID"))
+	if targetUserID == "" || commentID == "" {
+		writeErr(w, http.StatusBadRequest, "missing_comment_context")
+		return
+	}
+	rawCommentID, err := decodeCommentID(commentID)
+	if err != nil {
+		writeErr(w, http.StatusBadRequest, "invalid_comment_id")
+		return
+	}
+	var authorUserID, storedTargetUserID string
+	var deletedAt sql.NullTime
+	if err := s.db.QueryRow(
+		`SELECT author_user_id, target_user_id, deleted_at FROM profile_comments WHERE id = ?`,
+		rawCommentID,
+	).Scan(&authorUserID, &storedTargetUserID, &deletedAt); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			writeErr(w, http.StatusNotFound, "comment_not_found")
+			return
+		}
+		writeErr(w, http.StatusInternalServerError, "db_error")
+		return
+	}
+	if storedTargetUserID != targetUserID {
+		writeErr(w, http.StatusBadRequest, "comment_target_mismatch")
+		return
+	}
+	if user.ID != authorUserID && user.ID != targetUserID {
+		writeErr(w, http.StatusForbidden, "forbidden")
+		return
+	}
+	if !deletedAt.Valid {
+		if _, err := s.db.Exec(
+			`UPDATE profile_comments
+			 SET text = '', deleted_at = ?, deleted_by_user_id = ?
+			 WHERE id = ?`,
+			time.Now().UTC(), user.ID, rawCommentID,
+		); err != nil {
+			writeErr(w, http.StatusInternalServerError, "db_error")
+			return
+		}
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"status": "ok", "comment_id": commentID, "is_deleted": true})
 }
 
 func (s *Server) loadBasicUser(userID string) (authUser, error) {
