@@ -20,7 +20,7 @@ export function Panel({
     <ParticleCard
       className={cn(
         magicBlockClass,
-        "h-[calc(100vh-7.5rem)] min-h-[420px] overflow-hidden shadow-wire",
+        "h-[calc(100vh-7.5rem)] min-h-[320px] overflow-hidden shadow-wire",
         className,
       )}
       particleCount={12}

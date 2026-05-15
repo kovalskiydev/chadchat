@@ -1286,14 +1286,14 @@ export function DuelModal({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center overflow-hidden bg-black/72 p-2 backdrop-blur-sm sm:p-3"
+      className="fixed inset-0 z-50 flex items-start justify-center overflow-hidden bg-black/72 p-0 backdrop-blur-sm sm:items-center sm:p-3"
       role="dialog"
       aria-modal="true"
       aria-labelledby="duel-title"
       onMouseDown={onClose}
     >
       <div
-        className="flex h-[calc(100vh-1rem)] w-full max-w-[1500px] flex-col overflow-hidden border border-purple-500/35 bg-zinc-950 shadow-[0_0_40px_rgba(132,0,255,0.22)] sm:h-[calc(100vh-1.5rem)]"
+        className="flex h-screen w-full flex-col overflow-hidden border-x-0 border-purple-500/35 bg-zinc-950 shadow-[0_0_40px_rgba(132,0,255,0.22)] sm:h-[calc(100vh-1.5rem)] sm:max-w-[1500px] sm:border"
         onMouseDown={(event) => event.stopPropagation()}
       >
         <div className="flex items-center justify-between border-b border-border px-5 py-4">
@@ -1421,7 +1421,7 @@ export function DuelModal({
           ) : (
             <div
               className={cn(
-                "relative grid h-full min-h-0 grid-rows-[auto_minmax(0,1fr)_minmax(0,1fr)] gap-3 overflow-hidden border bg-black p-3 pb-24 lg:grid-cols-2 lg:grid-rows-[auto_minmax(0,1fr)]",
+                "relative grid h-full min-h-0 grid-rows-[auto_1fr_1fr] gap-2 overflow-hidden border bg-black p-2 pb-20 sm:gap-3 sm:p-3 sm:pb-24 lg:grid-cols-2 lg:grid-rows-[auto_minmax(0,1fr)]",
                 phase === "awaiting_media" && "border-sky-500/35",
                 phase === "pre_start" && "border-purple-500/45",
                 phase === "scoring" && "border-red-500/55",
@@ -1433,17 +1433,17 @@ export function DuelModal({
                 <div className="pointer-events-none absolute inset-0 z-40 bg-white/10 duel-flash" />
               )}
 
-              <div className="z-30 grid gap-3 lg:col-span-2 lg:grid-cols-[1fr_auto_1fr] lg:items-start">
-                <div className="border border-purple-500/45 bg-zinc-950 px-4 py-2 shadow-[0_0_22px_rgba(168,85,247,0.18)]">
-                  <div className="flex items-center justify-between gap-3">
-                    <span className="text-[10px] font-black uppercase tracking-[0.16em] text-zinc-100">
+              <div className="z-30 grid gap-2 sm:gap-3 lg:col-span-2 lg:grid-cols-[1fr_auto_1fr] lg:items-start">
+                <div className="border border-purple-500/45 bg-zinc-950 px-3 py-1.5 shadow-[0_0_22px_rgba(168,85,247,0.18)] sm:px-4 sm:py-2">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="truncate text-[9px] font-black uppercase tracking-[0.16em] text-zinc-100 sm:text-[10px]">
                       {resultSummary?.myNickname ?? "You"}
                     </span>
-                    <span className="text-[9px] font-semibold uppercase tracking-[0.14em] text-purple-200">
+                    <span className="shrink-0 text-[8px] font-semibold uppercase tracking-[0.14em] text-purple-200 sm:text-[9px]">
                       {myMediaReady ? "LOCKED IN" : "LOCAL"}
                     </span>
                   </div>
-                  <div className="mt-2 h-1.5 overflow-hidden bg-zinc-900">
+                  <div className="mt-1 h-1 overflow-hidden bg-zinc-900 sm:mt-2 sm:h-1.5">
                     <div
                       className="h-full bg-purple-300 shadow-[0_0_14px_rgba(216,180,254,0.75)] transition-[width] duration-300"
                       style={{ width: `${Math.max(5, Math.min(100, (myAvg ?? 0) * 20))}%` }}
@@ -1451,28 +1451,28 @@ export function DuelModal({
                   </div>
                 </div>
 
-                <div className={cn("border px-5 py-3 text-center shadow-[0_0_28px_rgba(0,0,0,0.7)]", phaseToneClass)}>
-                  <div className="text-[10px] font-black uppercase tracking-[0.2em]">
+                <div className={cn("border px-3 py-2 text-center shadow-[0_0_28px_rgba(0,0,0,0.7)] sm:px-5 sm:py-3", phaseToneClass)}>
+                  <div className="text-[9px] font-black uppercase tracking-[0.2em] sm:text-[10px]">
                     {phaseCommand}
                   </div>
-                  <div className="mt-1 text-4xl font-black tabular-nums leading-none text-zinc-100">
+                  <div className="mt-0.5 text-2xl font-black tabular-nums leading-none text-zinc-100 sm:mt-1 sm:text-4xl">
                     {phase === "awaiting_media" ? "VS" : secondsLeft ?? "VS"}
                   </div>
-                  <div className="mt-2 text-[9px] font-semibold uppercase tracking-[0.14em] text-zinc-400">
+                  <div className="mt-1 text-[8px] font-semibold uppercase tracking-[0.14em] text-zinc-400 sm:mt-2 sm:text-[9px]">
                     {phaseLabel}
                   </div>
                 </div>
 
-                <div className="border border-zinc-700 bg-zinc-950 px-4 py-2 text-right shadow-[0_0_22px_rgba(255,255,255,0.06)]">
-                  <div className="flex items-center justify-between gap-3">
-                    <span className="text-[9px] font-semibold uppercase tracking-[0.14em] text-zinc-400">
+                <div className="border border-zinc-700 bg-zinc-950 px-3 py-1.5 text-right shadow-[0_0_22px_rgba(255,255,255,0.06)] sm:px-4 sm:py-2">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="shrink-0 text-[8px] font-semibold uppercase tracking-[0.14em] text-zinc-400 sm:text-[9px]">
                       {opponentMediaReady ? "LOCKED IN" : "REMOTE"}
                     </span>
-                    <span className="text-[10px] font-black uppercase tracking-[0.16em] text-zinc-100">
+                    <span className="truncate text-[9px] font-black uppercase tracking-[0.16em] text-zinc-100 sm:text-[10px]">
                       {resultSummary?.oppNickname ?? "Opponent"}
                     </span>
                   </div>
-                  <div className="mt-2 h-1.5 overflow-hidden bg-zinc-900">
+                  <div className="mt-1 h-1 overflow-hidden bg-zinc-900 sm:mt-2 sm:h-1.5">
                     <div
                       className="ml-auto h-full bg-zinc-300 shadow-[0_0_14px_rgba(244,244,245,0.45)] transition-[width] duration-300"
                       style={{ width: `${Math.max(5, Math.min(100, (oppAvg ?? 0) * 20))}%` }}
@@ -1504,19 +1504,19 @@ export function DuelModal({
                     <div className="absolute inset-0 bg-[linear-gradient(rgba(255,255,255,0.035)_1px,transparent_1px)] bg-[length:100%_6px]" />
                   </div>
                 )}
-                <div className="absolute bottom-4 left-4 max-w-[calc(100%-2rem)] border border-purple-500/55 bg-zinc-950/95 px-4 py-3 shadow-[0_0_24px_rgba(0,0,0,0.62)]">
-                  <div className="text-[10px] font-black uppercase tracking-[0.14em] text-purple-200">
+                <div className="absolute bottom-2 left-2 max-w-[calc(100%-1rem)] border border-purple-500/55 bg-zinc-950/95 px-2.5 py-2 shadow-[0_0_24px_rgba(0,0,0,0.62)] sm:bottom-4 sm:left-4 sm:px-4 sm:py-3">
+                  <div className="text-[9px] font-black uppercase tracking-[0.14em] text-purple-200 sm:text-[10px]">
                     Score
                   </div>
                   <div
                     className={cn(
-                      "mt-1 text-4xl font-black tabular-nums leading-none text-zinc-100 transition-transform duration-200 sm:text-5xl",
+                      "mt-0.5 text-2xl font-black tabular-nums leading-none text-zinc-100 transition-transform duration-200 sm:mt-1 sm:text-4xl lg:text-5xl",
                       myScorePulse && "scale-110 text-purple-100",
                     )}
                   >
                     {myScore === null ? "--" : `${(myScore * 2).toFixed(1)}/10`}
                   </div>
-                  <div className="mt-2 text-[10px] font-semibold uppercase tracking-[0.12em] text-zinc-500">
+                  <div className="mt-1 text-[9px] font-semibold uppercase tracking-[0.12em] text-zinc-500 sm:mt-2 sm:text-[10px]">
                     Avg {myAvg === null ? "--" : `${(myAvg * 2).toFixed(1)}/10`}
                   </div>
                 </div>
@@ -1551,19 +1551,19 @@ export function DuelModal({
                     <div className="absolute inset-0 bg-[linear-gradient(rgba(255,255,255,0.035)_1px,transparent_1px)] bg-[length:100%_6px]" />
                   </div>
                 )}
-                <div className="absolute bottom-4 right-4 max-w-[calc(100%-2rem)] border border-zinc-600 bg-zinc-950/95 px-4 py-3 text-right shadow-[0_0_24px_rgba(0,0,0,0.62)]">
-                  <div className="text-[10px] font-black uppercase tracking-[0.14em] text-zinc-400">
+                <div className="absolute bottom-2 right-2 max-w-[calc(100%-1rem)] border border-zinc-600 bg-zinc-950/95 px-2.5 py-2 text-right shadow-[0_0_24px_rgba(0,0,0,0.62)] sm:bottom-4 sm:right-4 sm:px-4 sm:py-3">
+                  <div className="text-[9px] font-black uppercase tracking-[0.14em] text-zinc-400 sm:text-[10px]">
                     Score
                   </div>
                   <div
                     className={cn(
-                      "mt-1 text-4xl font-black tabular-nums leading-none text-zinc-100 transition-transform duration-200 sm:text-5xl",
+                      "mt-0.5 text-2xl font-black tabular-nums leading-none text-zinc-100 transition-transform duration-200 sm:mt-1 sm:text-4xl lg:text-5xl",
                       oppScorePulse && "scale-110 text-zinc-50",
                     )}
                   >
                     {oppScore === null ? "--" : `${(oppScore * 2).toFixed(1)}/10`}
                   </div>
-                  <div className="mt-2 text-[10px] font-semibold uppercase tracking-[0.12em] text-zinc-500">
+                  <div className="mt-1 text-[9px] font-semibold uppercase tracking-[0.12em] text-zinc-500 sm:mt-2 sm:text-[10px]">
                     Avg {oppAvg === null ? "--" : `${(oppAvg * 2).toFixed(1)}/10`}
                   </div>
                 </div>
@@ -1576,11 +1576,11 @@ export function DuelModal({
                 )}
               </div>
 
-              <div className="absolute inset-x-3 bottom-3 z-20 lg:inset-x-6">
-                <div className={cn("border bg-zinc-950/95 px-4 py-3 shadow-[0_0_24px_rgba(0,0,0,0.42)]", phaseToneClass)}>
-                  <div className="mb-2 flex items-center justify-between gap-4 text-[10px] font-semibold uppercase tracking-[0.14em] text-zinc-500">
-                    <span>{status || "Live Match"}</span>
-                    <span className="text-zinc-100">{secondsLeft ?? 0}s</span>
+              <div className="absolute inset-x-2 bottom-2 z-20 sm:inset-x-3 sm:bottom-3 lg:inset-x-6">
+                <div className={cn("border bg-zinc-950/95 px-3 py-2 shadow-[0_0_24px_rgba(0,0,0,0.42)] sm:px-4 sm:py-3", phaseToneClass)}>
+                  <div className="mb-1 flex items-center justify-between gap-2 text-[9px] font-semibold uppercase tracking-[0.14em] text-zinc-500 sm:mb-2 sm:gap-4 sm:text-[10px]">
+                    <span className="truncate">{status || "Live Match"}</span>
+                    <span className="shrink-0 text-zinc-100">{secondsLeft ?? 0}s</span>
                   </div>
                   {phase === "awaiting_media" && (
                     <div className="mb-3 grid gap-2 sm:grid-cols-2">
@@ -1622,24 +1622,24 @@ export function DuelModal({
               </div>
 
               {isResultPhase && resultSummary && showFinalResult && (
-                <div className="absolute inset-0 z-30 flex items-center justify-center bg-black/88 p-6">
-                  <div className="w-full max-w-xl border border-purple-500/35 bg-zinc-950 p-6 text-center shadow-[0_0_40px_rgba(132,0,255,0.22)]">
+                <div className="absolute inset-0 z-30 flex items-center justify-center bg-black/88 p-3 sm:p-6">
+                  <div className="w-full max-w-xl border border-purple-500/35 bg-zinc-950 p-4 text-center shadow-[0_0_40px_rgba(132,0,255,0.22)] sm:p-6">
                     <div className="text-[10px] font-semibold uppercase tracking-[0.18em] text-zinc-600">
                       Match Result
                     </div>
-                    <div className="mt-4 text-3xl font-black uppercase tracking-[0.14em] text-zinc-100">
+                    <div className="mt-3 text-2xl font-black uppercase tracking-[0.14em] text-zinc-100 sm:mt-4 sm:text-3xl">
                       {resultSummary.winnerId && myUserId && resultSummary.winnerId === myUserId
                         ? "Victory"
                         : resultSummary.winnerId
                           ? "Defeat"
                           : "Finished"}
                     </div>
-                    <div className="mt-3 text-xs uppercase tracking-[0.12em] text-zinc-500">
+                    <div className="mt-2 text-xs uppercase tracking-[0.12em] text-zinc-500 sm:mt-3">
                       {resultSummary.reason ? `Reason: ${resultSummary.reason}` : "Final scores"}
                     </div>
                     <div
                       className={cn(
-                        "mx-auto mt-4 inline-flex border px-3 py-2 text-[10px] font-black uppercase tracking-[0.14em]",
+                        "mx-auto mt-3 inline-flex border px-3 py-2 text-[10px] font-black uppercase tracking-[0.14em] sm:mt-4",
                         typeof resultSummary.ratingDelta !== "number"
                           ? "border-zinc-800 bg-black/70 text-zinc-500"
                           : resultSummary.ratingDelta > 0
@@ -1657,33 +1657,33 @@ export function DuelModal({
                         : "syncing"}
                     </div>
 
-                    <div className="mt-6 grid gap-3 sm:grid-cols-[1fr_auto_1fr] sm:items-center">
-                      <div className="border border-zinc-800 bg-black/70 p-4">
+                    <div className="mt-4 grid gap-2 sm:mt-6 sm:gap-3 sm:grid-cols-[1fr_auto_1fr] sm:items-center">
+                      <div className="border border-zinc-800 bg-black/70 p-3 sm:p-4">
                         <div className="text-[10px] uppercase tracking-[0.12em] text-zinc-600">
                           {resultSummary.myNickname ?? "You"}
                         </div>
-                        <div className="mt-2 text-2xl font-black tabular-nums text-zinc-100">
+                        <div className="mt-1 text-xl font-black tabular-nums text-zinc-100 sm:mt-2 sm:text-2xl">
                           {formatScoreOutOfTen(resultSummary.myFinal)}
                         </div>
                       </div>
-                      <div className="text-lg font-black uppercase tracking-[0.16em] text-purple-200">
+                      <div className="text-base font-black uppercase tracking-[0.16em] text-purple-200 sm:text-lg">
                         VS
                       </div>
-                      <div className="border border-zinc-800 bg-black/70 p-4">
+                      <div className="border border-zinc-800 bg-black/70 p-3 sm:p-4">
                         <div className="text-[10px] uppercase tracking-[0.12em] text-zinc-600">
                           {resultSummary.oppNickname ?? "Opponent"}
                         </div>
-                        <div className="mt-2 text-2xl font-black tabular-nums text-zinc-100">
+                        <div className="mt-1 text-xl font-black tabular-nums text-zinc-100 sm:mt-2 sm:text-2xl">
                           {formatScoreOutOfTen(resultSummary.oppFinal)}
                         </div>
                       </div>
                     </div>
 
-                    <div className="mt-6 grid gap-2 sm:grid-cols-2">
+                    <div className="mt-4 grid gap-2 sm:mt-6 sm:grid-cols-2">
                       <button
                         type="button"
                         onClick={resetMatchFlow}
-                        className="inline-flex h-11 items-center justify-center border border-purple-500/50 bg-purple-950/35 px-4 text-[10px] font-semibold uppercase tracking-[0.14em] text-purple-100 transition-colors hover:border-purple-300 hover:text-white"
+                        className="inline-flex h-10 items-center justify-center border border-purple-500/50 bg-purple-950/35 px-4 text-[10px] font-semibold uppercase tracking-[0.14em] text-purple-100 transition-colors hover:border-purple-300 hover:text-white sm:h-11"
                       >
                         Find Another Match
                       </button>
@@ -1693,7 +1693,7 @@ export function DuelModal({
                           stopResultSound();
                           onClose();
                         }}
-                        className="inline-flex h-11 items-center justify-center border border-zinc-800 bg-black/70 px-4 text-[10px] font-semibold uppercase tracking-[0.14em] text-zinc-400 transition-colors hover:border-zinc-600 hover:text-zinc-200"
+                        className="inline-flex h-10 items-center justify-center border border-zinc-800 bg-black/70 px-4 text-[10px] font-semibold uppercase tracking-[0.14em] text-zinc-400 transition-colors hover:border-zinc-600 hover:text-zinc-200 sm:h-11"
                       >
                         Close
                       </button>

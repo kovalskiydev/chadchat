@@ -486,7 +486,7 @@ export function TestLabModal({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/72 p-4 backdrop-blur-sm"
+      className="fixed inset-0 z-50 flex items-start justify-center bg-black/72 p-0 backdrop-blur-sm sm:items-center sm:p-4"
       role="dialog"
       aria-modal="true"
       aria-labelledby="test-lab-title"
@@ -495,7 +495,7 @@ export function TestLabModal({
       }}
     >
       <div
-        className="w-full max-w-6xl border border-purple-500/35 bg-zinc-950 shadow-[0_0_40px_rgba(132,0,255,0.22)]"
+        className="h-screen w-full overflow-y-auto border-x-0 border-purple-500/35 bg-zinc-950 shadow-[0_0_40px_rgba(132,0,255,0.22)] sm:h-auto sm:max-w-6xl sm:rounded-none sm:border"
         onMouseDown={(event) => event.stopPropagation()}
       >
         <div className="flex items-center justify-between border-b border-border px-5 py-4">
@@ -527,9 +527,9 @@ export function TestLabModal({
             <X className="h-4 w-4" aria-hidden="true" />
           </button>
         </div>
-        <div className="grid gap-4 p-5 lg:grid-cols-[1.7fr_1fr]">
+        <div className="grid gap-3 p-3 sm:gap-4 sm:p-5 lg:grid-cols-[1.7fr_1fr]">
           {phase === "result" ? (
-            <div className="flex min-h-72 items-center justify-center border border-zinc-800 bg-black/80 p-6 text-center">
+            <div className="flex min-h-48 items-center justify-center border border-zinc-800 bg-black/80 p-4 text-center sm:min-h-72 sm:p-6">
               <div>
                 <div className="text-[10px] uppercase tracking-[0.14em] text-zinc-600">
                   Scan Complete
@@ -546,7 +546,7 @@ export function TestLabModal({
             <div className="relative overflow-hidden border border-zinc-800 bg-black/80">
               <video
                 ref={videoRef}
-                className="h-full min-h-[520px] w-full object-cover"
+                className="h-full min-h-[280px] w-full object-cover sm:min-h-[400px] lg:min-h-[520px]"
                 muted
                 playsInline
               />
@@ -566,7 +566,7 @@ export function TestLabModal({
               )}
               {phase === "countdown" && (
                 <div className="absolute inset-0 flex items-center justify-center bg-black/45">
-                  <div className="text-6xl font-black tabular-nums text-white">{countdown}</div>
+                  <div className="text-4xl font-black tabular-nums text-white sm:text-6xl">{countdown}</div>
                 </div>
               )}
               {phase === "waiting_camera" && !cameraDenied && (
@@ -585,33 +585,33 @@ export function TestLabModal({
               )}
             </div>
           )}
-          <div className="space-y-3">
-            <div className="border border-zinc-800 bg-black/60 p-3 text-[10px] uppercase tracking-[0.12em] text-zinc-500">
+          <div className="space-y-2 sm:space-y-3">
+            <div className="border border-zinc-800 bg-black/60 p-2.5 text-[10px] uppercase tracking-[0.12em] text-zinc-500 sm:p-3">
               Room: {roomID || (loadingRoom ? "Creating..." : "-")}
             </div>
             {phase === "result" ? (
               <div className="grid grid-cols-2 gap-2">
-                <div className="border border-zinc-800 bg-black/60 p-3">
+                <div className="border border-zinc-800 bg-black/60 p-2.5 sm:p-3">
                   <div className="text-[10px] uppercase tracking-[0.12em] text-zinc-500">Best</div>
-                  <div className="mt-1 text-lg font-black tabular-nums text-zinc-100">
+                  <div className="mt-1 text-base font-black tabular-nums text-zinc-100 sm:text-lg">
                     {formatScoreOutOfTen(bestScore)}
                   </div>
                 </div>
-                <div className="border border-zinc-800 bg-black/60 p-3">
+                <div className="border border-zinc-800 bg-black/60 p-2.5 sm:p-3">
                   <div className="text-[10px] uppercase tracking-[0.12em] text-zinc-500">Average</div>
-                  <div className="mt-1 text-lg font-black tabular-nums text-zinc-100">
+                  <div className="mt-1 text-base font-black tabular-nums text-zinc-100 sm:text-lg">
                     {formatScoreOutOfTen(averageScore)}
                   </div>
                 </div>
               </div>
             ) : (
-              <div className="border border-zinc-800 bg-black/60 p-3 text-[10px] uppercase tracking-[0.12em] text-zinc-400">
+              <div className="border border-zinc-800 bg-black/60 p-2.5 text-[10px] uppercase tracking-[0.12em] text-zinc-400 sm:p-3">
                 {phase === "waiting_camera" && "Waiting for camera permission"}
                 {phase === "countdown" && "Get ready"}
                 {phase === "scanning" && "Scanning in progress"}
               </div>
             )}
-            <div className="border border-zinc-800 bg-black/60 p-3">
+            <div className="border border-zinc-800 bg-black/60 p-2.5 sm:p-3">
               <div className="mb-2 flex items-center justify-between text-[10px] font-semibold uppercase tracking-[0.12em] text-zinc-500">
                 <span>Scan Progress</span>
                 <span className="text-purple-200">{secondsLeft}s</span>

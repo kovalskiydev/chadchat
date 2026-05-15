@@ -7,12 +7,12 @@ export function VerificationStartingModal({
 }) {
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/78 p-4 backdrop-blur-sm"
+      className="fixed inset-0 z-50 flex items-start justify-center bg-black/78 p-0 backdrop-blur-sm sm:items-center sm:p-4"
       role="dialog"
       aria-modal="true"
       aria-labelledby="verification-starting-title"
     >
-      <div className="w-full max-w-md border border-purple-500/35 bg-zinc-950 shadow-[0_0_40px_rgba(132,0,255,0.22)]">
+      <div className="h-screen w-full overflow-y-auto border-x-0 border-purple-500/35 bg-zinc-950 shadow-[0_0_40px_rgba(132,0,255,0.22)] sm:h-auto sm:max-w-md sm:rounded-none sm:border">
         <div className="border-b border-border px-5 py-4">
           <div className="text-[10px] font-semibold uppercase tracking-[0.18em] text-zinc-600">
             Verification

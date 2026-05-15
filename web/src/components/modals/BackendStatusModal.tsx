@@ -7,12 +7,12 @@ export function BackendStatusModal({
 }) {
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/82 p-4 backdrop-blur-sm"
+      className="fixed inset-0 z-50 flex items-start justify-center bg-black/82 p-0 backdrop-blur-sm sm:items-center sm:p-4"
       role="dialog"
       aria-modal="true"
       aria-labelledby="backend-status-title"
     >
-      <div className="w-full max-w-xl border border-red-500/35 bg-zinc-950 shadow-[0_0_40px_rgba(239,68,68,0.18)]">
+      <div className="h-screen w-full overflow-y-auto border-x-0 border-red-500/35 bg-zinc-950 shadow-[0_0_40px_rgba(239,68,68,0.18)] sm:h-auto sm:max-w-xl sm:rounded-none sm:border">
         <div className="border-b border-border px-5 py-4">
           <div className="text-[10px] font-semibold uppercase tracking-[0.18em] text-zinc-600">
             Service Status

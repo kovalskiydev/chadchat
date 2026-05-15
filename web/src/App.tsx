@@ -1097,18 +1097,19 @@ export default function App() {
       </div>
       <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_center,transparent_0%,rgba(0,0,0,0.32)_48%,rgba(0,0,0,0.82)_100%)]" />
       <div className="relative z-10 mx-auto flex min-h-screen w-full max-w-7xl flex-col px-4 py-4 sm:px-6 lg:px-8">
-        <nav className="flex h-14 items-center justify-center border border-border bg-zinc-950/85 shadow-wire backdrop-blur-sm">
-          <div className="grid w-full grid-cols-[1fr_auto_1fr] items-center px-4 text-sm font-semibold uppercase tracking-[0.18em] text-zinc-400">
+        <nav className="flex min-h-14 items-center justify-center border border-border bg-zinc-950/85 shadow-wire backdrop-blur-sm">
+          <div className="grid w-full grid-cols-[auto_1fr_auto] items-center gap-2 px-3 py-2 text-xs font-semibold uppercase tracking-[0.18em] text-zinc-400 sm:grid-cols-[1fr_auto_1fr] sm:gap-0 sm:px-4 sm:text-sm">
             <button
               type="button"
-              className="inline-flex h-8 items-center gap-2 justify-self-start border border-zinc-700 bg-black/70 px-2.5 text-[10px] font-semibold tracking-[0.12em] text-zinc-300 transition-colors hover:border-purple-400/55 hover:text-zinc-100"
+              className="inline-flex h-8 items-center gap-1.5 justify-self-start border border-zinc-700 bg-black/70 px-2 text-[9px] font-semibold tracking-[0.12em] text-zinc-300 transition-colors hover:border-purple-400/55 hover:text-zinc-100 sm:gap-2 sm:px-2.5 sm:text-[10px]"
               aria-label="Guide for SUB5"
             >
-              <CircleHelp className="h-3.5 w-3.5 text-purple-300" aria-hidden="true" />
-              <span>Guide for SUB5</span>
+              <CircleHelp className="h-3 w-3 text-purple-300 sm:h-3.5 sm:w-3.5" aria-hidden="true" />
+              <span className="hidden sm:inline">Guide for SUB5</span>
+              <span className="sm:hidden">Guide</span>
             </button>
-            <div className="grid grid-cols-[auto_auto_auto] items-center gap-7 justify-self-center">
-              <a className="transition-colors hover:text-zinc-100" href="#community">
+            <div className="flex items-center justify-center gap-3 sm:grid sm:grid-cols-[auto_auto_auto] sm:items-center sm:gap-7">
+              <a className="hidden transition-colors hover:text-zinc-100 sm:inline" href="#community">
                 Community
               </a>
               <Shuffle
@@ -1126,10 +1127,10 @@ export default function App() {
                 loop={false}
                 loopDelay={0}
                 tag="span"
-                className="nav-logo text-zinc-100"
+                className="nav-logo text-sm text-zinc-100 sm:text-base"
               />
               <a
-                className="grid grid-cols-[auto_16px] items-center gap-2 transition-colors hover:text-zinc-100"
+                className="hidden items-center gap-2 transition-colors hover:text-zinc-100 sm:grid sm:grid-cols-[auto_16px]"
                 href="#shop"
               >
                 Shop
@@ -1138,7 +1139,7 @@ export default function App() {
             </div>
             <div
               className={cn(
-                "flex h-8 items-center gap-2 justify-self-end border border-zinc-700 bg-black/70 px-2.5 text-zinc-200 transition-all",
+                "flex h-8 items-center gap-1.5 justify-self-end border border-zinc-700 bg-black/70 px-2 text-zinc-200 transition-all sm:gap-2 sm:px-2.5",
                 "shadow-[0_0_12px_rgba(132,0,255,0.08)]",
               )}
             >
@@ -1155,12 +1156,12 @@ export default function App() {
                   }
                   handleOpenProfile();
                 }}
-                className="inline-flex h-5 items-center gap-1 border border-zinc-700 bg-zinc-900/60 px-2 text-[10px] font-semibold uppercase tracking-[0.12em] text-zinc-300 transition-colors hover:border-purple-500/60 hover:text-zinc-100"
+                className="inline-flex h-5 items-center gap-1 border border-zinc-700 bg-zinc-900/60 px-1.5 text-[9px] font-semibold uppercase tracking-[0.12em] text-zinc-300 transition-colors hover:border-purple-500/60 hover:text-zinc-100 sm:px-2 sm:text-[10px]"
               >
                 <User className="h-3 w-3" aria-hidden="true" />
-                {authLoading ? "..." : currentNickname}
+                <span className="max-w-[4rem] truncate sm:max-w-none">{authLoading ? "..." : currentNickname}</span>
               </button>
-              {isCurrentUserAdmin && <AdminBadge className="h-5 px-2 text-[8px]" />}
+              {isCurrentUserAdmin && <AdminBadge className="h-5 px-1.5 text-[7px] sm:px-2 sm:text-[8px]" />}
               {!isAnonymousUser && (
                 <button
                   type="button"
@@ -1168,7 +1169,7 @@ export default function App() {
                   className="inline-flex h-5 w-5 items-center justify-center border border-zinc-700 bg-zinc-900/60 text-zinc-400 transition-colors hover:border-red-500/60 hover:text-red-300"
                   aria-label="Logout"
                 >
-                  <LogOut className="h-3.5 w-3.5" aria-hidden="true" />
+                  <LogOut className="h-3 w-3 sm:h-3.5 sm:w-3.5" aria-hidden="true" />
                 </button>
               )}
             </div>
@@ -1183,7 +1184,7 @@ export default function App() {
         />
         <div
           ref={bentoGridRef}
-          className="bento-section grid flex-1 gap-4 py-4 lg:grid-cols-[minmax(180px,1fr)_minmax(280px,420px)_minmax(180px,1fr)]"
+          className="bento-section grid flex-1 gap-4 overflow-y-auto overscroll-contain py-4 lg:grid-cols-[minmax(180px,1fr)_minmax(280px,420px)_minmax(180px,1fr)]"
         >
           <Panel
             title="Live Chat"
@@ -1212,7 +1213,7 @@ export default function App() {
           <ParticleCard
             className={cn(
               magicBlockClass,
-              "h-[calc(100vh-7.5rem)] min-h-[420px] overflow-hidden shadow-wire backdrop-blur-sm",
+              "h-[calc(100vh-7.5rem)] min-h-[320px] overflow-hidden shadow-wire backdrop-blur-sm",
             )}
             particleCount={12}
             glowColor={magicGlow}
