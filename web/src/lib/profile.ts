@@ -66,6 +66,9 @@ export type ProfileComment = {
   parent_comment_id?: string | null;
   text: string;
   is_deleted?: boolean;
+  like_count: number;
+  dislike_count: number;
+  my_vote: number;
   created_at: string;
 };
 
@@ -198,4 +201,27 @@ export async function deleteProfileComment(
     },
     accessToken,
   );
+}
+
+export async function voteProfileComment(
+  accessToken: string,
+  userID: string,
+  commentID: string,
+  value: number,
+) {
+  const payload = await authorizedRequest<{
+    comment_id: string;
+    like_count: number;
+    dislike_count: number;
+    my_vote: number;
+  }>(
+    `/profiles/${encodeURIComponent(userID)}/comments/${encodeURIComponent(commentID)}/vote`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ value }),
+    },
+    accessToken,
+  );
+  return payload;
 }

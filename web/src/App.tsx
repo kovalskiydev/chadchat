@@ -14,6 +14,8 @@ import {
   LogOut,
   User,
   Camera,
+  ThumbsDown,
+  ThumbsUp,
   Trash2,
   Volume2,
   VolumeX,
@@ -113,6 +115,7 @@ import {
   getPublicProfile,
   postProfileComment,
   updateMyProfile,
+  voteProfileComment,
   type Profile,
   type ProfileComment,
 } from "@/lib/profile";
@@ -4636,6 +4639,7 @@ function ProfileModal({
   const [replyDrafts, setReplyDrafts] = useState<Record<string, string>>({});
   const [replyingTo, setReplyingTo] = useState<string | null>(null);
   const [deletingCommentID, setDeletingCommentID] = useState<string | null>(null);
+  const [expandedReplies, setExpandedReplies] = useState<Record<string, boolean>>({});
   const [editBio, setEditBio] = useState("");
   const [editCountry, setEditCountry] = useState("");
   const [avatarFile, setAvatarFile] = useState<File | null>(null);
@@ -4788,10 +4792,37 @@ function ProfileModal({
     }
   };
 
+  const voteComment = async (commentID: string, value: number) => {
+    if (!accessToken || !userID) return;
+    try {
+      const result = await voteProfileComment(accessToken, userID, commentID, value);
+      setComments((current) =>
+        current.map((comment) =>
+          comment.id === commentID
+            ? {
+                ...comment,
+                like_count: result.like_count,
+                dislike_count: result.dislike_count,
+                my_vote: result.my_vote,
+              }
+            : comment,
+        ),
+      );
+    } catch (error) {
+      setError(error instanceof Error ? error.message : "Failed to vote");
+    }
+  };
+
   const progress = Math.max(0, Math.min(100, profile?.progress_percent ?? 0));
   const isAdminProfile = isAdminRole(profile?.role);
   const canModerateProfiles = isAdminRole(currentUserRole);
-  const rootComments = comments.filter((comment) => !comment.parent_comment_id);
+  const sortByPopularity = (a: ProfileComment, b: ProfileComment) =>
+    b.like_count - a.like_count || Date.parse(b.created_at) - Date.parse(a.created_at);
+
+  const rootComments = comments
+    .filter((comment) => !comment.parent_comment_id)
+    .sort(sortByPopularity);
+
   const repliesByParent = comments.reduce<Record<string, ProfileComment[]>>(
     (acc, comment) => {
       if (!comment.parent_comment_id) return acc;
@@ -4803,6 +4834,10 @@ function ProfileModal({
     },
     {},
   );
+
+  Object.keys(repliesByParent).forEach((key) => {
+    repliesByParent[key].sort(sortByPopularity);
+  });
 
   const renderComment = (comment: ProfileComment, depth = 0): React.ReactNode => {
     const replies = repliesByParent[comment.id] ?? [];
@@ -4816,6 +4851,11 @@ function ProfileModal({
             canModerateProfiles),
       );
     const isDeleting = deletingCommentID === comment.id;
+    const isExpanded = expandedReplies[comment.id] ?? false;
+    const repliesLimit = 3;
+    const hasMoreReplies = replies.length > repliesLimit;
+    const visibleReplies = isExpanded ? replies : replies.slice(0, repliesLimit);
+    const canVote = !comment.is_deleted && Boolean(accessToken);
 
     return (
       <div
@@ -4855,17 +4895,47 @@ function ProfileModal({
         ) : (
           <>
             <p className="mt-2 break-words text-xs leading-5 text-zinc-300">{comment.text}</p>
-            <button
-              className="mt-2 text-[10px] font-semibold uppercase tracking-[0.12em] text-purple-300 transition-colors hover:text-purple-100"
-              type="button"
-              onClick={() =>
-                setReplyingTo((current) =>
-                  current === comment.id ? null : comment.id,
-                )
-              }
-            >
-              Reply
-            </button>
+            <div className="mt-2 flex items-center gap-3">
+              <button
+                className={cn(
+                  "inline-flex items-center gap-1 text-[10px] font-semibold uppercase tracking-[0.1em] transition-colors",
+                  comment.my_vote === 1
+                    ? "text-emerald-300"
+                    : "text-zinc-500 hover:text-zinc-300",
+                )}
+                type="button"
+                disabled={!canVote}
+                onClick={() => voteComment(comment.id, comment.my_vote === 1 ? 0 : 1)}
+              >
+                <ThumbsUp className="h-3 w-3" aria-hidden="true" />
+                <span>{comment.like_count}</span>
+              </button>
+              <button
+                className={cn(
+                  "inline-flex items-center gap-1 text-[10px] font-semibold uppercase tracking-[0.1em] transition-colors",
+                  comment.my_vote === -1
+                    ? "text-red-300"
+                    : "text-zinc-500 hover:text-zinc-300",
+                )}
+                type="button"
+                disabled={!canVote}
+                onClick={() => voteComment(comment.id, comment.my_vote === -1 ? 0 : -1)}
+              >
+                <ThumbsDown className="h-3 w-3" aria-hidden="true" />
+                <span>{comment.dislike_count}</span>
+              </button>
+              <button
+                className="text-[10px] font-semibold uppercase tracking-[0.12em] text-purple-300 transition-colors hover:text-purple-100"
+                type="button"
+                onClick={() =>
+                  setReplyingTo((current) =>
+                    current === comment.id ? null : comment.id,
+                  )
+                }
+              >
+                Reply
+              </button>
+            </div>
           </>
         )}
         {isReplying && (
@@ -4892,9 +4962,25 @@ function ProfileModal({
             </button>
           </div>
         )}
-        {Boolean(replies.length) && (
+        {Boolean(visibleReplies.length) && (
           <div className="mt-3 space-y-2 border-l border-purple-500/25 pl-3">
-            {replies.map((reply) => renderComment(reply, depth + 1))}
+            {visibleReplies.map((reply) => renderComment(reply, depth + 1))}
+            {hasMoreReplies && (
+              <button
+                className="text-[10px] font-semibold uppercase tracking-[0.12em] text-purple-300 transition-colors hover:text-purple-100"
+                type="button"
+                onClick={() =>
+                  setExpandedReplies((current) => ({
+                    ...current,
+                    [comment.id]: !isExpanded,
+                  }))
+                }
+              >
+                {isExpanded
+                  ? "Collapse replies"
+                  : `Show ${replies.length - repliesLimit} more replies`}
+              </button>
+            )}
           </div>
         )}
       </div>

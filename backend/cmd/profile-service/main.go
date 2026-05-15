@@ -70,6 +70,10 @@ type profileCommentRequest struct {
 	ParentCommentID string `json:"parent_comment_id"`
 }
 
+type profileCommentVoteRequest struct {
+	Value int `json:"value"`
+}
+
 type avatarUploadRequest struct {
 	FileName    string `json:"file_name"`
 	ContentType string `json:"content_type"`
@@ -93,6 +97,9 @@ type profileComment struct {
 	ParentCommentID string    `json:"parent_comment_id,omitempty"`
 	Text            string    `json:"text"`
 	IsDeleted       bool      `json:"is_deleted,omitempty"`
+	LikeCount       int       `json:"like_count"`
+	DislikeCount    int       `json:"dislike_count"`
+	MyVote          int       `json:"my_vote"`
 	CreatedAt       time.Time `json:"created_at"`
 }
 
@@ -186,6 +193,7 @@ func main() {
 	mux.HandleFunc("GET /profiles/{userID}/comments", s.withAuth(s.handleProfileComments))
 	mux.HandleFunc("POST /profiles/{userID}/comments", s.withAuth(s.handlePostProfileComment))
 	mux.HandleFunc("DELETE /profiles/{userID}/comments/{commentID}", s.withAuth(s.handleDeleteProfileComment))
+	mux.HandleFunc("POST /profiles/{userID}/comments/{commentID}/vote", s.withAuth(s.handleVoteProfileComment))
 
 	addr := ":" + envOr("PORT", "8089")
 	log.Printf("profile-service on %s", addr)
@@ -212,6 +220,16 @@ func profileSchema() []string {
 			created_at DATETIME(6) NOT NULL,
 			INDEX idx_profile_comments_target_created (target_user_id, created_at DESC),
 			INDEX idx_profile_comments_parent (parent_comment_id)
+		) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`,
+		`CREATE TABLE IF NOT EXISTS profile_comment_votes (
+			id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+			comment_id BIGINT UNSIGNED NOT NULL,
+			user_id VARCHAR(64) NOT NULL,
+			value TINYINT NOT NULL,
+			created_at DATETIME(6) NOT NULL,
+			updated_at DATETIME(6) NOT NULL,
+			UNIQUE KEY uniq_profile_comment_vote (comment_id, user_id),
+			INDEX idx_profile_comment_votes_comment (comment_id)
 		) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`,
 	}
 }
@@ -417,7 +435,7 @@ func (s *Server) handleAvatarUploadURL(w http.ResponseWriter, r *http.Request, u
 	})
 }
 
-func (s *Server) handleProfileComments(w http.ResponseWriter, r *http.Request, _ authUser) {
+func (s *Server) handleProfileComments(w http.ResponseWriter, r *http.Request, user authUser) {
 	targetUserID := strings.TrimSpace(r.PathValue("userID"))
 	if targetUserID == "" {
 		writeErr(w, http.StatusBadRequest, "missing_user_id")
@@ -434,13 +452,22 @@ func (s *Server) handleProfileComments(w http.ResponseWriter, r *http.Request, _
 		return
 	}
 	rows, err := s.db.Query(
-		`SELECT pc.id, pc.author_user_id, COALESCE(u.nickname, ''), pc.target_user_id, pc.parent_comment_id, pc.text, pc.deleted_at, pc.created_at
+		`SELECT pc.id, pc.author_user_id, COALESCE(u.nickname, ''), pc.target_user_id, pc.parent_comment_id, pc.text, pc.deleted_at,
+		        COALESCE(v.likes, 0), COALESCE(v.dislikes, 0), COALESCE(uv.value, 0), pc.created_at
 		 FROM profile_comments pc
 		 LEFT JOIN users u ON u.id = CAST(SUBSTRING(pc.author_user_id, 3) AS UNSIGNED)
+		 LEFT JOIN (
+		 	SELECT comment_id,
+		 	       SUM(CASE WHEN value = 1 THEN 1 ELSE 0 END) AS likes,
+		 	       SUM(CASE WHEN value = -1 THEN 1 ELSE 0 END) AS dislikes
+		 	FROM profile_comment_votes
+		 	GROUP BY comment_id
+		 ) v ON v.comment_id = pc.id
+		 LEFT JOIN profile_comment_votes uv ON uv.comment_id = pc.id AND uv.user_id = ?
 		 WHERE pc.target_user_id = ?
 		 ORDER BY pc.created_at DESC, pc.id DESC
 		 LIMIT ? OFFSET ?`,
-		targetUserID, limit+1, offset,
+		user.ID, targetUserID, limit+1, offset,
 	)
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, "db_error")
@@ -453,7 +480,7 @@ func (s *Server) handleProfileComments(w http.ResponseWriter, r *http.Request, _
 		var parentID sql.NullInt64
 		var deletedAt sql.NullTime
 		var c profileComment
-		if err := rows.Scan(&rawID, &c.AuthorUserID, &c.AuthorNickname, &c.TargetUserID, &parentID, &c.Text, &deletedAt, &c.CreatedAt); err != nil {
+		if err := rows.Scan(&rawID, &c.AuthorUserID, &c.AuthorNickname, &c.TargetUserID, &parentID, &c.Text, &deletedAt, &c.LikeCount, &c.DislikeCount, &c.MyVote, &c.CreatedAt); err != nil {
 			writeErr(w, http.StatusInternalServerError, "db_error")
 			return
 		}
@@ -552,6 +579,9 @@ func (s *Server) handlePostProfileComment(w http.ResponseWriter, r *http.Request
 		TargetUserID:    targetUserID,
 		ParentCommentID: req.ParentCommentID,
 		Text:            req.Text,
+		LikeCount:       0,
+		DislikeCount:    0,
+		MyVote:          0,
 		CreatedAt:       now,
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"comment": comment})
@@ -602,6 +632,85 @@ func (s *Server) handleDeleteProfileComment(w http.ResponseWriter, r *http.Reque
 		}
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"status": "ok", "comment_id": commentID, "is_deleted": true})
+}
+
+func (s *Server) handleVoteProfileComment(w http.ResponseWriter, r *http.Request, user authUser) {
+	targetUserID := strings.TrimSpace(r.PathValue("userID"))
+	commentID := strings.TrimSpace(r.PathValue("commentID"))
+	if targetUserID == "" || commentID == "" {
+		writeErr(w, http.StatusBadRequest, "missing_comment_context")
+		return
+	}
+	rawCommentID, err := decodeCommentID(commentID)
+	if err != nil {
+		writeErr(w, http.StatusBadRequest, "invalid_comment_id")
+		return
+	}
+	var req profileCommentVoteRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeErr(w, http.StatusBadRequest, "invalid_json")
+		return
+	}
+	if req.Value != -1 && req.Value != 0 && req.Value != 1 {
+		writeErr(w, http.StatusBadRequest, "invalid_vote_value")
+		return
+	}
+	var storedTargetUserID string
+	var deletedAt sql.NullTime
+	if err := s.db.QueryRow(
+		`SELECT target_user_id, deleted_at FROM profile_comments WHERE id = ?`,
+		rawCommentID,
+	).Scan(&storedTargetUserID, &deletedAt); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			writeErr(w, http.StatusNotFound, "comment_not_found")
+			return
+		}
+		writeErr(w, http.StatusInternalServerError, "db_error")
+		return
+	}
+	if storedTargetUserID != targetUserID {
+		writeErr(w, http.StatusBadRequest, "comment_target_mismatch")
+		return
+	}
+	if deletedAt.Valid {
+		writeErr(w, http.StatusBadRequest, "comment_deleted")
+		return
+	}
+	now := time.Now().UTC()
+	if req.Value == 0 {
+		if _, err := s.db.Exec(`DELETE FROM profile_comment_votes WHERE comment_id = ? AND user_id = ?`, rawCommentID, user.ID); err != nil {
+			writeErr(w, http.StatusInternalServerError, "db_error")
+			return
+		}
+	} else {
+		if _, err := s.db.Exec(
+			`INSERT INTO profile_comment_votes (comment_id, user_id, value, created_at, updated_at)
+			 VALUES (?, ?, ?, ?, ?)
+			 ON DUPLICATE KEY UPDATE value = VALUES(value), updated_at = VALUES(updated_at)`,
+			rawCommentID, user.ID, req.Value, now, now,
+		); err != nil {
+			writeErr(w, http.StatusInternalServerError, "db_error")
+			return
+		}
+	}
+	var likeCount, dislikeCount int
+	if err := s.db.QueryRow(
+		`SELECT
+			COALESCE(SUM(CASE WHEN value = 1 THEN 1 ELSE 0 END), 0),
+			COALESCE(SUM(CASE WHEN value = -1 THEN 1 ELSE 0 END), 0)
+		 FROM profile_comment_votes
+		 WHERE comment_id = ?`,
+		rawCommentID,
+	).Scan(&likeCount, &dislikeCount); err != nil {
+		writeErr(w, http.StatusInternalServerError, "db_error")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"comment_id":    commentID,
+		"like_count":    likeCount,
+		"dislike_count": dislikeCount,
+		"my_vote":       req.Value,
+	})
 }
 
 func (s *Server) loadBasicUser(userID string) (authUser, error) {
