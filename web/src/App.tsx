@@ -1186,34 +1186,13 @@ export default function App() {
           ref={bentoGridRef}
           className="bento-section grid flex-1 gap-4 overflow-y-auto overscroll-contain py-4 lg:grid-cols-[minmax(180px,1fr)_minmax(280px,420px)_minmax(180px,1fr)]"
         >
-          <Panel
-            title="Live Chat"
-            icon={<MessageSquare className="h-4 w-4" />}
-            headerAction={
-              <button
-                type="button"
-                onClick={() => setChatBlurred((current) => !current)}
-                className="inline-flex h-6 items-center justify-center border border-zinc-800 bg-black/70 px-2 text-[9px] font-semibold uppercase tracking-[0.12em] text-zinc-300 transition-colors hover:border-purple-400 hover:text-white"
-              >
-                {chatBlurred ? "Unblur" : "Blur"}
-              </button>
-            }
-          >
-            <LiveChat
-              chatCustomization={chatCustomization}
-              currentChatStyle={currentChatStyle}
-              currentUserName={currentNickname}
-              currentUserRole={typeof me?.role === "string" ? me.role : undefined}
-              accessToken={tokens?.accessToken ?? null}
-              chatBlurred={chatBlurred}
-              onOpenProfile={handleOpenProfile}
-            />
-          </Panel>
+          {/* Mobile: Stats/Customize/Start first, then Tops, then Chat */}
+          {/* Desktop: Chat | Center | Leaderboard (via order) */}
 
           <ParticleCard
             className={cn(
               magicBlockClass,
-              "h-[calc(100vh-7.5rem)] min-h-[320px] overflow-hidden shadow-wire backdrop-blur-sm",
+              "order-1 h-[calc(100vh-7.5rem)] min-h-[320px] overflow-hidden shadow-wire backdrop-blur-sm lg:order-none",
             )}
             particleCount={12}
             glowColor={magicGlow}
@@ -1261,12 +1240,37 @@ export default function App() {
             </section>
           </ParticleCard>
 
-          <Panel title="Tops" icon={<Trophy className="h-4 w-4" />}>
+          <Panel title="Tops" icon={<Trophy className="h-4 w-4" />} className="order-2 lg:order-none">
             <TopsLeaderboard
               entries={leaderboardEntries}
               loading={leaderboardLoading}
               onOpenProfile={handleOpenProfile}
               avatarByUserId={leaderboardAvatarByUserId}
+            />
+          </Panel>
+
+          <Panel
+            title="Live Chat"
+            icon={<MessageSquare className="h-4 w-4" />}
+            className="order-3 lg:order-none"
+            headerAction={
+              <button
+                type="button"
+                onClick={() => setChatBlurred((current) => !current)}
+                className="inline-flex h-6 items-center justify-center border border-zinc-800 bg-black/70 px-2 text-[9px] font-semibold uppercase tracking-[0.12em] text-zinc-300 transition-colors hover:border-purple-400 hover:text-white"
+              >
+                {chatBlurred ? "Unblur" : "Blur"}
+              </button>
+            }
+          >
+            <LiveChat
+              chatCustomization={chatCustomization}
+              currentChatStyle={currentChatStyle}
+              currentUserName={currentNickname}
+              currentUserRole={typeof me?.role === "string" ? me.role : undefined}
+              accessToken={tokens?.accessToken ?? null}
+              chatBlurred={chatBlurred}
+              onOpenProfile={handleOpenProfile}
             />
           </Panel>
         </div>
