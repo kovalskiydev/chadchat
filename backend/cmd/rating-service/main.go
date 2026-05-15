@@ -3,16 +3,15 @@ package main
 import (
 	"database/sql"
 	"encoding/base64"
-	"encoding/json"
 	"errors"
 	"log"
 	"math"
 	"net/http"
-	"os"
 	"strconv"
 	"strings"
 	"time"
 
+	"backend/internal/httputil"
 	"backend/internal/mysqlutil"
 )
 
@@ -31,13 +30,6 @@ type Server struct {
 	internalSecret string
 	queueType      string
 	region         string
-}
-
-type meResponse struct {
-	User struct {
-		ID       string `json:"id"`
-		Nickname string `json:"nickname"`
-	} `json:"user"`
 }
 
 type authUser struct {
@@ -178,10 +170,10 @@ func main() {
 
 	s := &Server{
 		db:             db,
-		authServiceURL: envOr("AUTH_SERVICE_URL", "http://localhost:8081"),
-		internalSecret: envOr("RATING_INTERNAL_SECRET", "dev-rating-secret-change-me"),
-		queueType:      envOr("DEFAULT_QUEUE_TYPE", defaultQueueType),
-		region:         envOr("DEFAULT_REGION", defaultRegion),
+		authServiceURL: httputil.EnvOr("AUTH_SERVICE_URL", "http://localhost:8081"),
+		internalSecret: httputil.EnvOr("RATING_INTERNAL_SECRET", "dev-rating-secret-change-me"),
+		queueType:      httputil.EnvOr("DEFAULT_QUEUE_TYPE", defaultQueueType),
+		region:         httputil.EnvOr("DEFAULT_REGION", defaultRegion),
 	}
 
 	mux := http.NewServeMux()
@@ -197,9 +189,9 @@ func main() {
 	mux.HandleFunc("GET /matches/me", s.withAuth(s.handleMyMatches))
 	mux.HandleFunc("POST /rating/internal/record-duel", s.handleInternalRecordDuel)
 
-	addr := ":" + envOr("PORT", "8086")
+	addr := ":" + httputil.EnvOr("PORT", "8086")
 	log.Printf("rating-service on %s", addr)
-	log.Fatal(http.ListenAndServe(addr, withJSON(mux)))
+	log.Fatal(http.ListenAndServe(addr, httputil.WithJSON(mux)))
 }
 
 func ratingSchema() []string {
@@ -249,14 +241,14 @@ func ratingSchema() []string {
 
 func (s *Server) handleHealth(w http.ResponseWriter, _ *http.Request) {
 	if err := mysqlutil.Ping(s.db); err != nil {
-		writeJSON(w, http.StatusServiceUnavailable, map[string]any{
+		httputil.WriteJSON(w, http.StatusServiceUnavailable, map[string]any{
 			"ok":     false,
 			"status": "degraded",
 			"error":  "mysql_unavailable",
 		})
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{
+	httputil.WriteJSON(w, http.StatusOK, map[string]any{
 		"ok":     true,
 		"status": "ok",
 		"checks": map[string]string{"mysql": "ok"},
@@ -264,598 +256,9 @@ func (s *Server) handleHealth(w http.ResponseWriter, _ *http.Request) {
 }
 
 func (s *Server) withAuth(next func(http.ResponseWriter, *http.Request, authUser)) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		authHeader := r.Header.Get("Authorization")
-		if !strings.HasPrefix(authHeader, "Bearer ") {
-			writeErr(w, http.StatusUnauthorized, "missing_bearer_token")
-			return
-		}
-		user, err := s.resolveUser(authHeader)
-		if err != nil {
-			writeErr(w, http.StatusUnauthorized, "invalid_access_token")
-			return
-		}
-		next(w, r, user)
-	}
-}
-
-func (s *Server) resolveUser(authHeader string) (authUser, error) {
-	req, err := http.NewRequest(http.MethodGet, s.authServiceURL+"/me", nil)
-	if err != nil {
-		return authUser{}, err
-	}
-	req.Header.Set("Authorization", authHeader)
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		return authUser{}, err
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		return authUser{}, errors.New("unauthorized")
-	}
-	var me meResponse
-	if err := json.NewDecoder(resp.Body).Decode(&me); err != nil {
-		return authUser{}, err
-	}
-	if me.User.ID == "" {
-		return authUser{}, errors.New("empty_user")
-	}
-	return authUser{ID: me.User.ID, Nickname: me.User.Nickname}, nil
-}
-
-func (s *Server) handleMyRating(w http.ResponseWriter, _ *http.Request, user authUser) {
-	profile, err := s.ensureAndLoadRating(user.ID, user.Nickname)
-	if err != nil {
-		writeErr(w, http.StatusInternalServerError, "db_error")
-		return
-	}
-	writeJSON(w, http.StatusOK, map[string]any{"rating": profile})
-}
-
-func (s *Server) handleUserRating(w http.ResponseWriter, r *http.Request, _ authUser) {
-	userID := r.PathValue("userID")
-	if userID == "" {
-		writeErr(w, http.StatusBadRequest, "missing_user_id")
-		return
-	}
-	profile, err := s.ensureAndLoadRating(userID, "")
-	if err != nil {
-		writeErr(w, http.StatusInternalServerError, "db_error")
-		return
-	}
-	writeJSON(w, http.StatusOK, map[string]any{"rating": profile})
-}
-
-func (s *Server) handleLeaderboard(w http.ResponseWriter, r *http.Request, _ authUser) {
-	limit, err := parseLimit(r, defaultLeaderboard)
-	if err != nil {
-		writeErr(w, http.StatusBadRequest, "invalid_limit")
-		return
-	}
-	offset, err := decodeCursor(r.URL.Query().Get("cursor"))
-	if err != nil {
-		writeErr(w, http.StatusBadRequest, "invalid_cursor")
-		return
-	}
-
-	rows, err := s.db.Query(
-		`SELECT ur.user_id, COALESCE(u.nickname, ''), ur.rating, ur.peak_rating, ur.updated_at
-		 FROM user_ratings ur
-		 LEFT JOIN users u ON u.id = CAST(SUBSTRING(ur.user_id, 3) AS UNSIGNED)
-		 ORDER BY ur.rating DESC, ur.updated_at ASC, ur.user_id ASC
-		 LIMIT ? OFFSET ?`,
-		limit+1, offset,
-	)
-	if err != nil {
-		writeErr(w, http.StatusInternalServerError, "db_error")
-		return
-	}
-	defer rows.Close()
-
-	entries := make([]leaderboardEntry, 0, limit+1)
-	position := offset + 1
-	for rows.Next() {
-		var entry leaderboardEntry
-		if err := rows.Scan(&entry.UserID, &entry.Nickname, &entry.Rating, &entry.PeakRating, &entry.UpdatedAt); err != nil {
-			writeErr(w, http.StatusInternalServerError, "db_error")
-			return
-		}
-		entry.Rank = rankFromRating(entry.Rating).Name
-		entry.Position = position
-		position++
-		entries = append(entries, entry)
-	}
-	if err := rows.Err(); err != nil {
-		writeErr(w, http.StatusInternalServerError, "db_error")
-		return
-	}
-
-	nextCursor := ""
-	if len(entries) > limit {
-		nextCursor = encodeCursor(offset + limit)
-		entries = entries[:limit]
-	}
-	writeJSON(w, http.StatusOK, map[string]any{
-		"entries":     entries,
-		"next_cursor": nextCursor,
+	return httputil.WithAuth(s.authServiceURL, func(w http.ResponseWriter, r *http.Request, u httputil.User) {
+		next(w, r, authUser{ID: u.ID, Nickname: u.Nickname})
 	})
-}
-
-func (s *Server) handleStatsSummary(w http.ResponseWriter, _ *http.Request, user authUser) {
-	profile, summary, err := s.loadSummary(user.ID, user.Nickname, time.Time{}, time.Time{})
-	if err != nil {
-		writeErr(w, http.StatusInternalServerError, "db_error")
-		return
-	}
-	writeJSON(w, http.StatusOK, map[string]any{"summary": buildSummaryResponse(profile, summary)})
-}
-
-func (s *Server) handleStatsPeriod(w http.ResponseWriter, r *http.Request, user authUser) {
-	start, prevStart, prevEnd, err := parsePeriodWindow(strings.TrimSpace(r.URL.Query().Get("period")), time.Now().UTC())
-	if err != nil {
-		writeErr(w, http.StatusBadRequest, "invalid_period")
-		return
-	}
-	end := time.Now().UTC()
-
-	profile, current, err := s.loadSummary(user.ID, user.Nickname, start, end)
-	if err != nil {
-		writeErr(w, http.StatusInternalServerError, "db_error")
-		return
-	}
-	previousProfile, previous, err := s.loadSummary(user.ID, user.Nickname, prevStart, prevEnd)
-	if err != nil {
-		writeErr(w, http.StatusInternalServerError, "db_error")
-		return
-	}
-
-	cur := buildSummaryResponse(profile, current)
-	prev := buildSummaryResponse(previousProfile, previous)
-	resp := statsPeriodResponse{
-		statsSummary:      cur,
-		RatingTrend:       float64(cur.Rating - prev.Rating),
-		PeakTrend:         float64(cur.PeakRating - prev.PeakRating),
-		MatchesTrend:      float64(cur.Matches - prev.Matches),
-		WinsTrend:         float64(cur.Wins - prev.Wins),
-		LossesTrend:       float64(cur.Losses - prev.Losses),
-		WinRateTrend:      round2(cur.WinRate - prev.WinRate),
-		AverageScoreTrend: round2(cur.AverageScore - prev.AverageScore),
-		AvgGainTrend:      round2(cur.AvgGain - prev.AvgGain),
-		AvgLossTrend:      round2(cur.AvgLoss - prev.AvgLoss),
-	}
-	writeJSON(w, http.StatusOK, map[string]any{"period": resp})
-}
-
-func (s *Server) handleStatsHistory(w http.ResponseWriter, r *http.Request, user authUser) {
-	now := time.Now().UTC()
-	start, _, _, err := parsePeriodWindow(strings.TrimSpace(r.URL.Query().Get("period")), now)
-	if err != nil {
-		writeErr(w, http.StatusBadRequest, "invalid_period")
-		return
-	}
-	interval, err := parseInterval(strings.TrimSpace(r.URL.Query().Get("interval")))
-	if err != nil {
-		writeErr(w, http.StatusBadRequest, "invalid_interval")
-		return
-	}
-	points, err := s.loadHistoryPoints(user.ID, start, now, interval)
-	if err != nil {
-		writeErr(w, http.StatusInternalServerError, "db_error")
-		return
-	}
-	writeJSON(w, http.StatusOK, map[string]any{"points": points})
-}
-
-func (s *Server) handleMyMatches(w http.ResponseWriter, r *http.Request, user authUser) {
-	limit, err := parseLimit(r, 20)
-	if err != nil {
-		writeErr(w, http.StatusBadRequest, "invalid_limit")
-		return
-	}
-	offset, err := decodeCursor(r.URL.Query().Get("cursor"))
-	if err != nil {
-		writeErr(w, http.StatusBadRequest, "invalid_cursor")
-		return
-	}
-	rows, err := s.db.Query(
-		`SELECT match_id, mode, started_at, finished_at, result, rating_delta, my_score, opponent_score,
-		        opponent_user_id, opponent_nickname, opponent_rank
-		 FROM user_match_history
-		 WHERE user_id = ?
-		 ORDER BY finished_at DESC, id DESC
-		 LIMIT ? OFFSET ?`,
-		user.ID, limit+1, offset,
-	)
-	if err != nil {
-		writeErr(w, http.StatusInternalServerError, "db_error")
-		return
-	}
-	defer rows.Close()
-
-	items := make([]matchEntry, 0, limit+1)
-	for rows.Next() {
-		var item matchEntry
-		if err := rows.Scan(
-			&item.MatchID, &item.Mode, &item.StartedAt, &item.FinishedAt, &item.Result,
-			&item.RatingDelta, &item.MyScore, &item.OpponentScore, &item.OpponentUserID,
-			&item.OpponentNickname, &item.OpponentRank,
-		); err != nil {
-			writeErr(w, http.StatusInternalServerError, "db_error")
-			return
-		}
-		items = append(items, item)
-	}
-	if err := rows.Err(); err != nil {
-		writeErr(w, http.StatusInternalServerError, "db_error")
-		return
-	}
-	nextCursor := ""
-	if len(items) > limit {
-		nextCursor = encodeCursor(offset + limit)
-		items = items[:limit]
-	}
-	writeJSON(w, http.StatusOK, map[string]any{
-		"matches":     items,
-		"next_cursor": nextCursor,
-	})
-}
-
-func (s *Server) handleRecentForm(w http.ResponseWriter, r *http.Request, user authUser) {
-	count := 5
-	if raw := strings.TrimSpace(r.URL.Query().Get("count")); raw != "" {
-		parsed, err := strconv.Atoi(raw)
-		if err != nil || parsed < 1 || parsed > 20 {
-			writeErr(w, http.StatusBadRequest, "invalid_count")
-			return
-		}
-		count = parsed
-	}
-	rows, err := s.db.Query(
-		`SELECT result
-		 FROM user_match_history
-		 WHERE user_id = ?
-		 ORDER BY finished_at DESC, id DESC
-		 LIMIT ?`,
-		user.ID, count,
-	)
-	if err != nil {
-		writeErr(w, http.StatusInternalServerError, "db_error")
-		return
-	}
-	defer rows.Close()
-	form := make([]string, 0, count)
-	for rows.Next() {
-		var result string
-		if err := rows.Scan(&result); err != nil {
-			writeErr(w, http.StatusInternalServerError, "db_error")
-			return
-		}
-		form = append(form, resultLetter(result))
-	}
-	writeJSON(w, http.StatusOK, map[string]any{"form": form})
-}
-
-func (s *Server) handleQueueInfo(w http.ResponseWriter, _ *http.Request, user authUser) {
-	lastDelta := 0
-	_ = s.db.QueryRow(
-		`SELECT rating_delta
-		 FROM user_match_history
-		 WHERE user_id = ?
-		 ORDER BY finished_at DESC, id DESC
-		 LIMIT 1`,
-		user.ID,
-	).Scan(&lastDelta)
-
-	writeJSON(w, http.StatusOK, map[string]any{
-		"queue_info": queueInfo{
-			QueueType:            s.queueType,
-			EstimatedWaitSec:     0,
-			Region:               s.region,
-			LastMatchRatingDelta: lastDelta,
-		},
-	})
-}
-
-func (s *Server) handleInternalRecordDuel(w http.ResponseWriter, r *http.Request) {
-	if r.Header.Get("X-Rating-Internal-Secret") != s.internalSecret {
-		writeErr(w, http.StatusForbidden, "forbidden")
-		return
-	}
-	var req duelRecordRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeErr(w, http.StatusBadRequest, "invalid_json")
-		return
-	}
-	if err := validateDuelRecord(req); err != nil {
-		writeErr(w, http.StatusBadRequest, err.Error())
-		return
-	}
-	if err := s.recordDuel(req); err != nil {
-		if errors.Is(err, errMatchAlreadyRecorded) {
-			writeJSON(w, http.StatusOK, map[string]any{"status": "already_recorded"})
-			return
-		}
-		writeErr(w, http.StatusInternalServerError, "db_error")
-		return
-	}
-	writeJSON(w, http.StatusOK, map[string]any{"status": "recorded"})
-}
-
-var errMatchAlreadyRecorded = errors.New("match already recorded")
-
-func (s *Server) recordDuel(req duelRecordRequest) error {
-	tx, err := s.db.Begin()
-	if err != nil {
-		return err
-	}
-	defer tx.Rollback()
-
-	var exists int
-	if err := tx.QueryRow(`SELECT 1 FROM user_match_history WHERE match_id = ? LIMIT 1`, req.MatchID).Scan(&exists); err == nil {
-		return errMatchAlreadyRecorded
-	} else if !errors.Is(err, sql.ErrNoRows) {
-		return err
-	}
-
-	profileA, err := s.ensureAndLoadRatingTx(tx, req.PlayerAID, req.PlayerANickname)
-	if err != nil {
-		return err
-	}
-	profileB, err := s.ensureAndLoadRatingTx(tx, req.PlayerBID, req.PlayerBNickname)
-	if err != nil {
-		return err
-	}
-
-	scoreA, scoreB := 0.5, 0.5
-	resultA, resultB := "draw", "draw"
-	if req.WinnerID == req.PlayerAID {
-		scoreA, scoreB = 1, 0
-		resultA, resultB = "win", "loss"
-	} else if req.WinnerID == req.PlayerBID {
-		scoreA, scoreB = 0, 1
-		resultA, resultB = "loss", "win"
-	}
-
-	deltaA, deltaB, newA, newB := applyElo(profileA.Rating, profileB.Rating, scoreA, scoreB)
-	peakA := maxInt(profileA.PeakRating, newA)
-	peakB := maxInt(profileB.PeakRating, newB)
-
-	if _, err := tx.Exec(
-		`UPDATE user_ratings SET rating = ?, peak_rating = ?, updated_at = ? WHERE user_id = ?`,
-		newA, peakA, req.FinishedAt, req.PlayerAID,
-	); err != nil {
-		return err
-	}
-	if _, err := tx.Exec(
-		`UPDATE user_ratings SET rating = ?, peak_rating = ?, updated_at = ? WHERE user_id = ?`,
-		newB, peakB, req.FinishedAt, req.PlayerBID,
-	); err != nil {
-		return err
-	}
-
-	if _, err := tx.Exec(
-		`INSERT INTO rating_history (user_id, delta, old_rating, new_rating, reason, source_id, created_at)
-		 VALUES (?, ?, ?, ?, ?, ?, ?), (?, ?, ?, ?, ?, ?, ?)`,
-		req.PlayerAID, deltaA, profileA.Rating, newA, duelReason(req.Reason), req.MatchID, req.FinishedAt,
-		req.PlayerBID, deltaB, profileB.Rating, newB, duelReason(req.Reason), req.MatchID, req.FinishedAt,
-	); err != nil {
-		return err
-	}
-
-	opponentRankForA := rankFromRating(newB).Name
-	opponentRankForB := rankFromRating(newA).Name
-	if _, err := tx.Exec(
-		`INSERT INTO user_match_history (
-			match_id, mode, user_id, user_nickname, opponent_user_id, opponent_nickname, opponent_rank,
-			result, rating_delta, my_score, opponent_score, started_at, finished_at, created_at
-		) VALUES
-			(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?),
-			(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		req.MatchID, safeMode(req.Mode), req.PlayerAID, req.PlayerANickname, req.PlayerBID, req.PlayerBNickname, opponentRankForA,
-		resultA, deltaA, req.PlayerAScore, req.PlayerBScore, req.StartedAt, req.FinishedAt, req.FinishedAt,
-		req.MatchID, safeMode(req.Mode), req.PlayerBID, req.PlayerBNickname, req.PlayerAID, req.PlayerANickname, opponentRankForB,
-		resultB, deltaB, req.PlayerBScore, req.PlayerAScore, req.StartedAt, req.FinishedAt, req.FinishedAt,
-	); err != nil {
-		return err
-	}
-
-	return tx.Commit()
-}
-
-func (s *Server) loadSummary(userID, nickname string, start, end time.Time) (*RatingProfile, statsSummary, error) {
-	profile, err := s.ensureAndLoadRating(userID, nickname)
-	if err != nil {
-		return nil, statsSummary{}, err
-	}
-	summary := statsSummary{}
-
-	query := `SELECT result, rating_delta, my_score, finished_at
-		FROM user_match_history
-		WHERE user_id = ?`
-	args := []any{userID}
-	if !start.IsZero() {
-		query += ` AND finished_at >= ? AND finished_at < ?`
-		args = append(args, start, end)
-	}
-	query += ` ORDER BY finished_at DESC, id DESC`
-	rows, err := s.db.Query(query, args...)
-	if err != nil {
-		return nil, statsSummary{}, err
-	}
-	defer rows.Close()
-
-	first := true
-	scoreSum := 0.0
-	gainSum, gainCount := 0, 0
-	lossSum, lossCount := 0, 0
-	for rows.Next() {
-		var result string
-		var delta int
-		var score float64
-		var finishedAt time.Time
-		if err := rows.Scan(&result, &delta, &score, &finishedAt); err != nil {
-			return nil, statsSummary{}, err
-		}
-		summary.Matches++
-		scoreSum += score
-		switch result {
-		case "win":
-			summary.Wins++
-			if delta > 0 {
-				gainSum += delta
-				gainCount++
-			}
-		case "loss":
-			summary.Losses++
-			if delta < 0 {
-				lossSum += -delta
-				lossCount++
-			}
-		}
-		if first {
-			summary.Streak = streakSeed(result)
-			first = false
-		} else if advanceStreak(summary.Streak, result) {
-			if summary.Streak > 0 {
-				summary.Streak++
-			} else if summary.Streak < 0 {
-				summary.Streak--
-			}
-		}
-	}
-	if err := rows.Err(); err != nil {
-		return nil, statsSummary{}, err
-	}
-
-	if summary.Matches > 0 {
-		summary.WinRate = round2(float64(summary.Wins) * 100 / float64(summary.Matches))
-		summary.AverageScore = round2(scoreSum / float64(summary.Matches))
-	}
-	if gainCount > 0 {
-		summary.AvgGain = round2(float64(gainSum) / float64(gainCount))
-	}
-	if lossCount > 0 {
-		summary.AvgLoss = round2(float64(lossSum) / float64(lossCount))
-	}
-	return profile, summary, nil
-}
-
-func (s *Server) loadHistoryPoints(userID string, start, end time.Time, interval time.Duration) ([]historyPoint, error) {
-	initialRating, err := s.ratingBefore(userID, start)
-	if err != nil {
-		return nil, err
-	}
-	matchRows, err := s.db.Query(
-		`SELECT finished_at, my_score
-		 FROM user_match_history
-		 WHERE user_id = ? AND finished_at >= ? AND finished_at < ?
-		 ORDER BY finished_at ASC, id ASC`,
-		userID, start, end,
-	)
-	if err != nil {
-		return nil, err
-	}
-	defer matchRows.Close()
-
-	ratingRows, err := s.db.Query(
-		`SELECT created_at, new_rating
-		 FROM rating_history
-		 WHERE user_id = ? AND created_at >= ? AND created_at < ?
-		 ORDER BY created_at ASC, id ASC`,
-		userID, start, end,
-	)
-	if err != nil {
-		return nil, err
-	}
-	defer ratingRows.Close()
-
-	buckets := map[time.Time]*historyAgg{}
-	for ts := truncateTime(start, interval); ts.Before(end.Add(interval)); ts = ts.Add(interval) {
-		buckets[ts] = &historyAgg{Rating: initialRating}
-	}
-	for matchRows.Next() {
-		var finishedAt time.Time
-		var score float64
-		if err := matchRows.Scan(&finishedAt, &score); err != nil {
-			return nil, err
-		}
-		key := truncateTime(finishedAt, interval)
-		b := buckets[key]
-		if b == nil {
-			b = &historyAgg{Rating: initialRating}
-			buckets[key] = b
-		}
-		b.Matches++
-		b.ScoreSum += score
-	}
-	if err := matchRows.Err(); err != nil {
-		return nil, err
-	}
-
-	for ratingRows.Next() {
-		var createdAt time.Time
-		var newRating int
-		if err := ratingRows.Scan(&createdAt, &newRating); err != nil {
-			return nil, err
-		}
-		key := truncateTime(createdAt, interval)
-		b := buckets[key]
-		if b == nil {
-			b = &historyAgg{}
-			buckets[key] = b
-		}
-		b.Rating = newRating
-	}
-	if err := ratingRows.Err(); err != nil {
-		return nil, err
-	}
-
-	points := make([]historyPoint, 0, len(buckets))
-	lastRating := initialRating
-	for ts := truncateTime(start, interval); ts.Before(end); ts = ts.Add(interval) {
-		b := buckets[ts]
-		if b == nil {
-			b = &historyAgg{Rating: lastRating}
-		}
-		if b.Rating == 0 {
-			b.Rating = lastRating
-		}
-		lastRating = b.Rating
-		avgScore := 0.0
-		if b.Matches > 0 {
-			avgScore = round2(b.ScoreSum / float64(b.Matches))
-		}
-		points = append(points, historyPoint{
-			TS:           ts,
-			Rating:       b.Rating,
-			AverageScore: avgScore,
-			Matches:      b.Matches,
-		})
-	}
-	return points, nil
-}
-
-func (s *Server) ratingBefore(userID string, start time.Time) (int, error) {
-	var rating int
-	err := s.db.QueryRow(
-		`SELECT new_rating
-		 FROM rating_history
-		 WHERE user_id = ? AND created_at < ?
-		 ORDER BY created_at DESC, id DESC
-		 LIMIT 1`,
-		userID, start,
-	).Scan(&rating)
-	if err == nil {
-		return rating, nil
-	}
-	if !errors.Is(err, sql.ErrNoRows) {
-		return 0, err
-	}
-	profile, err := s.ensureAndLoadRating(userID, "")
-	if err != nil {
-		return 0, err
-	}
-	return profile.Rating, nil
 }
 
 func (s *Server) ensureAndLoadRating(userID, nickname string) (*RatingProfile, error) {
@@ -988,17 +391,21 @@ func buildSummaryResponse(profile *RatingProfile, summary statsSummary) statsSum
 	return summary
 }
 
-func validateDuelRecord(req duelRecordRequest) error {
-	if strings.TrimSpace(req.MatchID) == "" {
-		return errors.New("missing_match_id")
+func applyElo(ratingA, ratingB int, scoreA, scoreB float64) (deltaA, deltaB, newA, newB int) {
+	expA := 1.0 / (1.0 + math.Pow(10, float64(ratingB-ratingA)/400.0))
+	expB := 1.0 / (1.0 + math.Pow(10, float64(ratingA-ratingB)/400.0))
+	newA = ratingA + int(math.Round(eloKFactor*(scoreA-expA)))
+	newB = ratingB + int(math.Round(eloKFactor*(scoreB-expB)))
+	deltaA = newA - ratingA
+	deltaB = newB - ratingB
+	return deltaA, deltaB, newA, newB
+}
+
+func maxInt(a, b int) int {
+	if a > b {
+		return a
 	}
-	if req.PlayerAID == "" || req.PlayerBID == "" || req.PlayerAID == req.PlayerBID {
-		return errors.New("invalid_players")
-	}
-	if req.FinishedAt.IsZero() {
-		req.FinishedAt = time.Now().UTC()
-	}
-	return nil
+	return b
 }
 
 func parseLimit(r *http.Request, fallback int) (int, error) {
@@ -1101,16 +508,6 @@ func truncateTime(ts time.Time, interval time.Duration) time.Time {
 	return time.Date(d.Year(), d.Month(), d.Day(), 0, 0, 0, 0, time.UTC)
 }
 
-func applyElo(ratingA, ratingB int, scoreA, scoreB float64) (deltaA, deltaB, newA, newB int) {
-	expA := 1.0 / (1.0 + math.Pow(10, float64(ratingB-ratingA)/400.0))
-	expB := 1.0 / (1.0 + math.Pow(10, float64(ratingA-ratingB)/400.0))
-	newA = ratingA + int(math.Round(eloKFactor*(scoreA-expA)))
-	newB = ratingB + int(math.Round(eloKFactor*(scoreB-expB)))
-	deltaA = newA - ratingA
-	deltaB = newB - ratingB
-	return deltaA, deltaB, newA, newB
-}
-
 func duelReason(reason string) string {
 	switch strings.TrimSpace(reason) {
 	case "disconnect":
@@ -1131,34 +528,4 @@ func safeMode(mode string) string {
 
 func round2(v float64) float64 {
 	return math.Round(v*100) / 100
-}
-
-func maxInt(a, b int) int {
-	if a > b {
-		return a
-	}
-	return b
-}
-
-func envOr(key, fallback string) string {
-	if value := os.Getenv(key); value != "" {
-		return value
-	}
-	return fallback
-}
-
-func withJSON(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/json; charset=utf-8")
-		next.ServeHTTP(w, r)
-	})
-}
-
-func writeJSON(w http.ResponseWriter, status int, payload any) {
-	w.WriteHeader(status)
-	_ = json.NewEncoder(w).Encode(payload)
-}
-
-func writeErr(w http.ResponseWriter, status int, code string) {
-	writeJSON(w, status, map[string]string{"error": code})
 }
