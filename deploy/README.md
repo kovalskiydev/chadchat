@@ -135,8 +135,8 @@ Flow:
 
 Recommended Caddy routing:
 
-- `chadchat.fun` -> `127.0.0.1:8081`
-- `admin.chadchat.fun` -> `127.0.0.1:8082`
+- `chadchat.fun` -> `127.0.0.1:3000` (web-next)
+- `admin.chadchat.fun` -> `127.0.0.1:8082` (admin-web)
 
 The current `admin-web` talks to the public API base URL via `VITE_API_BASE_URL`.
 

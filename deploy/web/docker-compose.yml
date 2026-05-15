@@ -1,14 +1,14 @@
 services:
   web:
-    image: ${WEB_IMAGE:-chadchat/web:latest}
+    image: ${WEB_IMAGE:-chadchat/web-next:latest}
     build:
-      context: ../../web
+      context: ../../web-next
       dockerfile: Dockerfile
       args:
-        VITE_API_BASE_URL: ${VITE_API_BASE_URL}
+        NEXT_PUBLIC_API_BASE_URL: ${NEXT_PUBLIC_API_BASE_URL}
     restart: unless-stopped
     ports:
-      - "${WEB_PUBLIC_PORT:-80}:80"
+      - "${WEB_PUBLIC_PORT:-3000}:3000"
 
   admin-web:
     image: ${ADMIN_WEB_IMAGE:-chadchat/admin-web:latest}

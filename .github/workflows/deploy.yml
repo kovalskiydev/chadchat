@@ -34,7 +34,7 @@ jobs:
         with:
           filters: |
             web:
-              - 'web/**'
+              - 'web-next/**'
               - 'admin-web/**'
               - 'deploy/web/**'
               - '.github/workflows/deploy.yml'
@@ -72,17 +72,17 @@ jobs:
       - name: Build and push web
         uses: docker/build-push-action@v6
         with:
-          context: ./web
-          file: ./web/Dockerfile
+          context: ./web-next
+          file: ./web-next/Dockerfile
           push: true
           provenance: false
-          cache-from: type=gha,scope=web
-          cache-to: type=gha,scope=web,mode=max
+          cache-from: type=gha,scope=web-next
+          cache-to: type=gha,scope=web-next,mode=max
           build-args: |
-            VITE_API_BASE_URL=${{ vars.PROD_API_BASE_URL }}
+            NEXT_PUBLIC_API_BASE_URL=${{ vars.PROD_API_BASE_URL }}
           tags: |
-            ${{ env.REGISTRY }}/${{ steps.vars.outputs.owner_lc }}/chadchat-web:main
-            ${{ env.REGISTRY }}/${{ steps.vars.outputs.owner_lc }}/chadchat-web:${{ github.sha }}
+            ${{ env.REGISTRY }}/${{ steps.vars.outputs.owner_lc }}/chadchat-web-next:main
+            ${{ env.REGISTRY }}/${{ steps.vars.outputs.owner_lc }}/chadchat-web-next:${{ github.sha }}
 
       - name: Build and push admin-web
         uses: docker/build-push-action@v6
@@ -322,10 +322,10 @@ jobs:
             set -eu
             mkdir -p "${{ env.WEB_DEPLOY_PATH }}"
             cat > "${{ env.WEB_DEPLOY_PATH }}/.env" <<EOF
-            VITE_API_BASE_URL=${{ vars.PROD_API_BASE_URL }}
-            WEB_PUBLIC_PORT=${{ vars.PROD_WEB_PUBLIC_PORT || '80' }}
+            NEXT_PUBLIC_API_BASE_URL=${{ vars.PROD_API_BASE_URL }}
+            WEB_PUBLIC_PORT=${{ vars.PROD_WEB_PUBLIC_PORT || '3000' }}
             ADMIN_WEB_PUBLIC_PORT=${{ vars.PROD_ADMIN_WEB_PUBLIC_PORT || '8082' }}
-            WEB_IMAGE=${{ env.REGISTRY }}/${OWNER_LC}/chadchat-web:main
+            WEB_IMAGE=${{ env.REGISTRY }}/${OWNER_LC}/chadchat-web-next:main
             ADMIN_WEB_IMAGE=${{ env.REGISTRY }}/${OWNER_LC}/chadchat-admin-web:main
             EOF
             echo "${{ secrets.GHCR_TOKEN }}" | docker login ${{ env.REGISTRY }} -u "${{ secrets.GHCR_USERNAME }}" --password-stdin
