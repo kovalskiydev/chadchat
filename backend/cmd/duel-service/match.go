@@ -172,7 +172,8 @@ func (s *Server) newMatchLocked(a, b authUser) *Match {
 			a.ID: false,
 			b.ID: false,
 		},
-		Subscribers: map[string]chan []byte{},
+		Subscribers:      map[string]chan []byte{},
+		subscriberUserID: map[string]string{},
 		Connections: map[string]int{
 			a.ID: 0,
 			b.ID: 0,

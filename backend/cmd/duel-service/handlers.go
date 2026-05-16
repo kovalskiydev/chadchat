@@ -77,8 +77,16 @@ func (s *Server) handleScoreFrame(w http.ResponseWriter, r *http.Request, user a
 	}
 
 	// personalised payload per player because "my" / "opponent" are relative
-	for _, uid := range []string{m.PlayerA, m.PlayerB} {
+	// Subscribers are keyed by subID (not userID), so we need to track which user owns which channel.
+	for subID, ch := range m.Subscribers {
+		uid := m.subscriberUserID[subID]
+		if uid == "" {
+			continue
+		}
 		me := m.Players[uid]
+		if me == nil {
+			continue
+		}
 		them := otherPlayer(m, uid)
 		payload := map[string]any{
 			"phase":            base["phase"],
@@ -90,12 +98,10 @@ func (s *Server) handleScoreFrame(w http.ResponseWriter, r *http.Request, user a
 			"opponent_running": them.RunningAvg,
 			"opponent_samples": them.Samples,
 		}
-		if ch, ok := m.Subscribers[uid]; ok {
-			b, _ := json.Marshal(map[string]any{"type": "score_update", "match_id": m.ID, "payload": payload})
-			select {
-			case ch <- b:
-			default:
-			}
+		b, _ := json.Marshal(map[string]any{"type": "score_update", "match_id": m.ID, "payload": payload})
+		select {
+		case ch <- b:
+		default:
 		}
 	}
 
@@ -232,6 +238,7 @@ func (s *Server) handleStream(w http.ResponseWriter, r *http.Request, user authU
 		return
 	}
 	m.Subscribers[subID] = sub
+	m.subscriberUserID[subID] = user.ID
 	m.Connections[user.ID]++
 	s.syncPhaseLocked(m)
 	initial := snapshotMatch(m)
@@ -241,6 +248,7 @@ func (s *Server) handleStream(w http.ResponseWriter, r *http.Request, user authU
 		s.store.mu.Lock()
 		if mm := s.store.matches[mid]; mm != nil {
 			delete(mm.Subscribers, subID)
+			delete(mm.subscriberUserID, subID)
 			if mm.Connections[user.ID] > 0 {
 				mm.Connections[user.ID]--
 			}

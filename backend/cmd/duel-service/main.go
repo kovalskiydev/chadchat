@@ -55,20 +55,21 @@ type Store struct {
 }
 
 type Match struct {
-	ID           string                     `json:"id"`
-	PlayerA      string                     `json:"player_a"`
-	PlayerB      string                     `json:"player_b"`
-	Phase        string                     `json:"phase"`
-	StartedAt    time.Time                  `json:"started_at"`
-	PhaseEndsAt  time.Time                  `json:"phase_ends_at"`
-	Result       *MatchResult               `json:"result,omitempty"`
-	Players      map[string]*PlayerProgress `json:"players"`
-	ResultSounds map[string]ResultSound     `json:"-"`
-	MediaReady   map[string]bool            `json:"-"`
-	Subscribers  map[string]chan []byte     `json:"-"`
-	Connections  map[string]int             `json:"-"`
-	Recorded     bool                       `json:"-"`
-	Cancelled    bool                       `json:"-"`
+	ID                string                     `json:"id"`
+	PlayerA           string                     `json:"player_a"`
+	PlayerB           string                     `json:"player_b"`
+	Phase             string                     `json:"phase"`
+	StartedAt         time.Time                  `json:"started_at"`
+	PhaseEndsAt       time.Time                  `json:"phase_ends_at"`
+	Result            *MatchResult               `json:"result,omitempty"`
+	Players           map[string]*PlayerProgress `json:"players"`
+	ResultSounds      map[string]ResultSound     `json:"-"`
+	MediaReady        map[string]bool            `json:"-"`
+	Subscribers       map[string]chan []byte     `json:"-"`
+	subscriberUserID  map[string]string          `json:"-"` // subID -> userID
+	Connections       map[string]int             `json:"-"`
+	Recorded          bool                       `json:"-"`
+	Cancelled         bool                       `json:"-"`
 }
 
 type PlayerProgress struct {
