@@ -100,6 +100,9 @@ const updateCardGlowProperties = (card: HTMLElement, mouseX: number, mouseY: num
   card.style.setProperty('--glow-x', `${relativeX}%`);
   card.style.setProperty('--glow-y', `${relativeY}%`);
   card.style.setProperty('--glow-intensity', glow.toString());
+  card.style.setProperty('--glow-opacity-strong', (glow * 0.8).toString());
+  card.style.setProperty('--glow-opacity-weak', (glow * 0.4).toString());
+  card.style.setProperty('--glow-opacity-wire', (glow * 0.12).toString());
   card.style.setProperty('--glow-radius', `${radius}px`);
 };
 
@@ -412,6 +415,9 @@ export const GlobalSpotlight: React.FC<{
         });
         cards.forEach(card => {
           (card as HTMLElement).style.setProperty('--glow-intensity', '0');
+          (card as HTMLElement).style.setProperty('--glow-opacity-strong', '0');
+          (card as HTMLElement).style.setProperty('--glow-opacity-weak', '0');
+          (card as HTMLElement).style.setProperty('--glow-opacity-wire', '0');
         });
         return;
       }
@@ -465,6 +471,9 @@ export const GlobalSpotlight: React.FC<{
       isInsideSection.current = false;
       gridRef.current?.querySelectorAll('.magic-bento-card').forEach(card => {
         (card as HTMLElement).style.setProperty('--glow-intensity', '0');
+        (card as HTMLElement).style.setProperty('--glow-opacity-strong', '0');
+        (card as HTMLElement).style.setProperty('--glow-opacity-weak', '0');
+        (card as HTMLElement).style.setProperty('--glow-opacity-wire', '0');
       });
       if (spotlightRef.current) {
         gsap.to(spotlightRef.current, {
@@ -477,10 +486,12 @@ export const GlobalSpotlight: React.FC<{
 
     document.addEventListener('mousemove', handleMouseMove);
     document.addEventListener('mouseleave', handleMouseLeave);
+    document.addEventListener('mouseout', handleMouseLeave);
 
     return () => {
       document.removeEventListener('mousemove', handleMouseMove);
       document.removeEventListener('mouseleave', handleMouseLeave);
+      document.removeEventListener('mouseout', handleMouseLeave);
       spotlightRef.current?.parentNode?.removeChild(spotlightRef.current);
     };
   }, [gridRef, disableAnimations, enabled, spotlightRadius, glowColor]);
