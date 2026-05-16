@@ -71,9 +71,37 @@ func (s *Server) handleScoreFrame(w http.ResponseWriter, r *http.Request, user a
 	p.LastUpdated = time.Now().UTC()
 	opp := otherPlayer(m, user.ID)
 
+	base := map[string]any{
+		"phase":        m.Phase,
+		"seconds_left": secondsLeft(m.PhaseEndsAt),
+	}
+
+	// personalised payload per player because "my" / "opponent" are relative
+	for _, uid := range []string{m.PlayerA, m.PlayerB} {
+		me := m.Players[uid]
+		them := otherPlayer(m, uid)
+		payload := map[string]any{
+			"phase":            base["phase"],
+			"seconds_left":     base["seconds_left"],
+			"my_score":         me.LastScore,
+			"my_running_avg":   me.RunningAvg,
+			"my_samples":       me.Samples,
+			"opponent_score":   them.LastScore,
+			"opponent_running": them.RunningAvg,
+			"opponent_samples": them.Samples,
+		}
+		if ch, ok := m.Subscribers[uid]; ok {
+			b, _ := json.Marshal(map[string]any{"type": "score_update", "match_id": m.ID, "payload": payload})
+			select {
+			case ch <- b:
+			default:
+			}
+		}
+	}
+
 	resp := map[string]any{
-		"phase":            m.Phase,
-		"seconds_left":     secondsLeft(m.PhaseEndsAt),
+		"phase":            base["phase"],
+		"seconds_left":     base["seconds_left"],
 		"my_score":         p.LastScore,
 		"my_running_avg":   p.RunningAvg,
 		"my_samples":       p.Samples,
@@ -81,7 +109,6 @@ func (s *Server) handleScoreFrame(w http.ResponseWriter, r *http.Request, user a
 		"opponent_running": opp.RunningAvg,
 		"opponent_samples": opp.Samples,
 	}
-	s.broadcastLocked(m, map[string]any{"type": "score_update", "match_id": m.ID, "payload": resp})
 	httputil.WriteJSON(w, http.StatusOK, resp)
 }
 
