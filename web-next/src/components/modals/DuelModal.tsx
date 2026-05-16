@@ -534,6 +534,8 @@ export function DuelModal({
       );
       preloadResultSoundsMap(normalizedResultSounds);
     }
+    const isActiveMatch = nextPhase === "scoring" || nextPhase === "overtime" || phase === "scoring" || phase === "overtime";
+
     if (Array.isArray(players) && myUserId) {
       const mine = players.find((player) => String(player.user_id ?? "") === myUserId);
       const opponent = players.find((player) => String(player.user_id ?? "") !== myUserId);
@@ -544,7 +546,8 @@ export function DuelModal({
           (mine.final_avg as number | undefined);
         const mineScore = mine.last_score as number | undefined;
         if (typeof mineAvg === "number") setMyAvg(mineAvg);
-        if (typeof mineScore === "number") setMyScore(mineScore);
+        // Don't overwrite score from polling during active scoring — SSE provides real-time updates
+        if (typeof mineScore === "number" && !isActiveMatch) setMyScore(mineScore);
       }
 
       if (opponent) {
@@ -555,7 +558,8 @@ export function DuelModal({
         const opponentScore = opponent.last_score as number | undefined;
         if (opponentId) setOpponentUserId(opponentId);
         if (typeof opponentAvg === "number") setOppAvg(opponentAvg);
-        if (typeof opponentScore === "number") setOppScore(opponentScore);
+        // Don't overwrite score from polling during active scoring — SSE provides real-time updates
+        if (typeof opponentScore === "number" && !isActiveMatch) setOppScore(opponentScore);
       }
 
       const result = match.result as Record<string, unknown> | undefined;
