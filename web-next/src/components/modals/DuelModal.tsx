@@ -267,6 +267,10 @@ export function DuelModal({
   const [queueing, setQueueing] = useState(false);
   const [matchID, setMatchID] = useState("");
   const [phase, setPhase] = useState("queue");
+  const phaseRef = useRef(phase);
+  useEffect(() => {
+    phaseRef.current = phase;
+  }, [phase]);
   const [secondsLeft, setSecondsLeft] = useState<number | null>(null);
   const [myAvg, setMyAvg] = useState<number | null>(null);
   const [oppAvg, setOppAvg] = useState<number | null>(null);
@@ -534,7 +538,8 @@ export function DuelModal({
       );
       preloadResultSoundsMap(normalizedResultSounds);
     }
-    const isActiveMatch = nextPhase === "scoring" || nextPhase === "overtime" || phase === "scoring" || phase === "overtime";
+    const currentPhase = phaseRef.current;
+    const isActiveMatch = nextPhase === "scoring" || nextPhase === "overtime" || currentPhase === "scoring" || currentPhase === "overtime";
 
     if (Array.isArray(players) && myUserId) {
       const mine = players.find((player) => String(player.user_id ?? "") === myUserId);

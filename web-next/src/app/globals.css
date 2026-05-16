@@ -36,13 +36,6 @@
   align-items: center;
   justify-content: center;
   border-radius: 1.25rem;
-  font-weight: inherit;
-  font-family: inherit;
-  font-size: inherit;
-  line-height: inherit;
-  letter-spacing: inherit;
-  text-transform: inherit;
-  word-spacing: inherit;
   backdrop-filter: blur(10px);
   transition: box-shadow 0.5s ease-out;
   overflow: hidden;
@@ -90,13 +83,6 @@
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   color: transparent;
-  font-family: inherit;
-  font-weight: inherit;
-  font-size: inherit;
-  line-height: inherit;
-  letter-spacing: inherit;
-  text-transform: inherit;
-  word-spacing: inherit;
   animation: gradient linear infinite;
 }
 
