@@ -1192,7 +1192,7 @@ export default function HomePage() {
           <ParticleCard
             className={cn(
               magicBlockClass,
-              "order-1 h-[calc(100vh-7.5rem)] min-h-[320px] overflow-hidden shadow-wire backdrop-blur-sm lg:order-none",
+              "order-1 h-[calc(100vh-7.5rem)] min-h-[320px] overflow-hidden shadow-wire backdrop-blur-sm lg:order-2",
             )}
             particleCount={12}
             glowColor={magicGlow}
@@ -1200,7 +1200,7 @@ export default function HomePage() {
             enableMagnetism={false}
             clickEffect
           >
-            <section className="flex h-full min-h-0 flex-col justify-center gap-4 border border-border bg-black/80 p-4 sm:p-6">
+            <section className="flex h-full min-h-0 flex-col justify-center gap-4 border border-border p-4 sm:p-6">
               <MagicButton className="h-72 w-full sm:h-80">
                 <StatsPanel
                   onOpenDetails={() => setIsStatsOpen(true)}
@@ -1240,7 +1240,7 @@ export default function HomePage() {
             </section>
           </ParticleCard>
 
-          <Panel title="Tops" icon={<Trophy className="h-4 w-4" />} className="order-2 lg:order-none">
+          <Panel title="Tops" icon={<Trophy className="h-4 w-4" />} className="order-2 lg:order-3">
             <TopsLeaderboard
               entries={leaderboardEntries}
               loading={leaderboardLoading}
@@ -1252,7 +1252,7 @@ export default function HomePage() {
           <Panel
             title="Live Chat"
             icon={<MessageSquare className="h-4 w-4" />}
-            className="order-3 lg:order-none"
+            className="order-3 lg:order-1"
             headerAction={
               <button
                 type="button"

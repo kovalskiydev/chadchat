@@ -413,3 +413,12 @@
 .duel-shake {
   animation: duel-shake 360ms ease-in-out infinite;
 }
+
+
+/* Fallback glow effect using box-shadow when mask is not supported */
+@supports not (mask-composite: exclude) {
+  .magic-bento-card--border-glow::after {
+    background: none;
+    box-shadow: inset 0 0 20px rgba(132, 0, 255, calc(var(--glow-intensity) * 0.3));
+  }
+}

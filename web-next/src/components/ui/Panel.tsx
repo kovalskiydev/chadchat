@@ -30,7 +30,7 @@ export function Panel({
       clickEffect
     >
       <aside
-        className="flex h-full min-h-0 flex-col overflow-hidden border border-border bg-zinc-950/70"
+        className="flex h-full min-h-0 flex-col overflow-hidden border border-border"
       >
         <div className="flex h-12 items-center justify-between border-b border-border px-4 text-xs font-semibold uppercase tracking-[0.16em] text-zinc-300">
           <span>{title}</span>
