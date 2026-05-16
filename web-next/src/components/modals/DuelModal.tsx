@@ -1098,6 +1098,15 @@ export function DuelModal({
           if (typeof body.seconds_left === "number") setSecondsLeft(body.seconds_left);
         }
         if (msgType === "score_update") {
+          // eslint-disable-next-line no-console
+          console.log("[SSE score_update]", {
+            my_score: body.my_score,
+            my_running_avg: body.my_running_avg,
+            opponent_score: body.opponent_score,
+            opponent_running: body.opponent_running,
+            seconds_left: body.seconds_left,
+            phase: phaseRef.current,
+          });
           if (typeof body.my_score === "number") setMyScore(body.my_score);
           if (typeof body.my_running_avg === "number") setMyAvg(body.my_running_avg);
           if (typeof body.opponent_score === "number") setOppScore(body.opponent_score);
