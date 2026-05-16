@@ -1176,12 +1176,12 @@ export default function HomePage() {
           </div>
         </nav>
 
-        {/* <GlobalSpotlight
+        <GlobalSpotlight
           gridRef={bentoGridRef}
           enabled
           spotlightRadius={400}
           glowColor={magicGlow}
-        /> */}
+        />
         <div
           ref={bentoGridRef}
           className="bento-section grid flex-1 gap-4 overflow-y-auto overscroll-contain py-4 lg:grid-cols-[minmax(180px,1fr)_minmax(280px,420px)_minmax(180px,1fr)]"
