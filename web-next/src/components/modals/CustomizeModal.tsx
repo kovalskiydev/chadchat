@@ -397,7 +397,7 @@ export function CustomizeModal({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-start justify-center bg-black/72 p-0 backdrop-blur-sm sm:items-center sm:p-4"
+      className="fixed inset-0 z-50 flex items-start justify-center bg-black/70 p-0 backdrop-blur-sm sm:items-center sm:p-4"
       role="dialog"
       aria-modal="true"
       aria-labelledby="customize-modal-title"
@@ -658,7 +658,7 @@ export function CustomizeModal({
                 <button
                   className={cn(
                     "min-h-44 border bg-black/60 p-4 text-left transition-colors",
-                    "border-zinc-900 hover:border-purple-400 hover:bg-purple-950/24 hover:shadow-[0_0_22px_rgba(132,0,255,0.18)]",
+                    "border-zinc-900 hover:border-purple-400 hover:bg-purple-950/25 hover:shadow-[0_0_22px_rgba(132,0,255,0.18)]",
                   )}
                   key={option.id}
                   onClick={() => {

@@ -24,7 +24,7 @@ export function EntryChoiceModal({
 }) {
   return (
     <div
-      className="fixed inset-0 z-50 flex items-start justify-center bg-black/78 p-0 backdrop-blur-sm sm:items-center sm:p-4"
+      className="fixed inset-0 z-50 flex items-start justify-center bg-black/80 p-0 backdrop-blur-sm sm:items-center sm:p-4"
       role="dialog"
       aria-modal="true"
       aria-labelledby="entry-choice-title"
@@ -46,7 +46,7 @@ export function EntryChoiceModal({
             type="button"
             onClick={onAnonymous}
             disabled={isStartingVerification || !consentAccepted}
-            className="min-h-40 border border-zinc-900 bg-black/60 p-4 text-left transition-colors hover:border-purple-400 hover:bg-purple-950/24 disabled:cursor-not-allowed disabled:opacity-60"
+            className="min-h-40 border border-zinc-900 bg-black/60 p-4 text-left transition-colors hover:border-purple-400 hover:bg-purple-950/25 disabled:cursor-not-allowed disabled:opacity-60"
           >
             <div className="text-sm font-black uppercase tracking-[0.14em] text-zinc-100">
               {isStartingVerification ? "Starting..." : "Anonymous"}
@@ -58,7 +58,7 @@ export function EntryChoiceModal({
           <button
             type="button"
             onClick={onLogin}
-            className="min-h-40 border border-zinc-900 bg-black/60 p-4 text-left transition-colors hover:border-purple-400 hover:bg-purple-950/24"
+            className="min-h-40 border border-zinc-900 bg-black/60 p-4 text-left transition-colors hover:border-purple-400 hover:bg-purple-950/25"
           >
             <div className="text-sm font-black uppercase tracking-[0.14em] text-zinc-100">
               Login
@@ -70,7 +70,7 @@ export function EntryChoiceModal({
           <button
             type="button"
             onClick={onRegister}
-            className="min-h-40 border border-zinc-900 bg-black/60 p-4 text-left transition-colors hover:border-purple-400 hover:bg-purple-950/24"
+            className="min-h-40 border border-zinc-900 bg-black/60 p-4 text-left transition-colors hover:border-purple-400 hover:bg-purple-950/25"
           >
             <div className="text-sm font-black uppercase tracking-[0.14em] text-zinc-100">
               Register

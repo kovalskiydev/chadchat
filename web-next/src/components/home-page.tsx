@@ -1200,7 +1200,7 @@ export default function HomePage() {
             enableMagnetism={false}
             clickEffect
           >
-            <section className="flex h-full min-h-0 flex-col justify-center gap-4 border border-border bg-black/82 p-4 sm:p-6">
+            <section className="flex h-full min-h-0 flex-col justify-center gap-4 border border-border bg-black/80 p-4 sm:p-6">
               <MagicButton className="h-72 w-full sm:h-80">
                 <StatsPanel
                   onOpenDetails={() => setIsStatsOpen(true)}

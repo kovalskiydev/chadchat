@@ -425,7 +425,7 @@ export function VerificationModal({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-start justify-center bg-black/78 p-0 backdrop-blur-sm sm:items-center sm:p-4"
+      className="fixed inset-0 z-50 flex items-start justify-center bg-black/80 p-0 backdrop-blur-sm sm:items-center sm:p-4"
       role="dialog"
       aria-modal="true"
       aria-labelledby="verification-title"
@@ -459,7 +459,7 @@ export function VerificationModal({
               className="pointer-events-none absolute inset-0 z-10 h-full w-full object-cover opacity-100"
             />
             {(cameraState !== "ready" || trackerState !== "ready") && (
-              <div className="absolute inset-0 z-20 flex items-center justify-center bg-black/72 p-4 text-center">
+              <div className="absolute inset-0 z-20 flex items-center justify-center bg-black/70 p-4 text-center">
                 <div className="border border-zinc-800 bg-zinc-950 px-4 py-3">
                   {cameraState === "loading" && (
                     <div className="text-[10px] font-semibold uppercase tracking-[0.14em] text-zinc-300">

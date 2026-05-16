@@ -381,7 +381,7 @@ export function getGameFrameClass(frame: string) {
     case "Abyss":
       return "border-cyan-300/70 bg-cyan-950/30 shadow-[0_0_18px_rgba(103,232,249,0.2)]";
     default:
-      return "border-purple-400/75 bg-purple-950/28 shadow-[0_0_18px_rgba(132,0,255,0.22)]";
+      return "border-purple-400/75 bg-purple-950/30 shadow-[0_0_18px_rgba(132,0,255,0.22)]";
   }
 }
 
@@ -430,15 +430,15 @@ export function getRankClass(rank: string) {
 // getTopClass
 export function getTopClass(position: number) {
   if (position === 1) {
-    return "border-zinc-800 bg-black/76";
+    return "border-zinc-800 bg-black/75";
   }
   if (position === 2) {
-    return "border-zinc-800 bg-black/74";
+    return "border-zinc-800 bg-black/75";
   }
   if (position === 3) {
-    return "border-zinc-800 bg-black/72";
+    return "border-zinc-800 bg-black/70";
   }
-  return "border-zinc-900 bg-black/72";
+  return "border-zinc-900 bg-black/70";
 }
 
 

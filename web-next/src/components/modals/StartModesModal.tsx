@@ -222,7 +222,7 @@ export function StartModesModal({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-start justify-center bg-black/72 p-0 backdrop-blur-sm sm:items-center sm:p-4"
+      className="fixed inset-0 z-50 flex items-start justify-center bg-black/70 p-0 backdrop-blur-sm sm:items-center sm:p-4"
       role="dialog"
       aria-modal="true"
       aria-labelledby="start-modes-title"
@@ -264,8 +264,8 @@ export function StartModesModal({
                 key={mode.id}
                 type="button"
                 className={cn(
-                  "min-h-48 border border-zinc-900 bg-black/60 p-4 text-left transition-colors hover:border-purple-400 hover:bg-purple-950/24 hover:shadow-[0_0_22px_rgba(132,0,255,0.18)]",
-                  isActive && "border-purple-400 bg-purple-950/24",
+                  "min-h-48 border border-zinc-900 bg-black/60 p-4 text-left transition-colors hover:border-purple-400 hover:bg-purple-950/25 hover:shadow-[0_0_22px_rgba(132,0,255,0.18)]",
+                  isActive && "border-purple-400 bg-purple-950/25",
                   isDisabled && "cursor-not-allowed opacity-45",
                 )}
                 disabled={isDisabled}
@@ -313,7 +313,7 @@ export function StartModesModal({
         {searchingMode && (
           <div className="border-t border-border px-5 py-3">
             <div className="grid gap-3 text-[10px] font-semibold uppercase tracking-[0.14em]">
-              <div className="grid gap-2 border border-purple-500/35 bg-purple-950/18 p-3 sm:grid-cols-2">
+              <div className="grid gap-2 border border-purple-500/35 bg-purple-950/20 p-3 sm:grid-cols-2">
                 <div className="space-y-1">
                   <div className="text-zinc-500">MM In Progress</div>
                   <div className="text-zinc-200">

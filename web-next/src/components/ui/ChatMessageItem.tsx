@@ -52,7 +52,7 @@ export function ChatMessageItem({
   return (
     <div
       className={cn(
-        "grid grid-cols-[28px_1fr] gap-2 border border-zinc-900 bg-black/72 p-2 text-left transition-all duration-300 ease-out",
+        "grid grid-cols-[28px_1fr] gap-2 border border-zinc-900 bg-black/70 p-2 text-left transition-all duration-300 ease-out",
         entered ? "translate-y-0 opacity-100" : "translate-y-2 opacity-0",
         message.mine && "border-purple-500/55 bg-purple-950/25",
         message.pending && "animate-pulse border-purple-400/40",

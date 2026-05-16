@@ -354,7 +354,7 @@ export function DuelModal({
           : phase === "overtime"
             ? "border-amber-300/75 bg-amber-950/45 text-amber-100 animate-pulse"
             : phase === "result" || phase === "post_chat" || phase === "finished"
-              ? "border-[#d4af37]/70 bg-[#d4af37]/12 text-[#f5d76e]"
+              ? "border-[#d4af37]/70 bg-[#d4af37]/10 text-[#f5d76e]"
               : phase === "cancelled"
                 ? "border-red-500/55 bg-red-950/35 text-red-200"
               : "border-zinc-800 bg-zinc-950 text-zinc-400";
@@ -1286,7 +1286,7 @@ export function DuelModal({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-start justify-center overflow-hidden bg-black/72 p-0 backdrop-blur-sm sm:items-center sm:p-3"
+      className="fixed inset-0 z-50 flex items-start justify-center overflow-hidden bg-black/70 p-0 backdrop-blur-sm sm:items-center sm:p-3"
       role="dialog"
       aria-modal="true"
       aria-labelledby="duel-title"
@@ -1500,7 +1500,7 @@ export function DuelModal({
                 <div className="pointer-events-none absolute inset-x-0 top-0 h-28 bg-gradient-to-b from-black/80 to-transparent" />
                 {activeScoring && (
                   <div className="pointer-events-none absolute inset-0 overflow-hidden">
-                    <div className="duel-scanline absolute inset-x-0 top-0 h-28 bg-gradient-to-b from-transparent via-red-400/18 to-transparent" />
+                    <div className="duel-scanline absolute inset-x-0 top-0 h-28 bg-gradient-to-b from-transparent via-red-400/20 to-transparent" />
                     <div className="absolute inset-0 bg-[linear-gradient(rgba(255,255,255,0.035)_1px,transparent_1px)] bg-[length:100%_6px]" />
                   </div>
                 )}
@@ -1547,7 +1547,7 @@ export function DuelModal({
                 <div className="pointer-events-none absolute inset-x-0 top-0 h-28 bg-gradient-to-b from-black/80 to-transparent" />
                 {activeScoring && (
                   <div className="pointer-events-none absolute inset-0 overflow-hidden">
-                    <div className="duel-scanline absolute inset-x-0 top-0 h-28 bg-gradient-to-b from-transparent via-red-400/18 to-transparent" />
+                    <div className="duel-scanline absolute inset-x-0 top-0 h-28 bg-gradient-to-b from-transparent via-red-400/20 to-transparent" />
                     <div className="absolute inset-0 bg-[linear-gradient(rgba(255,255,255,0.035)_1px,transparent_1px)] bg-[length:100%_6px]" />
                   </div>
                 )}
@@ -1622,7 +1622,7 @@ export function DuelModal({
               </div>
 
               {isResultPhase && resultSummary && showFinalResult && (
-                <div className="absolute inset-0 z-30 flex items-center justify-center bg-black/88 p-3 sm:p-6">
+                <div className="absolute inset-0 z-30 flex items-center justify-center bg-black/90 p-3 sm:p-6">
                   <div className="w-full max-w-xl border border-purple-500/35 bg-zinc-950 p-4 text-center shadow-[0_0_40px_rgba(132,0,255,0.22)] sm:p-6">
                     <div className="text-[10px] font-semibold uppercase tracking-[0.18em] text-zinc-600">
                       Match Result
