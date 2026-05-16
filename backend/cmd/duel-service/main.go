@@ -21,9 +21,9 @@ const (
 	phaseFinished      = "finished"
 
 	preStartDuration        = 10 * time.Second
-	scoringDuration         = 10 * time.Second
-	overtimeDuration        = 5 * time.Second
-	postChatDuration        = 10 * time.Second
+	scoringDuration         = 20 * time.Second
+	overtimeDuration        = 10 * time.Second
+	postChatDuration        = 15 * time.Second
 	mediaReadyGraceDuration = 2 * time.Second
 	tieThreshold            = 0.15
 	scoreRateLimitPerMinute = 210

@@ -196,6 +196,7 @@ export function LiveChat({
   const [avatarByUserId, setAvatarByUserId] = useState<Record<string, string | null>>({});
   const requestedAvatarUserIdsRef = useRef<Set<string>>(new Set());
   const chatEndRef = useRef<HTMLDivElement>(null);
+  const chatContainerRef = useRef<HTMLDivElement>(null);
   const nextIdRef = useRef(initialChatMessages.length + 1);
   const isChatAdmin = isAdminRole(currentUserRole);
 
@@ -366,7 +367,9 @@ export function LiveChat({
   }, [accessToken, avatarByUserId, messages]);
 
   useEffect(() => {
-    chatEndRef.current?.scrollIntoView({ block: "end" });
+    if (chatContainerRef.current && chatEndRef.current) {
+      chatContainerRef.current.scrollTop = chatContainerRef.current.scrollHeight;
+    }
   }, [messages]);
 
   const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
@@ -422,6 +425,7 @@ export function LiveChat({
     <div className="flex min-h-0 flex-1 flex-col">
       <div className="relative flex min-h-0 flex-1 overflow-hidden">
         <div
+          ref={chatContainerRef}
           className={cn(
             "flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto overscroll-contain p-3 transition-[filter,opacity] duration-200",
             chatBlurred && "pointer-events-none select-none blur-sm opacity-85",

@@ -312,6 +312,11 @@ export default function HomePage() {
 
   useEffect(() => {
     if (typeof window === "undefined") return;
+    // Scroll to top on mobile on initial load
+    const isMobile = window.innerWidth < 1024;
+    if (isMobile && bentoGridRef.current) {
+      bentoGridRef.current.scrollTop = 0;
+    }
     setConsentAccepted(window.localStorage.getItem(CONSENT_ACCEPTED_KEY) === "1");
     const storedSoundEnabled = window.localStorage.getItem(RESULT_SOUND_ENABLED_KEY);
     const storedSoundVolume = window.localStorage.getItem(RESULT_SOUND_VOLUME_KEY);
@@ -1184,7 +1189,7 @@ export default function HomePage() {
         />
         <div
           ref={bentoGridRef}
-          className="bento-section grid flex-1 gap-4 overflow-y-auto overscroll-contain py-4 lg:grid-cols-[minmax(180px,1fr)_minmax(280px,420px)_minmax(180px,1fr)]"
+          className="bento-section grid flex-1 gap-4 overflow-y-auto overscroll-contain scroll-smooth py-4 lg:grid-cols-[minmax(180px,1fr)_minmax(280px,420px)_minmax(180px,1fr)]"
         >
           {/* Mobile: Stats/Customize/Start first, then Tops, then Chat */}
           {/* Desktop: Chat | Center | Leaderboard (via order) */}
