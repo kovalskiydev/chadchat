@@ -162,7 +162,7 @@ func (s *Server) runBotInjector() {
 				go s.runMatchLifecycle(match.ID)
 				go s.botMatchSetup(match.ID)
 				go s.runBotScoring(match.ID)
-				s.hydrateMatchResultSounds(match.ID)
+				go s.hydrateMatchResultSounds(match.ID)
 
 				created := s.store.matches[match.ID]
 				if created != nil {
