@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import type React from "react";
+import dynamic from "next/dynamic";
 import {
   ChevronLeft,
   ChevronRight,
@@ -27,8 +28,6 @@ import { Button } from "@/components/ui/button";
 import Crosshair from "@/components/Crosshair";
 import GradientText from "@/components/GradientText";
 import { GlobalSpotlight, ParticleCard } from "@/components/MagicBento";
-import PixelBlast from "@/components/PixelBlast";
-import Shuffle from "@/components/Shuffle";
 import { cn } from "@/lib/utils";
 import {
   AUTH_TOKENS_CHANGED_EVENT,
@@ -85,12 +84,6 @@ import {
   duelStream,
 } from "@/lib/duel";
 import { getApiHealth } from "@/lib/health";
-import {
-  getFaceLandmarker,
-  preloadFaceLandmarker,
-  retryFaceLandmarker,
-  type ChadFaceLandmarker,
-} from "@/lib/faceLandmarker";
 import {
   getLeaderboard,
   getMyMatches,
@@ -174,23 +167,76 @@ import {
   leaderboardPageSize,
 } from "@/types/app";
 import { magicBlockClass, magicGlow, duelQueueTracks } from "@/lib/constants";
-import { StatsModal } from "@/components/modals/StatsModal";
-import { CustomizeModal } from "@/components/modals/CustomizeModal";
-import { LiveChat } from "@/components/modals/LiveChat";
-import { AuthModal } from "@/components/modals/AuthModal";
-import { VerificationModal } from "@/components/modals/VerificationModal";
-import { TopsLeaderboard } from "@/components/modals/TopsLeaderboard";
-import { StartModesModal } from "@/components/modals/StartModesModal";
-import { DuelModal } from "@/components/modals/DuelModal";
-import { ProfileModal } from "@/components/modals/ProfileModal";
-import { TestLabModal } from "@/components/modals/TestLabModal";
-import { AnonymousProgressModal } from "@/components/modals/AnonymousProgressModal";
-import { VerificationStartingModal } from "@/components/modals/VerificationStartingModal";
-import { BackendStatusModal } from "@/components/modals/BackendStatusModal";
-import { LegalModal } from "@/components/modals/LegalModal";
-import { EntryChoiceModal } from "@/components/modals/EntryChoiceModal";
-import { VerificationSuccessModal } from "@/components/modals/VerificationSuccessModal";
-import AdminModal from "@/components/modals/AdminModal";
+const PixelBlast = dynamic(() => import("@/components/PixelBlast"), {
+  ssr: false,
+});
+const Shuffle = dynamic(() => import("@/components/Shuffle"), {
+  loading: () => <span className="nav-logo text-sm text-zinc-100 sm:text-base">CHADCHAT</span>,
+  ssr: false,
+});
+const StatsModal = dynamic(() =>
+  import("@/components/modals/StatsModal").then((mod) => mod.StatsModal),
+);
+const CustomizeModal = dynamic(() =>
+  import("@/components/modals/CustomizeModal").then((mod) => mod.CustomizeModal),
+);
+const LiveChat = dynamic(() =>
+  import("@/components/modals/LiveChat").then((mod) => mod.LiveChat),
+  {
+    loading: () => (
+      <div className="flex h-full min-h-0 items-center justify-center text-[10px] font-semibold uppercase tracking-[0.16em] text-zinc-600">
+        Loading chat
+      </div>
+    ),
+  },
+);
+const AuthModal = dynamic(() =>
+  import("@/components/modals/AuthModal").then((mod) => mod.AuthModal),
+);
+const VerificationModal = dynamic(() =>
+  import("@/components/modals/VerificationModal").then((mod) => mod.VerificationModal),
+);
+const TopsLeaderboard = dynamic(() =>
+  import("@/components/modals/TopsLeaderboard").then((mod) => mod.TopsLeaderboard),
+  {
+    loading: () => (
+      <div className="flex h-full min-h-0 items-center justify-center text-[10px] font-semibold uppercase tracking-[0.16em] text-zinc-600">
+        Loading tops
+      </div>
+    ),
+  },
+);
+const StartModesModal = dynamic(() =>
+  import("@/components/modals/StartModesModal").then((mod) => mod.StartModesModal),
+);
+const DuelModal = dynamic(() =>
+  import("@/components/modals/DuelModal").then((mod) => mod.DuelModal),
+);
+const ProfileModal = dynamic(() =>
+  import("@/components/modals/ProfileModal").then((mod) => mod.ProfileModal),
+);
+const TestLabModal = dynamic(() =>
+  import("@/components/modals/TestLabModal").then((mod) => mod.TestLabModal),
+);
+const AnonymousProgressModal = dynamic(() =>
+  import("@/components/modals/AnonymousProgressModal").then((mod) => mod.AnonymousProgressModal),
+);
+const VerificationStartingModal = dynamic(() =>
+  import("@/components/modals/VerificationStartingModal").then((mod) => mod.VerificationStartingModal),
+);
+const BackendStatusModal = dynamic(() =>
+  import("@/components/modals/BackendStatusModal").then((mod) => mod.BackendStatusModal),
+);
+const LegalModal = dynamic(() =>
+  import("@/components/modals/LegalModal").then((mod) => mod.LegalModal),
+);
+const EntryChoiceModal = dynamic(() =>
+  import("@/components/modals/EntryChoiceModal").then((mod) => mod.EntryChoiceModal),
+);
+const VerificationSuccessModal = dynamic(() =>
+  import("@/components/modals/VerificationSuccessModal").then((mod) => mod.VerificationSuccessModal),
+);
+const AdminModal = dynamic(() => import("@/components/modals/AdminModal"));
 
 
 export default function HomePage() {
@@ -271,6 +317,7 @@ export default function HomePage() {
   const [resultSoundEnabled, setResultSoundEnabled] = useState(true);
   const [resultSoundVolume, setResultSoundVolume] = useState(0.8);
   const [chatBlurred, setChatBlurred] = useState(false);
+  const [showPixelBlast, setShowPixelBlast] = useState(false);
   const isAnonymousUser = Boolean(
     me?.is_anonymous || me?.type === "anonymous",
   );
@@ -283,12 +330,12 @@ export default function HomePage() {
 
   useEffect(() => {
     if (typeof window === "undefined") return;
+    const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    const isSmallScreen = window.matchMedia("(max-width: 767px)").matches;
+    if (reduceMotion || isSmallScreen) return;
     let cancelled = false;
-    const warmup = () => {
-      if (cancelled) return;
-      void preloadFaceLandmarker().catch(() => {
-        // Verification and Test Lab expose retry UI if the warmup fails.
-      });
+    const revealBackground = () => {
+      if (!cancelled) setShowPixelBlast(true);
     };
     const idleWindow = window as Window & {
       requestIdleCallback?: (
@@ -299,13 +346,13 @@ export default function HomePage() {
     };
     let handle: number;
     if (idleWindow.requestIdleCallback) {
-      handle = idleWindow.requestIdleCallback(warmup, { timeout: 3000 });
+      handle = idleWindow.requestIdleCallback(revealBackground, { timeout: 2500 });
       return () => {
         cancelled = true;
         idleWindow.cancelIdleCallback?.(handle);
       };
     }
-    handle = window.setTimeout(warmup, 1500);
+    handle = window.setTimeout(revealBackground, 1800);
     return () => {
       cancelled = true;
       window.clearTimeout(handle);
@@ -1083,25 +1130,27 @@ export default function HomePage() {
   return (
     <main className="relative min-h-screen overflow-hidden bg-background text-foreground">
       <div className="pointer-events-auto absolute inset-0 opacity-55">
-        <PixelBlast
-          variant="square"
-          pixelSize={4}
-          color="#B497CF"
-          patternScale={2}
-          patternDensity={1}
-          pixelSizeJitter={0}
-          enableRipples
-          rippleSpeed={0.4}
-          rippleThickness={0.12}
-          rippleIntensityScale={1.5}
-          liquid={false}
-          liquidStrength={0.12}
-          liquidRadius={1.2}
-          liquidWobbleSpeed={5}
-          speed={0.5}
-          edgeFade={0.25}
-          transparent
-        />
+        {showPixelBlast && (
+          <PixelBlast
+            variant="square"
+            pixelSize={4}
+            color="#B497CF"
+            patternScale={2}
+            patternDensity={1}
+            pixelSizeJitter={0}
+            enableRipples
+            rippleSpeed={0.4}
+            rippleThickness={0.12}
+            rippleIntensityScale={1.5}
+            liquid={false}
+            liquidStrength={0.12}
+            liquidRadius={1.2}
+            liquidWobbleSpeed={5}
+            speed={0.5}
+            edgeFade={0.25}
+            transparent
+          />
+        )}
       </div>
       <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_center,transparent_0%,rgba(0,0,0,0.32)_48%,rgba(0,0,0,0.82)_100%)]" />
       <div className="relative z-10 mx-auto flex min-h-screen w-full max-w-7xl flex-col px-4 py-4 sm:px-6 lg:px-8">
