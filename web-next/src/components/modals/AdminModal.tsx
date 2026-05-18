@@ -1,11 +1,15 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   X, Users, Swords, MessageSquare, Trophy, Activity, Shield,
   ChevronLeft, ChevronRight, Search, Music, HeartPulse, Server,
   TrendingUp, Award, Star, Clock, BarChart3, Zap, Eye, EyeOff,
-  ChevronDown, ChevronUp
+  ChevronDown, ChevronUp, PieChart as PieChartIcon
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import {
+  LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
+  BarChart, Bar, PieChart, Pie, Cell, AreaChart, Area, Legend
+} from "recharts";
 import {
   clearAdminSecret,
   getAdminSecret,
@@ -92,6 +96,18 @@ export default function AdminModal({ onClose }: AdminModalProps) {
 
   // Sounds
   const [sounds, setSounds] = useState<AdminResultSound[]>([]);
+
+  // Chart colors
+  const CHART_COLORS = {
+    primary: "#a855f7",
+    secondary: "#f472b6",
+    accent: "#34d399",
+    danger: "#f87171",
+    warning: "#fbbf24",
+    info: "#60a5fa",
+    grid: "#27272a",
+    text: "#71717a",
+  };
 
   useEffect(() => {
     setStoredSecret(getAdminSecret());
@@ -323,6 +339,7 @@ export default function AdminModal({ onClose }: AdminModalProps) {
           {/* ─── OVERVIEW ─── */}
           {!loading && activeTab === "overview" && summary && (
             <div className="space-y-6">
+              {/* Users row */}
               <SectionTitle icon={<Users className="h-3.5 w-3.5" />} title="Users" />
               <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
                 <StatCard label="Total Users" value={summary.total_users} />
@@ -330,7 +347,31 @@ export default function AdminModal({ onClose }: AdminModalProps) {
                 <StatCard label="Anonymous" value={summary.total_anonymous} />
                 <StatCard label="Verified" value={summary.verified_users} />
               </div>
+              {/* User composition pie chart */}
+              <div className="border border-zinc-800 bg-black/40 p-4">
+                <div className="mb-3 text-[10px] font-black uppercase tracking-[0.12em] text-zinc-500">User Composition</div>
+                <div className="h-48">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <PieChart>
+                      <Pie data={[
+                        { name: "Registered", value: summary.total_registered, color: CHART_COLORS.primary },
+                        { name: "Anonymous", value: summary.total_anonymous, color: CHART_COLORS.secondary },
+                      ]} cx="50%" cy="50%" innerRadius={50} outerRadius={70} paddingAngle={4} dataKey="value">
+                        {[
+                          { name: "Registered", value: summary.total_registered, color: CHART_COLORS.primary },
+                          { name: "Anonymous", value: summary.total_anonymous, color: CHART_COLORS.secondary },
+                        ].map((entry, index) => (
+                          <Cell key={`cell-${index}`} fill={entry.color} stroke="transparent" />
+                        ))}
+                      </Pie>
+                      <Tooltip content={<ChartTooltip />} />
+                      <Legend verticalAlign="bottom" height={24} content={<ChartLegend />} />
+                    </PieChart>
+                  </ResponsiveContainer>
+                </div>
+              </div>
 
+              {/* Matches row */}
               <SectionTitle icon={<Swords className="h-3.5 w-3.5" />} title="Matches & Rating" />
               <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
                 <StatCard label="Total Matches" value={summary.total_matches} />
@@ -339,6 +380,7 @@ export default function AdminModal({ onClose }: AdminModalProps) {
                 <StatCard label="Top Rating" value={summary.top_rating} />
               </div>
 
+              {/* Chat row */}
               <SectionTitle icon={<MessageSquare className="h-3.5 w-3.5" />} title="Chat & Content" />
               <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
                 <StatCard label="Chat Messages" value={summary.total_chat_messages} />
@@ -347,12 +389,47 @@ export default function AdminModal({ onClose }: AdminModalProps) {
                 <StatCard label="TestLab Today" value={summary.test_lab_sessions_today} />
               </div>
 
+              {/* Activity area chart */}
+              <div className="border border-zinc-800 bg-black/40 p-4">
+                <div className="mb-3 text-[10px] font-black uppercase tracking-[0.12em] text-zinc-500">Platform Activity Overview</div>
+                <div className="h-56">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <AreaChart data={[
+                      { name: "Users", total: summary.total_users, today: summary.total_registered },
+                      { name: "Matches", total: summary.total_matches, today: summary.matches_today },
+                      { name: "Chat", total: summary.total_chat_messages, today: summary.chat_messages_today },
+                      { name: "TestLab", total: summary.test_lab_sessions, today: summary.test_lab_sessions_today },
+                    ]}>
+                      <defs>
+                        <linearGradient id="colorTotal" x1="0" y1="0" x2="0" y2="1">
+                          <stop offset="5%" stopColor={CHART_COLORS.primary} stopOpacity={0.3} />
+                          <stop offset="95%" stopColor={CHART_COLORS.primary} stopOpacity={0} />
+                        </linearGradient>
+                        <linearGradient id="colorToday" x1="0" y1="0" x2="0" y2="1">
+                          <stop offset="5%" stopColor={CHART_COLORS.accent} stopOpacity={0.3} />
+                          <stop offset="95%" stopColor={CHART_COLORS.accent} stopOpacity={0} />
+                        </linearGradient>
+                      </defs>
+                      <CartesianGrid strokeDasharray="3 3" stroke={CHART_COLORS.grid} />
+                      <XAxis dataKey="name" tick={{ fill: CHART_COLORS.text, fontSize: 10 }} axisLine={{ stroke: CHART_COLORS.grid }} />
+                      <YAxis tick={{ fill: CHART_COLORS.text, fontSize: 10 }} axisLine={{ stroke: CHART_COLORS.grid }} />
+                      <Tooltip content={<ChartTooltip />} />
+                      <Legend content={<ChartLegend />} />
+                      <Area type="monotone" dataKey="total" stroke={CHART_COLORS.primary} fillOpacity={1} fill="url(#colorTotal)" strokeWidth={2} />
+                      <Area type="monotone" dataKey="today" stroke={CHART_COLORS.accent} fillOpacity={1} fill="url(#colorToday)" strokeWidth={2} />
+                    </AreaChart>
+                  </ResponsiveContainer>
+                </div>
+              </div>
+
+              {/* Sounds */}
               <SectionTitle icon={<Music className="h-3.5 w-3.5" />} title="Sounds" />
               <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
                 <StatCard label="Result Sounds" value={summary.total_result_sounds} />
                 <StatCard label="Sound Unlocks" value={summary.total_sound_unlocks} />
               </div>
 
+              {/* Match Stats with bar chart */}
               {matchStats && (
                 <>
                   <SectionTitle icon={<BarChart3 className="h-3.5 w-3.5" />} title="Match Stats" />
@@ -363,9 +440,28 @@ export default function AdminModal({ onClose }: AdminModalProps) {
                     <StatCard label="Avg Score" value={matchStats.stats.average_score.toFixed(2)} />
                     <StatCard label="Avg Duration" value={`${matchStats.stats.average_duration_sec}s`} />
                   </div>
+                  <div className="border border-zinc-800 bg-black/40 p-4">
+                    <div className="mb-3 text-[10px] font-black uppercase tracking-[0.12em] text-zinc-500">Match Outcomes</div>
+                    <div className="h-48">
+                      <ResponsiveContainer width="100%" height="100%">
+                        <BarChart data={[
+                          { name: "Matches", value: matchStats.stats.matches },
+                          { name: "Draws", value: matchStats.stats.draws },
+                          { name: "Disconnects", value: matchStats.stats.disconnect_finishes },
+                        ]}>
+                          <CartesianGrid strokeDasharray="3 3" stroke={CHART_COLORS.grid} />
+                          <XAxis dataKey="name" tick={{ fill: CHART_COLORS.text, fontSize: 10 }} axisLine={{ stroke: CHART_COLORS.grid }} />
+                          <YAxis tick={{ fill: CHART_COLORS.text, fontSize: 10 }} axisLine={{ stroke: CHART_COLORS.grid }} />
+                          <Tooltip content={<ChartTooltip />} />
+                          <Bar dataKey="value" fill={CHART_COLORS.primary} radius={[2, 2, 0, 0]} />
+                        </BarChart>
+                      </ResponsiveContainer>
+                    </div>
+                  </div>
                 </>
               )}
 
+              {/* Chat Stats with horizontal bar */}
               {chatStats && (
                 <>
                   <SectionTitle icon={<MessageSquare className="h-3.5 w-3.5" />} title="Chat Stats" />
@@ -375,21 +471,25 @@ export default function AdminModal({ onClose }: AdminModalProps) {
                     <StatCard label="Top Senders" value={chatStats.stats.top_senders.length} />
                   </div>
                   {chatStats.stats.top_senders.length > 0 && (
-                    <div className="mt-3 flex flex-col gap-2">
-                      {chatStats.stats.top_senders.map((s, i) => (
-                        <div key={s.user_id} className="flex items-center justify-between border border-zinc-800 bg-black/40 px-3 py-2">
-                          <div className="flex items-center gap-2">
-                            <span className="text-[10px] font-black text-zinc-600">#{i + 1}</span>
-                            <span className="text-xs font-black uppercase tracking-[0.1em] text-zinc-300">{s.nickname}</span>
-                          </div>
-                          <span className="text-[10px] font-semibold uppercase tracking-[0.1em] text-zinc-500">{s.messages} msgs</span>
-                        </div>
-                      ))}
+                    <div className="border border-zinc-800 bg-black/40 p-4">
+                      <div className="mb-3 text-[10px] font-black uppercase tracking-[0.12em] text-zinc-500">Top Chat Senders</div>
+                      <div className="h-56">
+                        <ResponsiveContainer width="100%" height="100%">
+                          <BarChart data={[...chatStats.stats.top_senders].reverse()} layout="vertical">
+                            <CartesianGrid strokeDasharray="3 3" stroke={CHART_COLORS.grid} />
+                            <XAxis type="number" tick={{ fill: CHART_COLORS.text, fontSize: 10 }} axisLine={{ stroke: CHART_COLORS.grid }} />
+                            <YAxis dataKey="nickname" type="category" tick={{ fill: CHART_COLORS.text, fontSize: 10 }} width={100} axisLine={{ stroke: CHART_COLORS.grid }} />
+                            <Tooltip content={<ChartTooltip />} />
+                            <Bar dataKey="messages" fill={CHART_COLORS.secondary} radius={[0, 2, 2, 0]} />
+                          </BarChart>
+                        </ResponsiveContainer>
+                      </div>
                     </div>
                   )}
                 </>
               )}
 
+              {/* Verification Stats with gauge-like pie */}
               {verificationStats && (
                 <>
                   <SectionTitle icon={<Shield className="h-3.5 w-3.5" />} title="Verification Stats" />
@@ -401,9 +501,49 @@ export default function AdminModal({ onClose }: AdminModalProps) {
                     <StatCard label="Used Tokens" value={verificationStats.stats.used_tokens} />
                     <StatCard label="Consume Rate" value={`${verificationStats.stats.token_consume_rate.toFixed(1)}%`} />
                   </div>
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    <div className="border border-zinc-800 bg-black/40 p-4">
+                      <div className="mb-3 text-[10px] font-black uppercase tracking-[0.12em] text-zinc-500">Verification Success Rate</div>
+                      <div className="h-48">
+                        <ResponsiveContainer width="100%" height="100%">
+                          <PieChart>
+                            <Pie data={[
+                              { name: "Passed", value: Math.round(verificationStats.stats.pass_rate * verificationStats.stats.completed_sessions / 100) },
+                              { name: "Failed", value: verificationStats.stats.completed_sessions - Math.round(verificationStats.stats.pass_rate * verificationStats.stats.completed_sessions / 100) },
+                              { name: "Pending", value: verificationStats.stats.total_sessions - verificationStats.stats.completed_sessions },
+                            ]} cx="50%" cy="50%" innerRadius={45} outerRadius={65} paddingAngle={3} dataKey="value">
+                              <Cell fill={CHART_COLORS.accent} />
+                              <Cell fill={CHART_COLORS.danger} />
+                              <Cell fill={CHART_COLORS.warning} />
+                            </Pie>
+                            <Tooltip content={<ChartTooltip />} />
+                            <Legend content={<ChartLegend />} />
+                          </PieChart>
+                        </ResponsiveContainer>
+                      </div>
+                    </div>
+                    <div className="border border-zinc-800 bg-black/40 p-4">
+                      <div className="mb-3 text-[10px] font-black uppercase tracking-[0.12em] text-zinc-500">Token Usage</div>
+                      <div className="h-48">
+                        <ResponsiveContainer width="100%" height="100%">
+                          <BarChart data={[
+                            { name: "Issued", value: verificationStats.stats.issued_tokens },
+                            { name: "Used", value: verificationStats.stats.used_tokens },
+                          ]}>
+                            <CartesianGrid strokeDasharray="3 3" stroke={CHART_COLORS.grid} />
+                            <XAxis dataKey="name" tick={{ fill: CHART_COLORS.text, fontSize: 10 }} axisLine={{ stroke: CHART_COLORS.grid }} />
+                            <YAxis tick={{ fill: CHART_COLORS.text, fontSize: 10 }} axisLine={{ stroke: CHART_COLORS.grid }} />
+                            <Tooltip content={<ChartTooltip />} />
+                            <Bar dataKey="value" fill={CHART_COLORS.info} radius={[2, 2, 0, 0]} />
+                          </BarChart>
+                        </ResponsiveContainer>
+                      </div>
+                    </div>
+                  </div>
                 </>
               )}
 
+              {/* Test Lab Stats */}
               {testLabStats && (
                 <>
                   <SectionTitle icon={<Zap className="h-3.5 w-3.5" />} title="Test Lab Stats" />
@@ -413,6 +553,25 @@ export default function AdminModal({ onClose }: AdminModalProps) {
                     <StatCard label="Total Samples" value={testLabStats.stats.total_samples} />
                     <StatCard label="Avg Score" value={testLabStats.stats.average_final_score.toFixed(2)} />
                     <StatCard label="Completion" value={`${testLabStats.stats.completion_rate.toFixed(1)}%`} />
+                  </div>
+                  <div className="border border-zinc-800 bg-black/40 p-4">
+                    <div className="mb-3 text-[10px] font-black uppercase tracking-[0.12em] text-zinc-500">Test Lab Performance</div>
+                    <div className="h-48">
+                      <ResponsiveContainer width="100%" height="100%">
+                        <BarChart data={[
+                          { name: "Total", sessions: testLabStats.stats.total_sessions, samples: testLabStats.stats.total_samples / 10 },
+                          { name: "Today", sessions: testLabStats.stats.sessions_today, samples: 0 },
+                        ]}>
+                          <CartesianGrid strokeDasharray="3 3" stroke={CHART_COLORS.grid} />
+                          <XAxis dataKey="name" tick={{ fill: CHART_COLORS.text, fontSize: 10 }} axisLine={{ stroke: CHART_COLORS.grid }} />
+                          <YAxis tick={{ fill: CHART_COLORS.text, fontSize: 10 }} axisLine={{ stroke: CHART_COLORS.grid }} />
+                          <Tooltip content={<ChartTooltip />} />
+                          <Legend content={<ChartLegend />} />
+                          <Bar dataKey="sessions" fill={CHART_COLORS.primary} radius={[2, 2, 0, 0]} />
+                          <Bar dataKey="samples" fill={CHART_COLORS.warning} radius={[2, 2, 0, 0]} />
+                        </BarChart>
+                      </ResponsiveContainer>
+                    </div>
                   </div>
                 </>
               )}
@@ -506,8 +665,76 @@ export default function AdminModal({ onClose }: AdminModalProps) {
               {userDetailLoading && <div className="flex h-20 items-center justify-center"><div className="h-6 w-6 animate-spin border-2 border-zinc-800 border-t-red-400" /></div>}
 
               {userRatingHistory.length > 0 && (
-                <div>
+                <div className="space-y-4">
                   <SectionTitle icon={<TrendingUp className="h-3.5 w-3.5" />} title="Rating History" />
+                  {/* Rating line chart */}
+                  <div className="border border-zinc-800 bg-black/40 p-4">
+                    <div className="mb-3 text-[10px] font-black uppercase tracking-[0.12em] text-zinc-500">Rating Over Time</div>
+                    <div className="h-56">
+                      <ResponsiveContainer width="100%" height="100%">
+                        <AreaChart data={[...userRatingHistory].reverse().map((h, i) => ({
+                          index: i + 1,
+                          rating: h.new_rating,
+                          delta: h.delta,
+                          date: new Date(h.created_at).toLocaleDateString(),
+                        }))}>
+                          <defs>
+                            <linearGradient id="colorRating" x1="0" y1="0" x2="0" y2="1">
+                              <stop offset="5%" stopColor={CHART_COLORS.primary} stopOpacity={0.3} />
+                              <stop offset="95%" stopColor={CHART_COLORS.primary} stopOpacity={0} />
+                            </linearGradient>
+                          </defs>
+                          <CartesianGrid strokeDasharray="3 3" stroke={CHART_COLORS.grid} />
+                          <XAxis dataKey="index" tick={{ fill: CHART_COLORS.text, fontSize: 10 }} axisLine={{ stroke: CHART_COLORS.grid }} />
+                          <YAxis tick={{ fill: CHART_COLORS.text, fontSize: 10 }} axisLine={{ stroke: CHART_COLORS.grid }} domain={["dataMin - 50", "dataMax + 50"]} />
+                          <Tooltip content={<ChartTooltip />} />
+                          <Area type="monotone" dataKey="rating" stroke={CHART_COLORS.primary} fillOpacity={1} fill="url(#colorRating)" strokeWidth={2} dot={{ fill: CHART_COLORS.primary, r: 3 }} />
+                        </AreaChart>
+                      </ResponsiveContainer>
+                    </div>
+                  </div>
+                  {/* Delta bar chart */}
+                  <div className="border border-zinc-800 bg-black/40 p-4">
+                    <div className="mb-3 text-[10px] font-black uppercase tracking-[0.12em] text-zinc-500">Rating Changes</div>
+                    <div className="h-40">
+                      <ResponsiveContainer width="100%" height="100%">
+                        <BarChart data={[...userRatingHistory].reverse().map((h, i) => ({
+                          index: i + 1,
+                          delta: h.delta,
+                        }))}>
+                          <CartesianGrid strokeDasharray="3 3" stroke={CHART_COLORS.grid} />
+                          <XAxis dataKey="index" tick={{ fill: CHART_COLORS.text, fontSize: 10 }} axisLine={{ stroke: CHART_COLORS.grid }} />
+                          <YAxis tick={{ fill: CHART_COLORS.text, fontSize: 10 }} axisLine={{ stroke: CHART_COLORS.grid }} />
+                          <Tooltip content={<ChartTooltip />} />
+                          <Bar dataKey="delta" fill={CHART_COLORS.primary} radius={[2, 2, 0, 0]}>
+                            {[...userRatingHistory].reverse().map((h, i) => (
+                              <Cell key={i} fill={h.delta >= 0 ? CHART_COLORS.accent : CHART_COLORS.danger} />
+                            ))}
+                          </Bar>
+                        </BarChart>
+                      </ResponsiveContainer>
+                    </div>
+                  </div>
+                  {/* Win/Loss pie */}
+                  <div className="border border-zinc-800 bg-black/40 p-4">
+                    <div className="mb-3 text-[10px] font-black uppercase tracking-[0.12em] text-zinc-500">Win / Loss Ratio</div>
+                    <div className="h-48">
+                      <ResponsiveContainer width="100%" height="100%">
+                        <PieChart>
+                          <Pie data={[
+                            { name: "Wins", value: selectedUser.wins, color: CHART_COLORS.accent },
+                            { name: "Losses", value: selectedUser.losses, color: CHART_COLORS.danger },
+                          ]} cx="50%" cy="50%" innerRadius={50} outerRadius={70} paddingAngle={4} dataKey="value">
+                            <Cell fill={CHART_COLORS.accent} />
+                            <Cell fill={CHART_COLORS.danger} />
+                          </Pie>
+                          <Tooltip content={<ChartTooltip />} />
+                          <Legend content={<ChartLegend />} />
+                        </PieChart>
+                      </ResponsiveContainer>
+                    </div>
+                  </div>
+                  {/* Raw list */}
                   <div className="flex flex-col gap-1">
                     {userRatingHistory.map((h, i) => (
                       <div key={i} className="flex items-center justify-between border border-zinc-800 bg-black/40 px-3 py-1.5">
@@ -774,6 +1001,36 @@ function StatCard({ label, value }: { label: string; value: string | number }) {
     <div className="border border-zinc-800 bg-black/60 px-4 py-3">
       <div className="text-[9px] font-semibold uppercase tracking-[0.12em] text-zinc-600">{label}</div>
       <div className="mt-1 text-2xl font-black tabular-nums text-zinc-100">{value}</div>
+    </div>
+  );
+}
+
+function ChartTooltip({ active, payload, label }: { active?: boolean; payload?: Array<{ name: string; value: number; color: string }>; label?: string }) {
+  if (!active || !payload?.length) return null;
+  return (
+    <div className="border border-zinc-700 bg-zinc-950 px-3 py-2 shadow-lg">
+      {label !== undefined && <div className="mb-1 text-[9px] font-black uppercase tracking-[0.1em] text-zinc-500">{label}</div>}
+      {payload.map((p, i) => (
+        <div key={i} className="flex items-center gap-2 text-[10px]">
+          <span className="h-2 w-2 shrink-0" style={{ backgroundColor: p.color }} />
+          <span className="text-zinc-400">{p.name}:</span>
+          <span className="font-black text-zinc-200">{typeof p.value === "number" ? p.value.toLocaleString() : p.value}</span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function ChartLegend({ payload }: { payload?: Array<{ value: string; color: string }> }) {
+  if (!payload?.length) return null;
+  return (
+    <div className="flex flex-wrap items-center justify-center gap-3 pt-2">
+      {payload.map((entry, i) => (
+        <div key={i} className="flex items-center gap-1.5">
+          <span className="h-2 w-2" style={{ backgroundColor: entry.color }} />
+          <span className="text-[9px] font-semibold uppercase tracking-[0.08em] text-zinc-500">{entry.value}</span>
+        </div>
+      ))}
     </div>
   );
 }
