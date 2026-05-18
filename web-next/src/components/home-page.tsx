@@ -318,6 +318,7 @@ export default function HomePage() {
   const [resultSoundVolume, setResultSoundVolume] = useState(0.8);
   const [chatBlurred, setChatBlurred] = useState(false);
   const [showPixelBlast, setShowPixelBlast] = useState(false);
+  const [showNavShuffle, setShowNavShuffle] = useState(false);
   const isAnonymousUser = Boolean(
     me?.is_anonymous || me?.type === "anonymous",
   );
@@ -353,6 +354,36 @@ export default function HomePage() {
       };
     }
     handle = window.setTimeout(revealBackground, 1800);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(handle);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    if (reduceMotion) return;
+    let cancelled = false;
+    const revealShuffle = () => {
+      if (!cancelled) setShowNavShuffle(true);
+    };
+    const idleWindow = window as Window & {
+      requestIdleCallback?: (
+        callback: IdleRequestCallback,
+        options?: IdleRequestOptions,
+      ) => number;
+      cancelIdleCallback?: (handle: number) => void;
+    };
+    let handle: number;
+    if (idleWindow.requestIdleCallback) {
+      handle = idleWindow.requestIdleCallback(revealShuffle, { timeout: 5000 });
+      return () => {
+        cancelled = true;
+        idleWindow.cancelIdleCallback?.(handle);
+      };
+    }
+    handle = window.setTimeout(revealShuffle, 4000);
     return () => {
       cancelled = true;
       window.clearTimeout(handle);
@@ -1169,23 +1200,29 @@ export default function HomePage() {
               <a className="hidden transition-colors hover:text-zinc-100 sm:inline" href="#community">
                 Community
               </a>
-              <Shuffle
-                text="CHADCHAT"
-                shuffleDirection="right"
-                duration={0.35}
-                animationMode="evenodd"
-                shuffleTimes={1}
-                ease="power3.out"
-                stagger={0.03}
-                threshold={0.1}
-                triggerOnce
-                triggerOnHover
-                respectReducedMotion
-                loop={false}
-                loopDelay={0}
-                tag="span"
-                className="nav-logo text-sm text-zinc-100 sm:text-base"
-              />
+              {showNavShuffle ? (
+                <Shuffle
+                  text="CHADCHAT"
+                  shuffleDirection="right"
+                  duration={0.35}
+                  animationMode="evenodd"
+                  shuffleTimes={1}
+                  ease="power3.out"
+                  stagger={0.03}
+                  threshold={0.1}
+                  triggerOnce
+                  triggerOnHover
+                  respectReducedMotion
+                  loop={false}
+                  loopDelay={0}
+                  tag="span"
+                  className="nav-logo text-sm text-zinc-100 sm:text-base"
+                />
+              ) : (
+                <span className="nav-logo text-sm text-zinc-100 sm:text-base">
+                  CHADCHAT
+                </span>
+              )}
               <a
                 className="hidden items-center gap-2 transition-colors hover:text-zinc-100 sm:grid sm:grid-cols-[auto_16px]"
                 href="#shop"
