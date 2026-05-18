@@ -34,6 +34,12 @@ func (s *Server) handleJoinQueue(w http.ResponseWriter, _ *http.Request, user au
 		}
 	}
 
+	// inject bot if enabled and no human opponent available
+	if len(s.store.queue) == 0 && s.botEnabled {
+		bot := botUser()
+		s.store.queue = append(s.store.queue, bot)
+	}
+
 	if len(s.store.queue) == 0 {
 		s.store.queue = append(s.store.queue, user)
 		s.store.mu.Unlock()
@@ -57,12 +63,14 @@ func (s *Server) handleJoinQueue(w http.ResponseWriter, _ *http.Request, user au
 	s.store.mu.Unlock()
 
 	go s.runMatchLifecycle(match.ID)
+	go s.botMatchSetup(match.ID)
+	go s.runBotScoring(match.ID)
 	s.hydrateMatchResultSounds(match.ID)
 
 	s.store.mu.Lock()
 	created := s.store.matches[match.ID]
 	if created != nil {
-		s.broadcastLocked(created, map[string]any{"type": "match_found", "match": snapshotMatch(created)})
+		s.broadcastLocked(created, map[string]any{"type": "match_found", "match": s.snapshotMatch(created)})
 	}
 	s.store.mu.Unlock()
 	httputil.WriteJSON(w, http.StatusOK, map[string]any{"status": "matched", "match_id": match.ID})
@@ -95,7 +103,7 @@ func (s *Server) handleCurrentMatch(w http.ResponseWriter, _ *http.Request, user
 		return
 	}
 	s.syncPhaseLocked(m)
-	httputil.WriteJSON(w, http.StatusOK, map[string]any{"match": snapshotMatch(m)})
+	httputil.WriteJSON(w, http.StatusOK, map[string]any{"match": s.snapshotMatch(m)})
 }
 
 func (s *Server) handleGetMatch(w http.ResponseWriter, r *http.Request, user authUser) {
@@ -112,10 +120,10 @@ func (s *Server) handleGetMatch(w http.ResponseWriter, r *http.Request, user aut
 		return
 	}
 	s.syncPhaseLocked(m)
-	httputil.WriteJSON(w, http.StatusOK, map[string]any{"match": snapshotMatch(m)})
+	httputil.WriteJSON(w, http.StatusOK, map[string]any{"match": s.snapshotMatch(m)})
 }
 
-func snapshotMatch(m *Match) map[string]any {
+func (s *Server) snapshotMatch(m *Match) map[string]any {
 	players := []map[string]any{}
 	for _, p := range m.Players {
 		players = append(players, map[string]any{
@@ -129,7 +137,7 @@ func snapshotMatch(m *Match) map[string]any {
 		})
 	}
 	sort.Slice(players, func(i, j int) bool { return players[i]["user_id"].(string) < players[j]["user_id"].(string) })
-	return map[string]any{
+	out := map[string]any{
 		"id":            m.ID,
 		"player_a":      m.PlayerA,
 		"player_b":      m.PlayerB,
@@ -148,6 +156,17 @@ func snapshotMatch(m *Match) map[string]any {
 		},
 		"result": m.Result,
 	}
+	// if opponent is a bot, tell the frontend where to fetch the fake video
+	if len(s.botVideoURLs) > 0 {
+		if isBot(m.PlayerA) {
+			out["bot_video_url"] = randomPick(s.botVideoURLs)
+			out["bot_opponent_id"] = m.PlayerA
+		} else if isBot(m.PlayerB) {
+			out["bot_video_url"] = randomPick(s.botVideoURLs)
+			out["bot_opponent_id"] = m.PlayerB
+		}
+	}
+	return out
 }
 
 func isPlayer(m *Match, userID string) bool { return userID == m.PlayerA || userID == m.PlayerB }

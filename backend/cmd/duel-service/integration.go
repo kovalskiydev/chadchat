@@ -36,6 +36,10 @@ func (s *Server) predictScore(imageBase64 string) (float64, error) {
 }
 
 func (s *Server) recordFinishedMatch(req duelRecordRequest) {
+	// skip recording bot matches
+	if isBot(req.PlayerAID) || isBot(req.PlayerBID) {
+		return
+	}
 	payload, _ := json.Marshal(req)
 	httpReq, err := http.NewRequest(
 		http.MethodPost,
@@ -86,7 +90,7 @@ func (s *Server) hydrateMatchResultSounds(matchID string) {
 	if updated {
 		s.broadcastLocked(m, map[string]any{
 			"type":  "result_sounds_updated",
-			"match": snapshotMatch(m),
+			"match": s.snapshotMatch(m),
 		})
 	}
 }

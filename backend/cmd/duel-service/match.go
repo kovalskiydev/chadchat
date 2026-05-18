@@ -20,7 +20,7 @@ func (s *Server) runMatchLifecycle(matchID string) {
 		prev := m.Phase
 		s.syncPhaseLocked(m)
 		if prev != m.Phase {
-			s.broadcastLocked(m, map[string]any{"type": "phase_changed", "phase": m.Phase, "match": snapshotMatch(m)})
+			s.broadcastLocked(m, map[string]any{"type": "phase_changed", "phase": m.Phase, "match": s.snapshotMatch(m)})
 		}
 		if m.Phase == phaseFinished {
 			var recordReq duelRecordRequest
@@ -89,6 +89,9 @@ func (s *Server) syncPhaseLocked(m *Match) {
 }
 
 func (s *Server) handleDisconnectLocked(m *Match, userID string) {
+	if isBot(userID) {
+		return // bots never disconnect
+	}
 	if m.Connections[userID] > 0 {
 		return
 	}
@@ -106,7 +109,7 @@ func (s *Server) handleDisconnectLocked(m *Match, userID string) {
 		s.broadcastLocked(m, map[string]any{
 			"type":   "match_cancelled",
 			"reason": "media_disconnect",
-			"match":  snapshotMatch(m),
+			"match":  s.snapshotMatch(m),
 		})
 		return
 	}

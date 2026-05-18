@@ -200,18 +200,18 @@ func (s *Server) handleMediaReady(w http.ResponseWriter, r *http.Request, user a
 		m.PhaseEndsAt = time.Now().UTC().Add(mediaReadyGraceDuration)
 		s.broadcastLocked(m, map[string]any{
 			"type":              "media_ready_update",
-			"match":             snapshotMatch(m),
+			"match":             s.snapshotMatch(m),
 			"pre_start_in_sec":  int64(mediaReadyGraceDuration / time.Second),
 			"media_grace_phase": true,
 		})
 	} else {
 		s.broadcastLocked(m, map[string]any{
 			"type":  "media_ready_update",
-			"match": snapshotMatch(m),
+			"match": s.snapshotMatch(m),
 		})
 	}
 
-	httputil.WriteJSON(w, http.StatusOK, map[string]any{"status": "ok", "match": snapshotMatch(m)})
+	httputil.WriteJSON(w, http.StatusOK, map[string]any{"status": "ok", "match": s.snapshotMatch(m)})
 }
 
 func (s *Server) handleStream(w http.ResponseWriter, r *http.Request, user authUser) {
@@ -241,7 +241,7 @@ func (s *Server) handleStream(w http.ResponseWriter, r *http.Request, user authU
 	m.subscriberUserID[subID] = user.ID
 	m.Connections[user.ID]++
 	s.syncPhaseLocked(m)
-	initial := snapshotMatch(m)
+	initial := s.snapshotMatch(m)
 	s.store.mu.Unlock()
 
 	defer func() {

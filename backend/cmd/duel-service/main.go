@@ -3,6 +3,7 @@ package main
 import (
 	"log"
 	"net/http"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -27,6 +28,8 @@ const (
 	mediaReadyGraceDuration = 5 * time.Second
 	tieThreshold            = 0.15
 	scoreRateLimitPerMinute = 210
+
+	botPrefix = "bot_"
 )
 
 type Server struct {
@@ -45,6 +48,11 @@ type Server struct {
 	turnCredentialTTL       time.Duration
 	store                   *Store
 	limiter                 *rateutil.Limiter
+	botEnabled              bool
+	botSkillMin             float64
+	botSkillMax             float64
+	botScoreInterval        time.Duration
+	botVideoURLs            []string
 }
 
 type Store struct {
@@ -160,7 +168,12 @@ func main() {
 			matches:       map[string]*Match{},
 			userToMatchID: map[string]string{},
 		},
-		limiter: rateutil.NewLimiter(),
+		limiter:          rateutil.NewLimiter(),
+		botEnabled:       httputil.EnvOr("DUEL_BOT_ENABLED", "") == "true",
+		botSkillMin:      parseFloatEnv("DUEL_BOT_SKILL_MIN", 2.5),
+		botSkillMax:      parseFloatEnv("DUEL_BOT_SKILL_MAX", 4.5),
+		botScoreInterval: parseDurationEnv("DUEL_BOT_SCORE_INTERVAL_MS", 1500) * time.Millisecond,
+		botVideoURLs:     splitCSV(httputil.EnvOr("DUEL_BOT_VIDEO_URLS", "")),
 	}
 
 	mux := http.NewServeMux()
@@ -219,4 +232,22 @@ func withJSON(next http.Handler) http.Handler {
 		}
 		next.ServeHTTP(w, r)
 	})
+}
+
+func parseFloatEnv(key string, fallback float64) float64 {
+	if raw := strings.TrimSpace(httputil.EnvOr(key, "")); raw != "" {
+		if v, err := strconv.ParseFloat(raw, 64); err == nil {
+			return v
+		}
+	}
+	return fallback
+}
+
+func parseDurationEnv(key string, fallbackMs int) time.Duration {
+	if raw := strings.TrimSpace(httputil.EnvOr(key, "")); raw != "" {
+		if v, err := strconv.Atoi(raw); err == nil && v > 0 {
+			return time.Duration(v) * time.Millisecond
+		}
+	}
+	return time.Duration(fallbackMs) * time.Millisecond
 }

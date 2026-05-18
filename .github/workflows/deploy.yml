@@ -252,6 +252,11 @@ jobs:
             WEBRTC_TURN_URLS=${{ vars.PROD_WEBRTC_TURN_URLS }}
             WEBRTC_TURN_SHARED_SECRET=${{ secrets.PROD_WEBRTC_TURN_SHARED_SECRET }}
             WEBRTC_TURN_TTL_SEC=${{ vars.PROD_WEBRTC_TURN_TTL_SEC || '600' }}
+            DUEL_BOT_ENABLED=${{ vars.PROD_DUEL_BOT_ENABLED || 'true' }}
+            DUEL_BOT_SKILL_MIN=${{ vars.PROD_DUEL_BOT_SKILL_MIN || '2.5' }}
+            DUEL_BOT_SKILL_MAX=${{ vars.PROD_DUEL_BOT_SKILL_MAX || '4.5' }}
+            DUEL_BOT_SCORE_INTERVAL_MS=${{ vars.PROD_DUEL_BOT_SCORE_INTERVAL_MS || '1500' }}
+            DUEL_BOT_VIDEO_URLS=${{ vars.PROD_DUEL_BOT_VIDEO_URLS }}
             STORAGE_BUCKET=${{ vars.PROD_STORAGE_BUCKET || 'chadchat' }}
             STORAGE_ENDPOINT=${{ vars.PROD_STORAGE_ENDPOINT || 'https://ams1.vultrobjects.com' }}
             STORAGE_REGION=${{ vars.PROD_STORAGE_REGION || 'us-east-1' }}
