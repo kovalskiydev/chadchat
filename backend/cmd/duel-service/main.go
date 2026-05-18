@@ -65,22 +65,23 @@ type Store struct {
 }
 
 type Match struct {
-	ID                string                     `json:"id"`
-	PlayerA           string                     `json:"player_a"`
-	PlayerB           string                     `json:"player_b"`
-	Phase             string                     `json:"phase"`
-	StartedAt         time.Time                  `json:"started_at"`
-	PhaseEndsAt       time.Time                  `json:"phase_ends_at"`
-	Result            *MatchResult               `json:"result,omitempty"`
-	Players           map[string]*PlayerProgress `json:"players"`
-	ResultSounds      map[string]ResultSound     `json:"-"`
-	MediaReady        map[string]bool            `json:"-"`
-	Subscribers       map[string]chan []byte     `json:"-"`
-	subscriberUserID  map[string]string          `json:"-"` // subID -> userID
-	Connections       map[string]int             `json:"-"`
-	Recorded          bool                       `json:"-"`
-	Cancelled         bool                       `json:"-"`
-	BotVideoURL       string                     `json:"-"` // fixed video for this match
+	ID               string                     `json:"id"`
+	PlayerA          string                     `json:"player_a"`
+	PlayerB          string                     `json:"player_b"`
+	Phase            string                     `json:"phase"`
+	StartedAt        time.Time                  `json:"started_at"`
+	PhaseEndsAt      time.Time                  `json:"phase_ends_at"`
+	Result           *MatchResult               `json:"result,omitempty"`
+	Players          map[string]*PlayerProgress `json:"players"`
+	ResultSounds     map[string]ResultSound     `json:"-"`
+	MediaReady       map[string]bool            `json:"-"`
+	Subscribers      map[string]chan []byte     `json:"-"`
+	subscriberUserID map[string]string          `json:"-"` // subID -> userID
+	Connections      map[string]int             `json:"-"`
+	Recorded         bool                       `json:"-"`
+	Cancelled        bool                       `json:"-"`
+	BotVideoURL      string                     `json:"-"` // fixed video for this match
+	BotScore         *BotScoreState             `json:"-"`
 }
 
 type PlayerProgress struct {
@@ -91,6 +92,13 @@ type PlayerProgress struct {
 	FinalAvg    float64   `json:"final_avg"`
 	Samples     int       `json:"samples"`
 	LastUpdated time.Time `json:"last_updated"`
+}
+
+type BotScoreState struct {
+	Base       float64
+	Drift      float64
+	Volatility float64
+	Ticks      int
 }
 
 type MatchResult struct {

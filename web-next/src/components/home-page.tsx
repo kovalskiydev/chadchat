@@ -190,6 +190,7 @@ import { BackendStatusModal } from "@/components/modals/BackendStatusModal";
 import { LegalModal } from "@/components/modals/LegalModal";
 import { EntryChoiceModal } from "@/components/modals/EntryChoiceModal";
 import { VerificationSuccessModal } from "@/components/modals/VerificationSuccessModal";
+import AdminModal from "@/components/modals/AdminModal";
 
 
 export default function HomePage() {
@@ -251,6 +252,7 @@ export default function HomePage() {
   const [legalModal, setLegalModal] = useState<"rules" | "privacy" | null>(null);
   const [showEntryChoice, setShowEntryChoice] = useState(false);
   const [showAnonymousProgressPrompt, setShowAnonymousProgressPrompt] = useState(false);
+  const [isAdminOpen, setIsAdminOpen] = useState(false);
   const [consentAccepted, setConsentAccepted] = useState(false);
   const [tokens, setTokens] = useState<AuthTokens | null>(null);
   const [me, setMe] = useState<AuthUser | null>(null);
@@ -785,7 +787,7 @@ export default function HomePage() {
   );
 
   useEffect(() => {
-    if (!isStatsOpen && !isCustomizeOpen && !isStartModesOpen && !isTestLabOpen && !isDuelOpen && !isAuthOpen) return;
+    if (!isStatsOpen && !isCustomizeOpen && !isStartModesOpen && !isTestLabOpen && !isDuelOpen && !isAuthOpen && !isAdminOpen) return;
 
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key === "Escape") {
@@ -797,12 +799,13 @@ export default function HomePage() {
         setIsStartModesOpen(false);
         setIsDuelOpen(false);
         setIsAuthOpen(false);
+        setIsAdminOpen(false);
       }
     };
 
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [isStatsOpen, isCustomizeOpen, isStartModesOpen, isTestLabOpen, isDuelOpen, isAuthOpen]);
+  }, [isStatsOpen, isCustomizeOpen, isStartModesOpen, isTestLabOpen, isDuelOpen, isAuthOpen, isAdminOpen]);
 
   const completeRegisteredAuth = useCallback(async (verificationTokenValue?: string) => {
     const nickname = authNickname.trim();
@@ -1166,7 +1169,12 @@ export default function HomePage() {
                 <User className="h-3 w-3" aria-hidden="true" />
                 <span className="max-w-[4rem] truncate sm:max-w-none">{authLoading ? "..." : currentNickname}</span>
               </button>
-              {isCurrentUserAdmin && <AdminBadge className="h-5 px-1.5 text-[7px] sm:px-2 sm:text-[8px]" />}
+              {isCurrentUserAdmin && (
+                <AdminBadge
+                  className="h-5 px-1.5 text-[7px] sm:px-2 sm:text-[8px]"
+                  onClick={() => setIsAdminOpen(true)}
+                />
+              )}
               {!isAnonymousUser && (
                 <button
                   type="button"
@@ -1445,6 +1453,9 @@ export default function HomePage() {
         <BackendStatusModal
           message={backendDownMessage}
         />
+      )}
+      {isAdminOpen && (
+        <AdminModal onClose={() => setIsAdminOpen(false)} />
       )}
     </main>
   );

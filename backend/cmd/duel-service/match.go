@@ -156,7 +156,7 @@ func (s *Server) newMatchLocked(a, b authUser) *Match {
 	}
 	id := fmt.Sprintf("duel_%d", time.Now().UnixNano())
 	now := time.Now().UTC()
-	return &Match{
+	match := &Match{
 		ID:          id,
 		PlayerA:     a.ID,
 		PlayerB:     b.ID,
@@ -183,6 +183,10 @@ func (s *Server) newMatchLocked(a, b authUser) *Match {
 		},
 		BotVideoURL: "",
 	}
+	if isBot(match.PlayerA) || isBot(match.PlayerB) {
+		match.BotScore = s.newBotScoreState()
+	}
+	return match
 }
 
 func (s *Server) broadcastLocked(m *Match, msg map[string]any) {

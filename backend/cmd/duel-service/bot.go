@@ -98,7 +98,10 @@ func (s *Server) runBotScoring(matchID string) {
 		}
 
 		p := m.Players[botID]
-		score := randomBotScore(s.botSkillMin, s.botSkillMax)
+		if m.BotScore == nil {
+			m.BotScore = s.newBotScoreState()
+		}
+		score := nextBotScore(m.BotScore, s.botSkillMin, s.botSkillMax)
 		p.Samples++
 		p.LastScore = score
 		p.RunningAvg = ((p.RunningAvg * float64(p.Samples-1)) + score) / float64(p.Samples)
@@ -212,4 +215,34 @@ func randomBotScore(min, max float64) float64 {
 		v = max
 	}
 	return math.Round(v*10000) / 10000
+}
+
+func (s *Server) newBotScoreState() *BotScoreState {
+	return &BotScoreState{
+		Base:       randomBotScore(s.botSkillMin, s.botSkillMax),
+		Volatility: 0.045 + rand.Float64()*0.075,
+	}
+}
+
+func nextBotScore(state *BotScoreState, min, max float64) float64 {
+	state.Ticks++
+	state.Drift = clampFloat(state.Drift*0.88+rand.NormFloat64()*0.012, -0.18, 0.18)
+
+	noise := rand.NormFloat64() * state.Volatility
+	if rand.Float64() < 0.08 {
+		noise += rand.NormFloat64() * 0.12
+	}
+
+	score := state.Base + state.Drift + noise
+	return math.Round(clampFloat(score, min, max)*10000) / 10000
+}
+
+func clampFloat(v, min, max float64) float64 {
+	if v < min {
+		return min
+	}
+	if v > max {
+		return max
+	}
+	return v
 }
