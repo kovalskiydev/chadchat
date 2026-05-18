@@ -1439,73 +1439,23 @@ export function DuelModal({
           ) : (
             <div
               className={cn(
-                "relative grid h-full min-h-0 grid-rows-[auto_1fr_1fr] gap-2 overflow-hidden border bg-black p-2 pb-20 sm:gap-3 sm:p-3 sm:pb-24 lg:grid-cols-2 lg:grid-rows-[auto_minmax(0,1fr)]",
-                phase === "awaiting_media" && "border-sky-500/35",
-                phase === "pre_start" && "border-purple-500/45",
-                phase === "scoring" && "border-red-500/55",
-                phase === "overtime" && "border-amber-400/60",
-                isResultPhase && "border-[#d4af37]/55",
+                "relative flex h-full min-h-0 flex-col overflow-hidden bg-black lg:flex-row",
+                phase === "awaiting_media" && "ring-1 ring-sky-500/35",
+                phase === "pre_start" && "ring-1 ring-purple-500/45",
+                phase === "scoring" && "ring-1 ring-red-500/55",
+                phase === "overtime" && "ring-1 ring-amber-400/60",
+                isResultPhase && "ring-1 ring-[#d4af37]/55",
               )}
             >
               {phaseFlash && (
                 <div className="pointer-events-none absolute inset-0 z-40 bg-white/10 duel-flash" />
               )}
 
-              <div className="z-30 grid gap-2 sm:gap-3 lg:col-span-2 lg:grid-cols-[1fr_auto_1fr] lg:items-start">
-                <div className="border border-purple-500/45 bg-zinc-950 px-3 py-1.5 shadow-[0_0_22px_rgba(168,85,247,0.18)] sm:px-4 sm:py-2">
-                  <div className="flex items-center justify-between gap-2">
-                    <span className="truncate text-[9px] font-black uppercase tracking-[0.16em] text-zinc-100 sm:text-[10px]">
-                      {resultSummary?.myNickname ?? "You"}
-                    </span>
-                    <span className="shrink-0 text-[8px] font-semibold uppercase tracking-[0.14em] text-purple-200 sm:text-[9px]">
-                      {myMediaReady ? "LOCKED IN" : "LOCAL"}
-                    </span>
-                  </div>
-                  <div className="mt-1 h-1 overflow-hidden bg-zinc-900 sm:mt-2 sm:h-1.5">
-                    <div
-                      className="h-full bg-purple-300 shadow-[0_0_14px_rgba(216,180,254,0.75)] transition-[width] duration-300"
-                      style={{ width: `${Math.max(5, Math.min(100, (myAvg ?? 0) * 20))}%` }}
-                    />
-                  </div>
-                </div>
-
-                <div className={cn("border px-3 py-2 text-center shadow-[0_0_28px_rgba(0,0,0,0.7)] sm:px-5 sm:py-3", phaseToneClass)}>
-                  <div className="text-[9px] font-black uppercase tracking-[0.2em] sm:text-[10px]">
-                    {phaseCommand}
-                  </div>
-                  <div className="mt-0.5 text-2xl font-black tabular-nums leading-none text-zinc-100 sm:mt-1 sm:text-4xl">
-                    {phase === "awaiting_media" ? "VS" : secondsLeft ?? "VS"}
-                  </div>
-                  <div className="mt-1 text-[8px] font-semibold uppercase tracking-[0.14em] text-zinc-400 sm:mt-2 sm:text-[9px]">
-                    {phaseLabel}
-                  </div>
-                </div>
-
-                <div className="border border-zinc-700 bg-zinc-950 px-3 py-1.5 text-right shadow-[0_0_22px_rgba(255,255,255,0.06)] sm:px-4 sm:py-2">
-                  <div className="flex items-center justify-between gap-2">
-                    <span className="shrink-0 text-[8px] font-semibold uppercase tracking-[0.14em] text-zinc-400 sm:text-[9px]">
-                      {opponentMediaReady ? "LOCKED IN" : "REMOTE"}
-                    </span>
-                    <span className="truncate text-[9px] font-black uppercase tracking-[0.16em] text-zinc-100 sm:text-[10px]">
-                      {resultSummary?.oppNickname ?? "Opponent"}
-                    </span>
-                  </div>
-                  <div className="mt-1 h-1 overflow-hidden bg-zinc-900 sm:mt-2 sm:h-1.5">
-                    <div
-                      className="ml-auto h-full bg-zinc-300 shadow-[0_0_14px_rgba(244,244,245,0.45)] transition-[width] duration-300"
-                      style={{ width: `${Math.max(5, Math.min(100, (oppAvg ?? 0) * 20))}%` }}
-                    />
-                  </div>
-                </div>
-              </div>
-
+              {/* My video */}
               <div
                 className={cn(
-                  "group relative min-h-0 overflow-hidden border bg-black/90",
-                  myLeading && activeScoring
-                    ? "border-emerald-300/80 shadow-[0_0_30px_rgba(110,231,183,0.18)]"
-                    : "border-purple-500/45 shadow-[0_0_24px_rgba(168,85,247,0.12)]",
-                  myScorePulse && "scale-[1.005]",
+                  "relative min-h-0 flex-1 overflow-hidden",
+                  myLeading && activeScoring && "ring-1 ring-emerald-300/40",
                 )}
               >
                 <video
@@ -1515,29 +1465,64 @@ export function DuelModal({
                   playsInline
                   autoPlay
                 />
-                <div className="pointer-events-none absolute inset-x-0 top-0 h-28 bg-gradient-to-b from-black/80 to-transparent" />
+                {/* Vignette */}
+                <div className="pointer-events-none absolute inset-0 shadow-[inset_0_0_80px_rgba(0,0,0,0.5)]" />
+                {/* Top gradient for text readability */}
+                <div className="pointer-events-none absolute inset-x-0 top-0 h-20 bg-gradient-to-b from-black/70 to-transparent" />
+                {/* Bottom gradient for text readability */}
+                <div className="pointer-events-none absolute inset-x-0 bottom-0 h-24 bg-gradient-to-t from-black/70 to-transparent" />
+
+                {/* CRT noise + scanline during scoring */}
                 {activeScoring && (
-                  <div className="pointer-events-none absolute inset-0 overflow-hidden">
-                    <div className="duel-scanline absolute inset-x-0 top-0 h-28 bg-gradient-to-b from-transparent via-red-400/20 to-transparent" />
-                    <div className="absolute inset-0 bg-[linear-gradient(rgba(255,255,255,0.035)_1px,transparent_1px)] bg-[length:100%_6px]" />
-                  </div>
+                  <>
+                    <div className="pointer-events-none absolute inset-0 duel-crt-noise opacity-[0.04]" />
+                    <div className="pointer-events-none absolute inset-x-0 top-0 h-1 bg-red-400/30 duel-video-scan shadow-[0_0_12px_rgba(248,113,113,0.4)]" />
+                    <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(rgba(255,255,255,0.02)_1px,transparent_1px)] bg-[length:100%_4px]" />
+                  </>
                 )}
-                <div className="absolute bottom-2 left-2 max-w-[calc(100%-1rem)] border border-purple-500/55 bg-zinc-950/95 px-2.5 py-2 shadow-[0_0_24px_rgba(0,0,0,0.62)] sm:bottom-4 sm:left-4 sm:px-4 sm:py-3">
-                  <div className="text-[9px] font-black uppercase tracking-[0.14em] text-purple-200 sm:text-[10px]">
-                    Score
-                  </div>
-                  <div
-                    className={cn(
-                      "mt-0.5 text-2xl font-black tabular-nums leading-none text-zinc-100 transition-transform duration-200 sm:mt-1 sm:text-4xl lg:text-5xl",
-                      myScorePulse && "scale-110 text-purple-100",
+
+                {/* Nickname + status - top left */}
+                <div className="absolute left-3 top-3 z-10 sm:left-4 sm:top-4">
+                  <div className="flex items-center gap-2">
+                    <span className="truncate text-[10px] font-black uppercase tracking-[0.14em] text-zinc-100 sm:text-xs">
+                      {resultSummary?.myNickname ?? "You"}
+                    </span>
+                    {phase === "awaiting_media" && (
+                      <span className={cn(
+                        "h-1.5 w-1.5 rounded-full",
+                        myMediaReady ? "bg-emerald-400 shadow-[0_0_6px_rgba(52,211,153,0.8)]" : "bg-zinc-600"
+                      )} />
                     )}
-                  >
-                    {myScore === null ? "--" : `${(myScore * 2).toFixed(1)}/10`}
-                  </div>
-                  <div className="mt-1 text-[9px] font-semibold uppercase tracking-[0.12em] text-zinc-500 sm:mt-2 sm:text-[10px]">
-                    Avg {myAvg === null ? "--" : `${(myAvg * 2).toFixed(1)}/10`}
                   </div>
                 </div>
+
+                {/* Score - bottom left */}
+                <div className="absolute bottom-3 left-3 z-10 sm:bottom-4 sm:left-4">
+                  <div className="flex items-end gap-2">
+                    <div
+                      className={cn(
+                        "text-3xl font-black tabular-nums leading-none text-zinc-100 transition-all duration-200 sm:text-5xl lg:text-6xl",
+                        myScorePulse && "scale-110 text-purple-100",
+                        myLeading && activeScoring && "text-emerald-100",
+                      )}
+                    >
+                      {myScore === null ? "—" : (myScore * 2).toFixed(1)}
+                    </div>
+                    <div className="mb-1 text-[10px] font-semibold uppercase tracking-[0.1em] text-zinc-500 sm:text-xs">
+                      <span className="text-zinc-400">avg</span>{" "}
+                      {myAvg === null ? "—" : (myAvg * 2).toFixed(1)}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Avg progress bar - thin line at bottom of video */}
+                <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-zinc-900/80">
+                  <div
+                    className="h-full bg-purple-400/70 transition-[width] duration-300"
+                    style={{ width: `${Math.max(2, Math.min(100, (myAvg ?? 0) * 20))}%` }}
+                  />
+                </div>
+
                 {isResultPhase && resultSummary && !showFinalResult && myLost && (
                   <div className="pointer-events-none absolute inset-x-[12%] top-[30%] z-20 flex justify-center">
                     <div className="duel-shake border border-red-500/80 bg-red-950/80 px-7 py-3 text-4xl font-black uppercase tracking-[0.2em] text-red-200 shadow-[0_0_30px_rgba(248,113,113,0.5)] drop-shadow-[0_0_18px_rgba(248,113,113,0.8)]">
@@ -1547,13 +1532,42 @@ export function DuelModal({
                 )}
               </div>
 
+              {/* Center timer - only during active phases */}
+              {(phase === "pre_start" || activeScoring) && (
+                <div className="absolute left-1/2 top-1/2 z-20 -translate-x-1/2 -translate-y-1/2">
+                  <div className="relative flex h-16 w-16 items-center justify-center sm:h-20 sm:w-20">
+                    {/* Pulsing ring */}
+                    <div className={cn(
+                      "absolute inset-0 rounded-full border-2",
+                      phase === "scoring" && "border-red-400/40 duel-timer-ring",
+                      phase === "overtime" && "border-amber-400/50 duel-timer-ring",
+                      phase === "pre_start" && "border-purple-400/30",
+                    )} />
+                    {/* Background */}
+                    <div className="absolute inset-1 rounded-full bg-black/80 backdrop-blur-sm" />
+                    {/* Timer text */}
+                    <div className="relative text-center">
+                      <div className={cn(
+                        "text-xl font-black tabular-nums leading-none sm:text-2xl",
+                        phase === "scoring" && "text-red-300",
+                        phase === "overtime" && "text-amber-300",
+                        phase === "pre_start" && "text-purple-300",
+                      )}>
+                        {secondsLeft ?? 0}
+                      </div>
+                      <div className="mt-0.5 text-[7px] font-semibold uppercase tracking-[0.12em] text-zinc-500">
+                        sec
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Opponent video */}
               <div
                 className={cn(
-                  "group relative min-h-0 overflow-hidden border bg-black/90",
-                  oppLeading && activeScoring
-                    ? "border-emerald-300/80 shadow-[0_0_30px_rgba(110,231,183,0.18)]"
-                    : "border-zinc-700 shadow-[0_0_24px_rgba(255,255,255,0.06)]",
-                  oppScorePulse && "scale-[1.005]",
+                  "relative min-h-0 flex-1 overflow-hidden",
+                  oppLeading && activeScoring && "ring-1 ring-emerald-300/40",
                 )}
               >
                 <video
@@ -1562,29 +1576,64 @@ export function DuelModal({
                   playsInline
                   autoPlay
                 />
-                <div className="pointer-events-none absolute inset-x-0 top-0 h-28 bg-gradient-to-b from-black/80 to-transparent" />
+                {/* Vignette */}
+                <div className="pointer-events-none absolute inset-0 shadow-[inset_0_0_80px_rgba(0,0,0,0.5)]" />
+                {/* Top gradient */}
+                <div className="pointer-events-none absolute inset-x-0 top-0 h-20 bg-gradient-to-b from-black/70 to-transparent" />
+                {/* Bottom gradient */}
+                <div className="pointer-events-none absolute inset-x-0 bottom-0 h-24 bg-gradient-to-t from-black/70 to-transparent" />
+
+                {/* CRT noise + scanline during scoring */}
                 {activeScoring && (
-                  <div className="pointer-events-none absolute inset-0 overflow-hidden">
-                    <div className="duel-scanline absolute inset-x-0 top-0 h-28 bg-gradient-to-b from-transparent via-red-400/20 to-transparent" />
-                    <div className="absolute inset-0 bg-[linear-gradient(rgba(255,255,255,0.035)_1px,transparent_1px)] bg-[length:100%_6px]" />
-                  </div>
+                  <>
+                    <div className="pointer-events-none absolute inset-0 duel-crt-noise opacity-[0.04]" />
+                    <div className="pointer-events-none absolute inset-x-0 top-0 h-1 bg-red-400/30 duel-video-scan shadow-[0_0_12px_rgba(248,113,113,0.4)]" />
+                    <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(rgba(255,255,255,0.02)_1px,transparent_1px)] bg-[length:100%_4px]" />
+                  </>
                 )}
-                <div className="absolute bottom-2 right-2 max-w-[calc(100%-1rem)] border border-zinc-600 bg-zinc-950/95 px-2.5 py-2 text-right shadow-[0_0_24px_rgba(0,0,0,0.62)] sm:bottom-4 sm:right-4 sm:px-4 sm:py-3">
-                  <div className="text-[9px] font-black uppercase tracking-[0.14em] text-zinc-400 sm:text-[10px]">
-                    Score
-                  </div>
-                  <div
-                    className={cn(
-                      "mt-0.5 text-2xl font-black tabular-nums leading-none text-zinc-100 transition-transform duration-200 sm:mt-1 sm:text-4xl lg:text-5xl",
-                      oppScorePulse && "scale-110 text-zinc-50",
+
+                {/* Nickname + status - top right */}
+                <div className="absolute right-3 top-3 z-10 text-right sm:right-4 sm:top-4">
+                  <div className="flex items-center justify-end gap-2">
+                    {phase === "awaiting_media" && (
+                      <span className={cn(
+                        "h-1.5 w-1.5 rounded-full",
+                        opponentMediaReady ? "bg-emerald-400 shadow-[0_0_6px_rgba(52,211,153,0.8)]" : "bg-zinc-600"
+                      )} />
                     )}
-                  >
-                    {oppScore === null ? "--" : `${(oppScore * 2).toFixed(1)}/10`}
-                  </div>
-                  <div className="mt-1 text-[9px] font-semibold uppercase tracking-[0.12em] text-zinc-500 sm:mt-2 sm:text-[10px]">
-                    Avg {oppAvg === null ? "--" : `${(oppAvg * 2).toFixed(1)}/10`}
+                    <span className="truncate text-[10px] font-black uppercase tracking-[0.14em] text-zinc-100 sm:text-xs">
+                      {resultSummary?.oppNickname ?? "Opponent"}
+                    </span>
                   </div>
                 </div>
+
+                {/* Score - bottom right */}
+                <div className="absolute bottom-3 right-3 z-10 text-right sm:bottom-4 sm:right-4">
+                  <div className="flex items-end justify-end gap-2">
+                    <div className="mb-1 text-[10px] font-semibold uppercase tracking-[0.1em] text-zinc-500 sm:text-xs">
+                      <span className="text-zinc-400">avg</span>{" "}
+                      {oppAvg === null ? "—" : (oppAvg * 2).toFixed(1)}
+                    </div>
+                    <div
+                      className={cn(
+                        "text-3xl font-black tabular-nums leading-none text-zinc-100 transition-all duration-200 sm:text-5xl lg:text-6xl",
+                        oppScorePulse && "scale-110 text-zinc-50",
+                        oppLeading && activeScoring && "text-emerald-100",
+                      )}
+                    >
+                      {oppScore === null ? "—" : (oppScore * 2).toFixed(1)}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Avg progress bar */}
+                <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-zinc-900/80">
+                  <div
+                    className="ml-auto h-full bg-zinc-400/70 transition-[width] duration-300"
+                    style={{ width: `${Math.max(2, Math.min(100, (oppAvg ?? 0) * 20))}%` }}
+                  />
+                </div>
+
                 {isResultPhase && resultSummary && !showFinalResult && opponentLost && (
                   <div className="pointer-events-none absolute inset-x-[12%] top-[30%] z-20 flex justify-center">
                     <div className="duel-shake border border-red-500/80 bg-red-950/80 px-7 py-3 text-4xl font-black uppercase tracking-[0.2em] text-red-200 shadow-[0_0_30px_rgba(248,113,113,0.5)] drop-shadow-[0_0_18px_rgba(248,113,113,0.8)]">
@@ -1594,50 +1643,59 @@ export function DuelModal({
                 )}
               </div>
 
-              <div className="absolute inset-x-2 bottom-2 z-20 sm:inset-x-3 sm:bottom-3 lg:inset-x-6">
-                <div className={cn("border bg-zinc-950/95 px-3 py-2 shadow-[0_0_24px_rgba(0,0,0,0.42)] sm:px-4 sm:py-3", phaseToneClass)}>
-                  <div className="mb-1 flex items-center justify-between gap-2 text-[9px] font-semibold uppercase tracking-[0.14em] text-zinc-500 sm:mb-2 sm:gap-4 sm:text-[10px]">
-                    <span className="truncate">{status || "Live Match"}</span>
-                    <span className="shrink-0 text-zinc-100">{secondsLeft ?? 0}s</span>
-                  </div>
-                  {phase === "awaiting_media" && (
-                    <div className="mb-3 grid gap-2 sm:grid-cols-2">
-                      <div className="border border-zinc-800 bg-black px-3 py-2 text-[10px] font-semibold uppercase tracking-[0.12em] text-zinc-400">
-                        You:{" "}
-                        <span className={myMediaReady ? "text-emerald-300" : "text-zinc-500"}>
-                          {myMediaReady ? "Ready" : "Waiting"}
-                        </span>
-                      </div>
-                      <div className="border border-zinc-800 bg-black px-3 py-2 text-[10px] font-semibold uppercase tracking-[0.12em] text-zinc-400">
-                        Opponent:{" "}
-                        <span
-                          className={opponentMediaReady ? "text-emerald-300" : "text-zinc-500"}
-                        >
-                          {opponentMediaReady ? "Ready" : "Waiting"}
-                        </span>
-                      </div>
-                    </div>
+              {/* Bottom thin progress bar */}
+              <div className="absolute bottom-0 left-0 right-0 z-20 h-1">
+                <div
+                  className={cn(
+                    "h-full transition-[width] duration-300 ease-out",
+                    phase === "overtime"
+                      ? "bg-amber-300 shadow-[0_0_14px_rgba(252,211,77,0.85)]"
+                      : phase === "scoring"
+                        ? "bg-red-400 shadow-[0_0_14px_rgba(248,113,113,0.85)]"
+                        : phase === "pre_start"
+                          ? "bg-purple-400 shadow-[0_0_14px_rgba(168,85,247,0.8)]"
+                          : "bg-zinc-700",
                   )}
-                  <div className="h-2 overflow-hidden border border-zinc-800 bg-black">
-                    <div
-                      className={cn(
-                        "h-full transition-[width] duration-300 ease-out",
-                        phase === "overtime"
-                          ? "bg-amber-300 shadow-[0_0_14px_rgba(252,211,77,0.85)]"
-                          : phase === "scoring"
-                            ? "bg-red-400 shadow-[0_0_14px_rgba(248,113,113,0.85)]"
-                            : "bg-purple-400 shadow-[0_0_14px_rgba(168,85,247,0.8)]",
-                      )}
-                      style={{ width: `${timerProgress}%` }}
-                    />
+                  style={{ width: `${timerProgress}%` }}
+                />
+              </div>
+
+              {/* Micro status - bottom center, only for awaiting_media */}
+              {phase === "awaiting_media" && (
+                <div className="absolute bottom-3 left-1/2 z-20 -translate-x-1/2">
+                  <div className="flex items-center gap-3 rounded-full border border-zinc-800 bg-black/80 px-4 py-1.5 backdrop-blur-sm">
+                    <span className="text-[9px] font-semibold uppercase tracking-[0.12em] text-zinc-500">
+                      cameras
+                    </span>
+                    <span className={cn(
+                      "text-[9px] font-black uppercase tracking-[0.1em]",
+                      myMediaReady && opponentMediaReady ? "text-emerald-400" : "text-zinc-400"
+                    )}>
+                      {myMediaReady && opponentMediaReady ? "ready" : "syncing"}
+                    </span>
                   </div>
                 </div>
-                {error && (
-                  <div className="mt-3 border border-red-500/45 bg-red-950/35 px-3 py-2 text-[10px] font-semibold uppercase tracking-[0.12em] text-red-200">
-                    {error}
-                  </div>
-                )}
+              )}
+
+              {/* Phase label - micro, top center */}
+              <div className="absolute left-1/2 top-3 z-20 -translate-x-1/2 sm:top-4">
+                <div className={cn(
+                  "rounded-full border px-3 py-1 text-[8px] font-black uppercase tracking-[0.14em] backdrop-blur-sm",
+                  phase === "awaiting_media" && "border-sky-500/30 bg-sky-950/40 text-sky-300",
+                  phase === "pre_start" && "border-purple-500/30 bg-purple-950/40 text-purple-300",
+                  phase === "scoring" && "border-red-500/30 bg-red-950/40 text-red-300",
+                  phase === "overtime" && "border-amber-500/30 bg-amber-950/40 text-amber-300",
+                  isResultPhase && "border-[#d4af37]/30 bg-[#d4af37]/10 text-[#f5d76e]",
+                )}>
+                  {phaseLabel}
+                </div>
               </div>
+
+              {error && (
+                <div className="absolute bottom-4 left-1/2 z-20 -translate-x-1/2 border border-red-500/45 bg-red-950/80 px-3 py-1.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-red-200 backdrop-blur-sm">
+                  {error}
+                </div>
+              )}
 
               {isResultPhase && resultSummary && showFinalResult && (
                 <div className="absolute inset-0 z-30 flex items-center justify-center bg-black/90 p-3 sm:p-6">
