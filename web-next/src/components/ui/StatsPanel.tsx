@@ -35,7 +35,9 @@ export function StatsPanel({
           </div>
         </div>
         {loading ? (
-          <span className="h-7 w-20 animate-pulse border border-zinc-800 bg-zinc-900/80" />
+          <span className="border border-zinc-800 bg-black/60 px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-zinc-500">
+            Loading
+          </span>
         ) : !stats ? (
           <span className="border border-zinc-800 bg-black/60 px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-zinc-500">
             No Data
@@ -58,7 +60,9 @@ export function StatsPanel({
             Current Rating
           </div>
           {loading ? (
-            <div className="mt-2 h-10 w-28 animate-pulse bg-zinc-900/80" />
+            <div className="mt-2 text-xl font-black uppercase tracking-[0.12em] text-zinc-600">
+              Loading
+            </div>
           ) : !stats ? (
             <div className="mt-2 text-xl font-black uppercase tracking-[0.12em] text-zinc-600">
               Unavailable
@@ -76,7 +80,9 @@ export function StatsPanel({
               Progress to {stats?.nextRank ?? "Next Rank"}
             </span>
             {loading ? (
-              <span className="h-4 w-10 animate-pulse bg-zinc-900/80" />
+              <span className="text-[10px] font-semibold tabular-nums text-zinc-600">
+                --
+              </span>
           ) : !stats ? (
             <span className="text-[10px] font-semibold tabular-nums text-zinc-600">
               --
@@ -97,7 +103,9 @@ export function StatsPanel({
             />
           </div>
           {loading ? (
-            <div className="mt-2 h-4 w-24 animate-pulse bg-zinc-900/80" />
+            <div className="mt-2 text-[10px] uppercase tracking-[0.12em] text-zinc-600">
+              Loading stats
+            </div>
           ) : !stats ? (
             <div className="mt-2 text-[10px] uppercase tracking-[0.12em] text-zinc-600">
               Stats did not load
@@ -116,7 +124,9 @@ export function StatsPanel({
             Wins
           </div>
           {loading ? (
-            <div className="mt-2 h-5 w-10 animate-pulse bg-zinc-900/80" />
+            <div className="mt-1 text-base font-black tabular-nums text-zinc-600">
+              --
+            </div>
           ) : !stats ? (
             <div className="mt-1 text-base font-black tabular-nums text-zinc-600">
               --
@@ -132,7 +142,9 @@ export function StatsPanel({
             Streak
           </div>
           {loading ? (
-            <div className="mt-2 h-5 w-10 animate-pulse bg-zinc-900/80" />
+            <div className="mt-1 text-base font-black tabular-nums text-zinc-600">
+              --
+            </div>
           ) : !stats ? (
             <div className="mt-1 text-base font-black tabular-nums text-zinc-600">
               --

@@ -1263,7 +1263,15 @@ export default function HomePage() {
             clickEffect
           >
             <section className="flex h-full min-h-0 flex-col justify-center gap-4 border border-border p-4 sm:p-6">
-              <MagicButton className="h-72 w-full sm:h-80">
+              <div className="shrink-0 text-center">
+                <h1 className="text-2xl font-black uppercase tracking-[0.12em] text-zinc-100 sm:text-3xl">
+                  CHADCHAT
+                </h1>
+                <div className="mt-1 text-[10px] font-semibold uppercase tracking-[0.16em] text-zinc-500">
+                  Live Face Rating
+                </div>
+              </div>
+              <MagicButton className="h-60 w-full sm:h-64">
                 <StatsPanel
                   onOpenDetails={() => setIsStatsOpen(true)}
                   stats={statsSnapshot}
