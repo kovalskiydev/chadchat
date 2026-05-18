@@ -34,46 +34,42 @@ func (s *Server) handleJoinQueue(w http.ResponseWriter, _ *http.Request, user au
 		}
 	}
 
-	if len(s.store.queue) == 0 {
-		// no one in queue — human waits, maybe bot joins later
-		s.store.queue = append(s.store.queue, user)
-		s.store.queueJoinedAt[user.ID] = time.Now().UTC()
-		s.store.mu.Unlock()
-		httputil.WriteJSON(w, http.StatusOK, map[string]any{"status": "searching"})
-		return
+	// check if there's a bot in queue (injected by runBotInjector after delay)
+	for i, queued := range s.store.queue {
+		if isBot(queued.ID) {
+			// match human with waiting bot
+			bot := s.store.queue[i]
+			s.store.queue = append(s.store.queue[:i], s.store.queue[i+1:]...)
+			match := s.newMatchLocked(bot, user)
+			if len(s.botVideoURLs) > 0 {
+				match.BotVideoURL = randomPick(s.botVideoURLs)
+			}
+			s.store.userToMatchID[bot.ID] = match.ID
+			s.store.userToMatchID[user.ID] = match.ID
+			s.store.matches[match.ID] = match
+			s.store.mu.Unlock()
+
+			go s.runMatchLifecycle(match.ID)
+			go s.botMatchSetup(match.ID)
+			go s.runBotScoring(match.ID)
+			s.hydrateMatchResultSounds(match.ID)
+
+			s.store.mu.Lock()
+			created := s.store.matches[match.ID]
+			if created != nil {
+				s.broadcastLocked(created, map[string]any{"type": "match_found", "match": s.snapshotMatch(created)})
+			}
+			s.store.mu.Unlock()
+			httputil.WriteJSON(w, http.StatusOK, map[string]any{"status": "matched", "match_id": match.ID})
+			return
+		}
 	}
 
-	opponent := s.store.queue[0]
-	s.store.queue = s.store.queue[1:]
-	delete(s.store.queueJoinedAt, opponent.ID)
-	if opponent.ID == user.ID {
-		s.store.queue = append(s.store.queue, user)
-		s.store.mu.Unlock()
-		httputil.WriteJSON(w, http.StatusOK, map[string]any{"status": "searching"})
-		return
-	}
-
-	match := s.newMatchLocked(opponent, user)
-	if isBot(opponent.ID) && len(s.botVideoURLs) > 0 {
-		match.BotVideoURL = randomPick(s.botVideoURLs)
-	}
-	s.store.userToMatchID[opponent.ID] = match.ID
-	s.store.userToMatchID[user.ID] = match.ID
-	s.store.matches[match.ID] = match
+	// no bot available — human waits in queue
+	s.store.queue = append(s.store.queue, user)
+	s.store.queueJoinedAt[user.ID] = time.Now().UTC()
 	s.store.mu.Unlock()
-
-	go s.runMatchLifecycle(match.ID)
-	go s.botMatchSetup(match.ID)
-	go s.runBotScoring(match.ID)
-	s.hydrateMatchResultSounds(match.ID)
-
-	s.store.mu.Lock()
-	created := s.store.matches[match.ID]
-	if created != nil {
-		s.broadcastLocked(created, map[string]any{"type": "match_found", "match": s.snapshotMatch(created)})
-	}
-	s.store.mu.Unlock()
-	httputil.WriteJSON(w, http.StatusOK, map[string]any{"status": "matched", "match_id": match.ID})
+	httputil.WriteJSON(w, http.StatusOK, map[string]any{"status": "searching"})
 }
 
 func (s *Server) handleLeaveQueue(w http.ResponseWriter, _ *http.Request, user authUser) {

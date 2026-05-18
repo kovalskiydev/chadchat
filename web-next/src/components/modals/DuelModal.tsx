@@ -940,7 +940,7 @@ export function DuelModal({
     video.autoplay = true;
     video.playsInline = true;
     video.loop = true;
-    video.muted = true;
+    video.muted = false;
     void video.play().catch(() => {});
   }, [isBotMatch, botVideoUrl, phase]);
 

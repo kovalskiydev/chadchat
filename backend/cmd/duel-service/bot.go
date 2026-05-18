@@ -120,7 +120,7 @@ func (s *Server) runBotScoring(matchID string) {
 	}
 }
 
-// runBotInjector checks queue every second and injects a bot if a human
+// runBotInjector checks queue every second and creates a bot match if a human
 // has been waiting longer than botInjectDelay.
 func (s *Server) runBotInjector() {
 	if !s.botEnabled {
@@ -131,7 +131,7 @@ func (s *Server) runBotInjector() {
 	for range ticker.C {
 		s.store.mu.Lock()
 		now := time.Now().UTC()
-		for i, q := range s.store.queue {
+		for _, q := range s.store.queue {
 			if isBot(q.ID) {
 				continue
 			}
@@ -140,10 +140,34 @@ func (s *Server) runBotInjector() {
 				continue
 			}
 			if now.Sub(joinedAt) >= botInjectDelay {
-				// inject bot right after this human in queue
+				// remove human from queue and match with bot immediately
+				filtered := s.store.queue[:0]
+				for _, queued := range s.store.queue {
+					if queued.ID != q.ID {
+						filtered = append(filtered, queued)
+					}
+				}
+				s.store.queue = filtered
+				delete(s.store.queueJoinedAt, q.ID)
+
 				bot := botUser()
-				s.store.queue = append(s.store.queue[:i+1], s.store.queue[i:]...)
-				s.store.queue[i] = bot
+				match := s.newMatchLocked(bot, q)
+				if len(s.botVideoURLs) > 0 {
+					match.BotVideoURL = randomPick(s.botVideoURLs)
+				}
+				s.store.userToMatchID[bot.ID] = match.ID
+				s.store.userToMatchID[q.ID] = match.ID
+				s.store.matches[match.ID] = match
+
+				go s.runMatchLifecycle(match.ID)
+				go s.botMatchSetup(match.ID)
+				go s.runBotScoring(match.ID)
+				s.hydrateMatchResultSounds(match.ID)
+
+				created := s.store.matches[match.ID]
+				if created != nil {
+					s.broadcastLocked(created, map[string]any{"type": "match_found", "match": s.snapshotMatch(created)})
+				}
 			}
 		}
 		s.store.mu.Unlock()
