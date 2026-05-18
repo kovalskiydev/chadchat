@@ -56,6 +56,26 @@ func (s *Server) botMatchSetup(matchID string) {
 
 // runBotScoring sends periodic score updates for the bot during scoring/overtime.
 func (s *Server) runBotScoring(matchID string) {
+	// wait until scoring phase starts
+	for {
+		time.Sleep(500 * time.Millisecond)
+		s.store.mu.Lock()
+		m := s.store.matches[matchID]
+		if m == nil {
+			s.store.mu.Unlock()
+			return
+		}
+		if m.Phase == phaseScoring || m.Phase == phaseOvertime {
+			s.store.mu.Unlock()
+			break
+		}
+		if m.Phase == phaseFinished || m.Phase == phaseResult || m.Phase == phasePostChat {
+			s.store.mu.Unlock()
+			return
+		}
+		s.store.mu.Unlock()
+	}
+
 	ticker := time.NewTicker(s.botScoreInterval)
 	defer ticker.Stop()
 
