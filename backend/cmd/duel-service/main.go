@@ -24,7 +24,7 @@ const (
 	scoringDuration         = 20 * time.Second
 	overtimeDuration        = 10 * time.Second
 	postChatDuration        = 15 * time.Second
-	mediaReadyGraceDuration = 2 * time.Second
+	mediaReadyGraceDuration = 5 * time.Second
 	tieThreshold            = 0.15
 	scoreRateLimitPerMinute = 210
 )

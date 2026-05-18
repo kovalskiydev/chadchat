@@ -249,6 +249,7 @@ export function DuelModal({
 
   const videoRef = useRef<HTMLVideoElement>(null);
   const remoteVideoRef = useRef<HTMLVideoElement>(null);
+  const faceOverlayRef = useRef<HTMLCanvasElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const remoteStreamRef = useRef<MediaStream | null>(null);
   const peerRef = useRef<RTCPeerConnection | null>(null);
@@ -332,21 +333,21 @@ export function DuelModal({
   );
   const phaseLabel =
     phase === "awaiting_media"
-      ? "Awaiting Media"
+      ? "Syncing"
       : phase === "pre_start"
-      ? "Pre Start"
+      ? "Lock In"
       : phase === "scoring"
-        ? "Scoring"
+        ? "Analyzing"
         : phase === "overtime"
-          ? "Overtime"
+          ? "Sudden Death"
           : phase === "result"
-            ? "Result"
+            ? "Verdict"
             : phase === "post_chat"
-              ? "Post Chat"
+              ? "Post Match"
               : phase === "finished"
-                ? "Finished"
+                ? "Complete"
                 : phase === "cancelled"
-                  ? "Cancelled"
+                  ? "Aborted"
               : "Queue";
   const phaseToneClass =
     phase === "awaiting_media"
@@ -364,18 +365,18 @@ export function DuelModal({
               : "border-zinc-800 bg-zinc-950 text-zinc-400";
   const phaseCommand =
     phase === "awaiting_media"
-      ? "WAITING FOR CAMERAS"
+      ? "ESTABLISHING UPLINK"
       : phase === "pre_start"
-        ? "FACE LOCK"
+        ? "FACIAL LOCK ACQUIRED"
         : phase === "scoring"
-          ? "RATING LIVE"
+          ? "NEURAL ANALYSIS ACTIVE"
           : phase === "overtime"
-            ? "SUDDEN DEATH"
+            ? "TIE-BREAKER PROTOCOL"
             : phase === "result" || phase === "post_chat" || phase === "finished"
-              ? "FINAL JUDGMENT"
+              ? "FINAL VERDICT"
               : phase === "cancelled"
-                ? "MATCH CANCELLED"
-              : "QUEUE ACTIVE";
+                ? "SESSION TERMINATED"
+              : "SCANNING NETWORK";
   const isResultPhase =
     phase === "result" || phase === "post_chat" || phase === "finished";
   const hasResultSummary = Boolean(resultSummary);
@@ -475,7 +476,6 @@ export function DuelModal({
   const maybeSendMediaReady = useCallback(() => {
     if (!accessToken || !matchID || !streamRef.current) return;
     if (mediaReadySentRef.current) return;
-    if (!remoteStreamAttachedRef.current) return;
     if (!iceConnectedRef.current) return;
 
     mediaReadySentRef.current = true;
@@ -795,6 +795,104 @@ export function DuelModal({
     };
   }, [mediaRunKey]);
 
+  // Face mesh overlay on local video during active match phases
+  useEffect(() => {
+    if (!streamRef.current) return;
+    if (!(phase === "pre_start" || phase === "scoring" || phase === "overtime")) return;
+    let mounted = true;
+    let rafId = 0;
+    let lastVideoTime = -1;
+    let faceLandmarker: ChadFaceLandmarker | null = null;
+
+    const detectLoop = () => {
+      if (!mounted || !videoRef.current || !faceLandmarker) return;
+      const video = videoRef.current;
+      const canvas = faceOverlayRef.current;
+      const ctx = canvas?.getContext("2d");
+      if (video.readyState < 2) {
+        rafId = window.requestAnimationFrame(detectLoop);
+        return;
+      }
+
+      if (canvas && ctx) {
+        const rect = video.getBoundingClientRect();
+        const w = rect.width;
+        const h = rect.height;
+        if (canvas.width !== w || canvas.height !== h) {
+          canvas.width = w;
+          canvas.height = h;
+        }
+        ctx.clearRect(0, 0, w, h);
+      }
+
+      if (video.currentTime !== lastVideoTime) {
+        lastVideoTime = video.currentTime;
+        const result = faceLandmarker.detectForVideo(video, performance.now());
+        const landmarks = result.faceLandmarks?.[0];
+        if (landmarks && canvas && ctx) {
+          const w = canvas.width;
+          const h = canvas.height;
+
+          // Face mesh: soft white translucent micro-grid
+          ctx.fillStyle = "rgba(255,255,255,0.28)";
+          for (let i = 0; i < landmarks.length; i += 2) {
+            const p = landmarks[i];
+            ctx.fillRect(p.x * w - 0.75, p.y * h - 0.75, 1.5, 1.5);
+          }
+
+          // Main feature anchors: larger colored points
+          const keyIndices = [
+            1, // nose tip
+            10, 152, // forehead/chin
+            33, 133, 362, 263, // eye corners
+            61, 291, // mouth corners
+            234, 454, // cheeks
+          ];
+          ctx.fillStyle = "rgba(192,132,252,0.9)";
+          for (const idx of keyIndices) {
+            const p = landmarks[idx];
+            if (!p) continue;
+            const x = p.x * w;
+            const y = p.y * h;
+            ctx.beginPath();
+            ctx.arc(x, y, 3, 0, Math.PI * 2);
+            ctx.fill();
+          }
+
+          // Bounding box with glow
+          ctx.strokeStyle = "rgba(168,85,247,0.6)";
+          ctx.lineWidth = 2;
+          ctx.shadowColor = "rgba(168,85,247,0.5)";
+          ctx.shadowBlur = 10;
+          ctx.strokeRect(8, 8, w - 16, h - 16);
+          ctx.shadowBlur = 0;
+
+          // Inner frame
+          ctx.strokeStyle = "rgba(168,85,247,0.2)";
+          ctx.lineWidth = 1;
+          ctx.strokeRect(14, 14, w - 28, h - 28);
+        }
+      }
+      rafId = window.requestAnimationFrame(detectLoop);
+    };
+
+    const init = async () => {
+      try {
+        faceLandmarker = await getFaceLandmarker();
+        if (!mounted) return;
+        detectLoop();
+      } catch {
+        // silently fail - overlay is optional
+      }
+    };
+    void init();
+
+    return () => {
+      mounted = false;
+      if (rafId) window.cancelAnimationFrame(rafId);
+    };
+  }, [phase, mediaRunKey]);
+
   useEffect(() => {
     const attachLocal = async () => {
       if (!videoRef.current || !streamRef.current) return;
@@ -909,6 +1007,13 @@ export function DuelModal({
         if (state === "connected" || state === "completed") {
           iceConnectedRef.current = true;
           maybeSendMediaReady();
+          // Fallback: if remote stream still not attached after 3s, send media-ready anyway
+          window.setTimeout(() => {
+            if (!mediaReadySentRef.current && !cancelled) {
+              pushDebug("media-ready fallback timeout");
+              maybeSendMediaReady();
+            }
+          }, 3000);
         }
       };
       pc.onsignalingstatechange = () => {
@@ -1465,6 +1570,10 @@ export function DuelModal({
                   playsInline
                   autoPlay
                 />
+                <canvas
+                  ref={faceOverlayRef}
+                  className="pointer-events-none absolute inset-0 z-[5] h-full w-full"
+                />
                 {/* Vignette */}
                 <div className="pointer-events-none absolute inset-0 shadow-[inset_0_0_80px_rgba(0,0,0,0.5)]" />
                 {/* Top gradient for text readability */}
@@ -1663,7 +1772,7 @@ export function DuelModal({
               {/* Micro status - bottom center, only for awaiting_media */}
               {phase === "awaiting_media" && (
                 <div className="absolute bottom-3 left-1/2 z-20 -translate-x-1/2">
-                  <div className="flex items-center gap-3 rounded-full border border-zinc-800 bg-black/80 px-4 py-1.5 backdrop-blur-sm">
+                  <div className="flex items-center gap-3 border border-zinc-800 bg-black/80 px-4 py-1.5 backdrop-blur-sm">
                     <span className="text-[9px] font-semibold uppercase tracking-[0.12em] text-zinc-500">
                       cameras
                     </span>
@@ -1680,7 +1789,7 @@ export function DuelModal({
               {/* Phase label - micro, top center */}
               <div className="absolute left-1/2 top-3 z-20 -translate-x-1/2 sm:top-4">
                 <div className={cn(
-                  "rounded-full border px-3 py-1 text-[8px] font-black uppercase tracking-[0.14em] backdrop-blur-sm",
+                  "border px-3 py-1 text-[8px] font-black uppercase tracking-[0.14em] backdrop-blur-sm",
                   phase === "awaiting_media" && "border-sky-500/30 bg-sky-950/40 text-sky-300",
                   phase === "pre_start" && "border-purple-500/30 bg-purple-950/40 text-purple-300",
                   phase === "scoring" && "border-red-500/30 bg-red-950/40 text-red-300",
