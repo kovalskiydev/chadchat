@@ -250,6 +250,7 @@ export function DuelModal({
   const videoRef = useRef<HTMLVideoElement>(null);
   const remoteVideoRef = useRef<HTMLVideoElement>(null);
   const faceOverlayRef = useRef<HTMLCanvasElement>(null);
+  const botVideoRef = useRef<HTMLVideoElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const remoteStreamRef = useRef<MediaStream | null>(null);
   const peerRef = useRef<RTCPeerConnection | null>(null);
@@ -304,6 +305,8 @@ export function DuelModal({
     reason: string;
     message: string;
   } | null>(null);
+  const [botVideoUrl, setBotVideoUrl] = useState<string | null>(null);
+  const isBotMatch = Boolean(botVideoUrl);
   const finishedRef = useRef(false);
   const resultSoundPlayedRef = useRef(false);
   const resultRevealMatchRef = useRef<string | null>(null);
@@ -538,6 +541,15 @@ export function DuelModal({
       );
       preloadResultSoundsMap(normalizedResultSounds);
     }
+
+    // Bot match detection
+    const botUrl = match.bot_video_url as string | undefined;
+    if (botUrl) {
+      setBotVideoUrl(botUrl);
+    } else if (match.bot_video_url === null || match.bot_video_url === undefined) {
+      setBotVideoUrl(null);
+    }
+
     const currentPhase = phaseRef.current;
     const isActiveMatch = nextPhase === "scoring" || nextPhase === "overtime" || currentPhase === "scoring" || currentPhase === "overtime";
 
@@ -634,6 +646,7 @@ export function DuelModal({
     setError(null);
     setShowFinalResult(false);
     setMatchCancelled(null);
+    setBotVideoUrl(null);
     remoteStreamRef.current = null;
     preloadedSoundBuffersRef.current.clear();
     if (remoteVideoRef.current) {
@@ -919,8 +932,28 @@ export function DuelModal({
     void attachRemote();
   }, [isQueueScreen, matchID, phase]);
 
+  // Bot video playback control
+  useEffect(() => {
+    if (!isBotMatch || !botVideoUrl) return;
+    const video = botVideoRef.current;
+    if (!video) return;
+    video.autoplay = true;
+    video.playsInline = true;
+    video.loop = true;
+    video.muted = true;
+    void video.play().catch(() => {});
+  }, [isBotMatch, botVideoUrl, phase]);
+
   useEffect(() => {
     if (!accessToken || !matchID || !streamRef.current) return;
+    // Skip WebRTC for bot matches
+    if (isBotMatch) {
+      // For bot: mark as ready immediately since no peer connection needed
+      remoteStreamAttachedRef.current = true;
+      iceConnectedRef.current = true;
+      maybeSendMediaReady();
+      return;
+    }
     let cancelled = false;
     let pc: RTCPeerConnection | null = null;
 
@@ -1029,7 +1062,7 @@ export function DuelModal({
       cancelled = true;
       closePeerConnection();
     };
-  }, [accessToken, matchID, pushDebug, maybeSendMediaReady, closePeerConnection]);
+  }, [accessToken, matchID, isBotMatch, pushDebug, maybeSendMediaReady, closePeerConnection]);
 
   useEffect(() => {
     if (!accessToken || !matchID || !peerRef.current) return;
@@ -1189,6 +1222,7 @@ export function DuelModal({
           setPhase("cancelled");
           setStatus("Match cancelled");
           setSecondsLeft(null);
+          setBotVideoUrl(null);
           setMatchCancelled({
             reason,
             message:
@@ -1679,12 +1713,24 @@ export function DuelModal({
                   oppLeading && activeScoring && "ring-1 ring-emerald-300/40",
                 )}
               >
-                <video
-                  ref={remoteVideoRef}
-                  className="h-full w-full object-cover"
-                  playsInline
-                  autoPlay
-                />
+                {isBotMatch && botVideoUrl ? (
+                  <video
+                    ref={botVideoRef}
+                    src={botVideoUrl}
+                    className="h-full w-full object-cover"
+                    playsInline
+                    autoPlay
+                    loop
+                    muted
+                  />
+                ) : (
+                  <video
+                    ref={remoteVideoRef}
+                    className="h-full w-full object-cover"
+                    playsInline
+                    autoPlay
+                  />
+                )}
                 {/* Vignette */}
                 <div className="pointer-events-none absolute inset-0 shadow-[inset_0_0_80px_rgba(0,0,0,0.5)]" />
                 {/* Top gradient */}

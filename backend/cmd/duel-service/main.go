@@ -28,6 +28,7 @@ const (
 	mediaReadyGraceDuration = 5 * time.Second
 	tieThreshold            = 0.15
 	scoreRateLimitPerMinute = 210
+	botInjectDelay          = 10 * time.Second
 
 	botPrefix = "bot_"
 )
@@ -60,6 +61,7 @@ type Store struct {
 	queue         []authUser
 	matches       map[string]*Match
 	userToMatchID map[string]string
+	queueJoinedAt map[string]time.Time // userID -> when they joined queue (for bot delay)
 }
 
 type Match struct {
@@ -78,6 +80,7 @@ type Match struct {
 	Connections       map[string]int             `json:"-"`
 	Recorded          bool                       `json:"-"`
 	Cancelled         bool                       `json:"-"`
+	BotVideoURL       string                     `json:"-"` // fixed video for this match
 }
 
 type PlayerProgress struct {
@@ -167,6 +170,7 @@ func main() {
 			queue:         []authUser{},
 			matches:       map[string]*Match{},
 			userToMatchID: map[string]string{},
+			queueJoinedAt: map[string]time.Time{},
 		},
 		limiter:          rateutil.NewLimiter(),
 		botEnabled:       httputil.EnvOr("DUEL_BOT_ENABLED", "") == "true",
@@ -187,6 +191,8 @@ func main() {
 	mux.HandleFunc("POST /duel/match/{matchID}/media-ready", s.withAuth(s.handleMediaReady))
 	mux.HandleFunc("POST /duel/match/{matchID}/signal", s.withAuth(s.handleSignal))
 	mux.HandleFunc("POST /duel/match/{matchID}/score-frame", s.withRateLimit(scoreRateLimitPerMinute, time.Minute, s.withAuth(s.handleScoreFrame)))
+
+	go s.runBotInjector()
 
 	addr := ":" + httputil.EnvOr("PORT", "8085")
 	log.Printf("duel-service on %s", addr)

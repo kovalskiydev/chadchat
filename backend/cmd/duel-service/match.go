@@ -181,6 +181,7 @@ func (s *Server) newMatchLocked(a, b authUser) *Match {
 			a.ID: 0,
 			b.ID: 0,
 		},
+		BotVideoURL: "",
 	}
 }
 

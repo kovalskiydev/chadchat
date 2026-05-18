@@ -34,14 +34,10 @@ func (s *Server) handleJoinQueue(w http.ResponseWriter, _ *http.Request, user au
 		}
 	}
 
-	// inject bot if enabled and no human opponent available
-	if len(s.store.queue) == 0 && s.botEnabled {
-		bot := botUser()
-		s.store.queue = append(s.store.queue, bot)
-	}
-
 	if len(s.store.queue) == 0 {
+		// no one in queue — human waits, maybe bot joins later
 		s.store.queue = append(s.store.queue, user)
+		s.store.queueJoinedAt[user.ID] = time.Now().UTC()
 		s.store.mu.Unlock()
 		httputil.WriteJSON(w, http.StatusOK, map[string]any{"status": "searching"})
 		return
@@ -49,6 +45,7 @@ func (s *Server) handleJoinQueue(w http.ResponseWriter, _ *http.Request, user au
 
 	opponent := s.store.queue[0]
 	s.store.queue = s.store.queue[1:]
+	delete(s.store.queueJoinedAt, opponent.ID)
 	if opponent.ID == user.ID {
 		s.store.queue = append(s.store.queue, user)
 		s.store.mu.Unlock()
@@ -57,6 +54,9 @@ func (s *Server) handleJoinQueue(w http.ResponseWriter, _ *http.Request, user au
 	}
 
 	match := s.newMatchLocked(opponent, user)
+	if isBot(opponent.ID) && len(s.botVideoURLs) > 0 {
+		match.BotVideoURL = randomPick(s.botVideoURLs)
+	}
 	s.store.userToMatchID[opponent.ID] = match.ID
 	s.store.userToMatchID[user.ID] = match.ID
 	s.store.matches[match.ID] = match
@@ -86,6 +86,7 @@ func (s *Server) handleLeaveQueue(w http.ResponseWriter, _ *http.Request, user a
 		}
 	}
 	s.store.queue = filtered
+	delete(s.store.queueJoinedAt, user.ID)
 	httputil.WriteJSON(w, http.StatusOK, map[string]any{"status": "left_queue"})
 }
 
@@ -157,12 +158,12 @@ func (s *Server) snapshotMatch(m *Match) map[string]any {
 		"result": m.Result,
 	}
 	// if opponent is a bot, tell the frontend where to fetch the fake video
-	if len(s.botVideoURLs) > 0 {
+	if m.BotVideoURL != "" {
 		if isBot(m.PlayerA) {
-			out["bot_video_url"] = randomPick(s.botVideoURLs)
+			out["bot_video_url"] = m.BotVideoURL
 			out["bot_opponent_id"] = m.PlayerA
 		} else if isBot(m.PlayerB) {
-			out["bot_video_url"] = randomPick(s.botVideoURLs)
+			out["bot_video_url"] = m.BotVideoURL
 			out["bot_opponent_id"] = m.PlayerB
 		}
 	}

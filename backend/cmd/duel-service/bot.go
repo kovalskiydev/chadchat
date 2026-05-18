@@ -120,6 +120,36 @@ func (s *Server) runBotScoring(matchID string) {
 	}
 }
 
+// runBotInjector checks queue every second and injects a bot if a human
+// has been waiting longer than botInjectDelay.
+func (s *Server) runBotInjector() {
+	if !s.botEnabled {
+		return
+	}
+	ticker := time.NewTicker(1 * time.Second)
+	defer ticker.Stop()
+	for range ticker.C {
+		s.store.mu.Lock()
+		now := time.Now().UTC()
+		for i, q := range s.store.queue {
+			if isBot(q.ID) {
+				continue
+			}
+			joinedAt, ok := s.store.queueJoinedAt[q.ID]
+			if !ok {
+				continue
+			}
+			if now.Sub(joinedAt) >= botInjectDelay {
+				// inject bot right after this human in queue
+				bot := botUser()
+				s.store.queue = append(s.store.queue[:i+1], s.store.queue[i:]...)
+				s.store.queue[i] = bot
+			}
+		}
+		s.store.mu.Unlock()
+	}
+}
+
 func randomPick(items []string) string {
 	if len(items) == 0 {
 		return ""
@@ -128,7 +158,6 @@ func randomPick(items []string) string {
 }
 
 func randomBotScore(min, max float64) float64 {
-	// normal-ish distribution centred in the middle of min..max
 	mean := (min + max) / 2
 	std := (max - min) / 4
 	v := rand.NormFloat64()*std + mean
