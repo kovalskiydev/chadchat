@@ -176,7 +176,7 @@ func main() {
 		botEnabled:       httputil.EnvOr("DUEL_BOT_ENABLED", "") == "true",
 		botSkillMin:      parseFloatEnv("DUEL_BOT_SKILL_MIN", 2.5),
 		botSkillMax:      parseFloatEnv("DUEL_BOT_SKILL_MAX", 4.5),
-		botScoreInterval: parseDurationEnv("DUEL_BOT_SCORE_INTERVAL_MS", 1500) * time.Millisecond,
+		botScoreInterval: parseDurationEnv("DUEL_BOT_SCORE_INTERVAL_MS", 1500),
 		botVideoURLs:     splitCSV(httputil.EnvOr("DUEL_BOT_VIDEO_URLS", "")),
 	}
 
