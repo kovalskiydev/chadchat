@@ -42,12 +42,13 @@ import {
   type AdminUser,
   type AdminVerificationSession,
 } from "@/lib/admin";
+import { getRankClass, formatRankLabel } from "@/lib/utils-app";
 
 interface AdminModalProps {
   onClose: () => void;
 }
 
-type AdminTab = "overview" | "users" | "matches" | "leaderboard" | "chat" | "verification" | "testlab" | "sounds" | "health";
+type AdminTab = "overview" | "users" | "matches" | "leaderboard" | "chat" | "verification" | "testlab" | "sounds" | "health" | "ranks";
 
 export default function AdminModal({ onClose }: AdminModalProps) {
   const [secret, setSecretInput] = useState("");
@@ -309,6 +310,7 @@ export default function AdminModal({ onClose }: AdminModalProps) {
     { key: "testlab", label: "Test Lab", icon: <Zap className="h-3.5 w-3.5" /> },
     { key: "sounds", label: "Sounds", icon: <Music className="h-3.5 w-3.5" /> },
     { key: "health", label: "Health", icon: <HeartPulse className="h-3.5 w-3.5" /> },
+    { key: "ranks", label: "Ranks", icon: <Award className="h-3.5 w-3.5" /> },
   ];
 
   return (
@@ -602,7 +604,7 @@ export default function AdminModal({ onClose }: AdminModalProps) {
                     </div>
                     <div className="text-right">
                       <div className="text-[10px] font-black text-zinc-300">{user.rating}</div>
-                      <div className="text-[8px] uppercase tracking-[0.1em] text-zinc-600">{user.rank}</div>
+                      <RankBadge rank={user.rank} />
                     </div>
                     <div className="text-[9px] uppercase tracking-[0.08em] text-zinc-600">{user.matches}M</div>
                     <span className={cn("inline-flex border px-1.5 py-0.5 text-[8px] font-black uppercase tracking-[0.1em]", user.role === "admin" ? "border-red-400/40 bg-red-950/40 text-red-300" : "border-zinc-700 bg-zinc-900 text-zinc-500")}>{user.role}</span>
@@ -635,7 +637,11 @@ export default function AdminModal({ onClose }: AdminModalProps) {
                   </div>
                   <div className="text-right">
                     <div className="text-2xl font-black text-zinc-100">{selectedUser.rating}</div>
-                    <div className="text-[9px] uppercase tracking-[0.1em] text-zinc-500">peak {selectedUser.peak_rating} · {selectedUser.rank}</div>
+                    <div className="flex items-center justify-end gap-1.5">
+                      <span className="text-[9px] uppercase tracking-[0.1em] text-zinc-500">peak {selectedUser.peak_rating}</span>
+                      <span className="text-zinc-700">·</span>
+                      <RankBadge rank={selectedUser.rank} />
+                    </div>
                   </div>
                 </div>
                 <div className="mt-3 grid grid-cols-3 gap-2">
@@ -830,7 +836,7 @@ export default function AdminModal({ onClose }: AdminModalProps) {
                       <span className={cn("flex h-5 w-5 items-center justify-center text-[9px] font-black", i < 3 ? "text-zinc-200" : "text-zinc-600")}>#{entry.position}</span>
                       <div>
                         <div className="text-xs font-black uppercase tracking-[0.1em] text-zinc-200">{entry.nickname}</div>
-                        <div className="text-[8px] uppercase tracking-[0.1em] text-zinc-600">{entry.rank}</div>
+                        <RankBadge rank={entry.rank} />
                       </div>
                     </div>
                     <div className="text-right">
@@ -981,6 +987,34 @@ export default function AdminModal({ onClose }: AdminModalProps) {
               </div>
             </div>
           )}
+
+          {/* ─── RANKS ─── */}
+          {!loading && activeTab === "ranks" && (
+            <div className="space-y-6">
+              <SectionTitle icon={<Award className="h-3.5 w-3.5" />} title="Rank Hierarchy" />
+              <div className="flex flex-col gap-2">
+                {[
+                  { rank: "TRUE ADAM", tier: "Apex", desc: "Top 0.1% — maximum glow, font-black, inset shadow" },
+                  { rank: "CHAD", tier: "Elite", desc: "Top 1% — strong glow, saturated border, font-black" },
+                  { rank: "CHADLITE", tier: "High", desc: "Top 5% — moderate glow, font-bold" },
+                  { rank: "HTN", tier: "Above Avg", desc: "Top 15% — subtle glow, font-bold" },
+                  { rank: "MTN", tier: "Average", desc: "Top 40% — clean color, no glow" },
+                  { rank: "LTN", tier: "Below Avg", desc: "Top 65% — muted, no glow, reduced opacity" },
+                  { rank: "SUB5", tier: "Low", desc: "Top 85% — very muted, thin border" },
+                  { rank: "SUBHUMAN", tier: "Lowest", desc: "Bottom 15% — barely visible, blends with background" },
+                ].map((r, i) => (
+                  <div key={r.rank} className="flex items-center gap-4 border border-zinc-800 bg-black/40 px-4 py-3">
+                    <span className="w-6 text-[10px] font-black text-zinc-600">{i + 1}</span>
+                    <div className="flex items-center gap-3">
+                      <RankBadge rank={r.rank} />
+                      <span className="text-[10px] font-semibold uppercase tracking-[0.1em] text-zinc-500">{r.tier}</span>
+                    </div>
+                    <span className="text-[10px] text-zinc-600">{r.desc}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
       </div>
     </div>
@@ -1032,5 +1066,14 @@ function ChartLegend({ payload }: { payload?: Array<{ value: string; color: stri
         </div>
       ))}
     </div>
+  );
+}
+
+function RankBadge({ rank }: { rank?: string | null }) {
+  const label = formatRankLabel(rank);
+  return (
+    <span className={cn("inline-flex border px-1.5 py-0.5 text-[8px] uppercase tracking-[0.08em]", getRankClass(label))}>
+      {label}
+    </span>
   );
 }

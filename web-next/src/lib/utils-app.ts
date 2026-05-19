@@ -403,26 +403,35 @@ export function normalizeDuelResultSound(value: unknown): DuelResultSound | null
 
 
 // getRankClass
+// Visual hierarchy: top ranks get glow + bold borders, low ranks fade into background
 export function getRankClass(rank: string) {
   switch (rank) {
     case "TRUE ADAM":
-      return "border-fuchsia-300/70 bg-fuchsia-400/10 text-fuchsia-200 shadow-[0_0_14px_rgba(217,70,239,0.24)]";
+      // Apex rank: bright glow, bold border, distinct background
+      return "border-fuchsia-300/90 bg-fuchsia-500/15 text-fuchsia-100 shadow-[0_0_20px_rgba(217,70,239,0.35),inset_0_0_12px_rgba(217,70,239,0.1)] font-black";
     case "CHAD":
-      return "border-purple-400/60 bg-purple-500/10 text-purple-200";
+      // Elite rank: strong glow, saturated border
+      return "border-purple-400/80 bg-purple-500/15 text-purple-100 shadow-[0_0_16px_rgba(168,85,247,0.28)] font-black";
     case "CHADLITE":
-      return "border-sky-400/55 bg-sky-500/10 text-sky-200";
+      // High rank: moderate glow
+      return "border-sky-400/70 bg-sky-500/12 text-sky-100 shadow-[0_0_12px_rgba(56,189,248,0.18)] font-bold";
     case "HTN":
-      return "border-emerald-400/55 bg-emerald-500/10 text-emerald-200";
+      // Above average: subtle glow
+      return "border-emerald-400/60 bg-emerald-500/10 text-emerald-100 shadow-[0_0_10px_rgba(52,211,153,0.12)] font-bold";
     case "MTN":
-      return "border-cyan-300/55 bg-cyan-500/10 text-cyan-200";
+      // Average: clean but noticeable
+      return "border-cyan-400/50 bg-cyan-500/8 text-cyan-200";
     case "LTN":
-      return "border-yellow-400/55 bg-yellow-500/10 text-yellow-200";
+      // Below average: muted, no glow
+      return "border-yellow-500/35 bg-yellow-500/5 text-yellow-300/70";
     case "SUB5":
-      return "border-orange-400/55 bg-orange-500/10 text-orange-200";
+      // Low: very muted, thin border
+      return "border-orange-500/30 bg-orange-500/5 text-orange-300/60";
     case "SUBHUMAN":
-      return "border-zinc-500/55 bg-zinc-800/70 text-zinc-200";
+      // Lowest: barely visible, blends with dark UI
+      return "border-zinc-700/40 bg-zinc-900/50 text-zinc-500/60";
     default:
-      return "border-zinc-600 bg-zinc-800/50 text-zinc-300";
+      return "border-zinc-700/40 bg-zinc-900/50 text-zinc-500/60";
   }
 }
 

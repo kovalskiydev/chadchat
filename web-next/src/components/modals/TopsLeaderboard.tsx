@@ -262,7 +262,7 @@ export function TopsLeaderboard({
                   )}
                   <div
                     className={cn(
-                      "mt-2 inline-flex border px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.12em]",
+                      "mt-0.5 inline-flex border px-2 py-0.5 text-[9px] font-semibold uppercase tracking-[0.1em]",
                       getRankClass(formatRankLabel(player.rank)),
                     )}
                   >
