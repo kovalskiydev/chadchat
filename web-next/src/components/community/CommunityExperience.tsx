@@ -63,6 +63,10 @@ const SORTS = [
   { key: "top", label: "Top", icon: TrendingUp },
 ] as const;
 
+const panelClass = "border border-zinc-800/90 bg-zinc-950/72 shadow-[inset_0_1px_0_rgba(255,255,255,0.035)]";
+const focusClass = "focus-visible:border-sky-300 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-sky-300/40";
+const smoothClass = "transition-[border-color,background-color,color,box-shadow,transform,opacity] duration-200 ease-out";
+
 const MOCK_POSTS: CommunityPost[] = [
   {
     id: "mock-post-1",
@@ -441,29 +445,32 @@ export function CommunityExperience({
 
   const shellClass =
     variant === "modal"
-      ? "flex h-full min-h-0 w-full flex-col overflow-hidden border border-zinc-800 bg-zinc-950 shadow-[0_0_60px_rgba(14,165,233,0.10)]"
-      : "mx-auto min-h-screen w-full max-w-6xl px-3 py-5 sm:px-5 lg:px-6";
+      ? "relative flex h-full min-h-0 w-full flex-col overflow-hidden border border-zinc-800 bg-[#050608] shadow-[0_0_70px_rgba(14,165,233,0.11)]"
+      : "relative mx-auto min-h-screen w-full max-w-6xl overflow-hidden px-3 py-5 sm:px-5 lg:px-6";
 
   return (
     <div className={shellClass}>
-      <Header
-        variant={variant}
-        stats={stats}
-        usingMockData={usingMockData}
-        onCreate={() => setShowCreate(true)}
-        onClose={onClose}
-      />
+      <SharpBackdrop />
+      <div className="relative z-10 flex min-h-0 flex-1 flex-col">
+        <Header
+          variant={variant}
+          stats={stats}
+          usingMockData={usingMockData}
+          onCreate={() => setShowCreate(true)}
+          onClose={onClose}
+        />
 
-      <div className={cn("grid min-h-0 flex-1 gap-4", variant === "modal" ? "grid-cols-1 overflow-y-auto p-3 lg:grid-cols-[210px_minmax(0,1fr)]" : "mt-5 grid-cols-1 lg:grid-cols-[240px_minmax(0,1fr)]")}>
+        <div className={cn("grid min-h-0 flex-1 gap-4", variant === "modal" ? "grid-cols-1 overflow-y-auto p-3 lg:grid-cols-[218px_minmax(0,1fr)]" : "mt-5 grid-cols-1 lg:grid-cols-[248px_minmax(0,1fr)]")}>
         <aside className="space-y-3">
-          <div className="border border-zinc-800 bg-black/50 p-3">
+          <div className={cn(panelClass, "relative overflow-hidden p-3")}>
+            <CornerCuts />
             <div className="relative">
               <Search className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-zinc-600" />
               <input
                 value={query}
                 onChange={(event) => setQuery(event.target.value)}
                 placeholder="Search posts"
-                className="h-9 w-full border border-zinc-800 bg-zinc-950 pl-8 pr-3 text-xs text-zinc-200 outline-none placeholder:text-zinc-700 focus:border-sky-400/70"
+                className={cn("h-9 w-full border border-zinc-800 bg-black/55 pl-8 pr-3 text-xs text-zinc-200 placeholder:text-zinc-700", focusClass, smoothClass)}
               />
             </div>
             <div className="mt-3 grid grid-cols-3 gap-1">
@@ -475,10 +482,12 @@ export function CommunityExperience({
                     type="button"
                     onClick={() => setSortBy(sort.key)}
                     className={cn(
-                      "inline-flex h-8 items-center justify-center gap-1 border text-[9px] font-black uppercase tracking-[0.1em] transition-colors",
+                      "inline-flex h-8 items-center justify-center gap-1 border text-[9px] font-black uppercase tracking-[0.1em]",
+                      focusClass,
+                      smoothClass,
                       sortBy === sort.key
-                        ? "border-sky-400/50 bg-sky-950/30 text-sky-100"
-                        : "border-zinc-800 bg-black/40 text-zinc-600 hover:text-zinc-300",
+                        ? "border-sky-400/50 bg-sky-950/35 text-sky-100 shadow-[inset_0_0_18px_rgba(14,165,233,0.08)]"
+                        : "border-zinc-800 bg-black/35 text-zinc-600 hover:border-zinc-700 hover:bg-zinc-900/70 hover:text-zinc-300",
                     )}
                   >
                     <Icon className="h-3 w-3" />
@@ -489,7 +498,8 @@ export function CommunityExperience({
             </div>
           </div>
 
-          <div className="border border-zinc-800 bg-black/40 p-2">
+          <div className={cn(panelClass, "relative overflow-hidden p-2")}>
+            <SharpDivider />
             {FLAIRS.map((flair) => (
               <button
                 key={flair.key}
@@ -497,7 +507,9 @@ export function CommunityExperience({
                 onClick={() => setActiveFlair(flair.key)}
                 className={cn(
                   "mb-1 flex h-8 w-full items-center justify-between border px-2 text-left text-[10px] font-black uppercase tracking-[0.08em] last:mb-0",
-                  activeFlair === flair.key ? flair.accent : "border-transparent text-zinc-600 hover:border-zinc-800 hover:text-zinc-300",
+                  focusClass,
+                  smoothClass,
+                  activeFlair === flair.key ? flair.accent : "border-transparent text-zinc-600 hover:border-zinc-800 hover:bg-black/45 hover:text-zinc-300",
                 )}
               >
                 <span>{flair.label}</span>
@@ -566,6 +578,7 @@ export function CommunityExperience({
           )}
         </section>
       </div>
+      </div>
 
       {showCreate && (
         <CreatePostDialog
@@ -597,13 +610,15 @@ function Header({
   onClose?: () => void;
 }) {
   return (
-    <div className={cn("border-b border-zinc-800", variant === "modal" ? "px-4 py-3" : "pb-5")}>
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+    <div className={cn("relative overflow-hidden border-b border-zinc-800/90 bg-black/18", variant === "modal" ? "px-4 py-3" : "pb-5")}>
+      <div className="pointer-events-none absolute right-0 top-0 h-full w-32 bg-[linear-gradient(135deg,transparent_0%,rgba(14,165,233,0.10)_42%,transparent_43%)]" />
+      <div className="pointer-events-none absolute bottom-0 left-0 h-px w-full bg-gradient-to-r from-sky-400/50 via-zinc-700/40 to-transparent" />
+      <div className="relative flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-2">
             <h1 className="text-xl font-black uppercase tracking-[0.14em] text-zinc-100 sm:text-2xl">Community</h1>
             {usingMockData && (
-              <span className="inline-flex items-center gap-1 border border-sky-400/40 bg-sky-950/30 px-2 py-1 text-[8px] font-black uppercase tracking-[0.12em] text-sky-200">
+              <span className="inline-flex items-center gap-1 border border-sky-400/40 bg-sky-950/30 px-2 py-1 text-[8px] font-black uppercase tracking-[0.12em] text-sky-200 shadow-[inset_0_0_16px_rgba(14,165,233,0.08)]">
                 <Sparkles className="h-3 w-3" />
                 Mock feed
               </span>
@@ -614,7 +629,7 @@ function Header({
           </p>
         </div>
         <div className="flex items-center gap-2">
-          <div className="hidden grid-cols-3 border border-zinc-800 bg-black/40 sm:grid">
+          <div className="hidden grid-cols-3 border border-zinc-800/90 bg-black/35 shadow-[inset_0_1px_0_rgba(255,255,255,0.035)] sm:grid">
             <Stat value={stats.posts} label="Posts" />
             <Stat value={stats.comments} label="Comments" />
             <Stat value={stats.shares} label="Shares" />
@@ -622,7 +637,7 @@ function Header({
           <button
             type="button"
             onClick={onCreate}
-            className="inline-flex h-9 items-center gap-2 border border-sky-400/50 bg-sky-950/30 px-3 text-[10px] font-black uppercase tracking-[0.12em] text-sky-100 transition-colors hover:border-sky-300 hover:text-white"
+            className={cn("inline-flex h-9 items-center gap-2 border border-sky-400/50 bg-sky-950/30 px-3 text-[10px] font-black uppercase tracking-[0.12em] text-sky-100 hover:border-sky-300 hover:bg-sky-900/35 hover:text-white", focusClass, smoothClass)}
           >
             <Plus className="h-3.5 w-3.5" />
             Post
@@ -631,7 +646,7 @@ function Header({
             <button
               type="button"
               onClick={onClose}
-              className="inline-flex h-9 w-9 items-center justify-center border border-zinc-700 bg-black text-zinc-400 transition-colors hover:border-sky-400 hover:text-white"
+              className={cn("inline-flex h-9 w-9 items-center justify-center border border-zinc-700 bg-black text-zinc-400 hover:border-sky-400 hover:text-white", focusClass, smoothClass)}
             >
               <X className="h-4 w-4" />
             </button>
@@ -644,10 +659,48 @@ function Header({
 
 function Stat({ value, label }: { value: number; label: string }) {
   return (
-    <div className="min-w-20 border-r border-zinc-800 px-3 py-2 last:border-r-0">
+    <div className="min-w-20 border-r border-zinc-800/90 px-3 py-2 last:border-r-0">
       <div className="text-sm font-black tabular-nums text-zinc-100">{value}</div>
       <div className="text-[8px] font-black uppercase tracking-[0.12em] text-zinc-600">{label}</div>
     </div>
+  );
+}
+
+function SharpBackdrop() {
+  return (
+    <div className="pointer-events-none absolute inset-0 overflow-hidden">
+      <div className="absolute inset-0 bg-[linear-gradient(90deg,rgba(255,255,255,0.025)_1px,transparent_1px),linear-gradient(180deg,rgba(255,255,255,0.018)_1px,transparent_1px)] bg-[size:72px_72px] opacity-35" />
+      <div
+        className="absolute -right-16 top-20 h-44 w-72 border border-sky-400/10 bg-sky-400/[0.035]"
+        style={{ clipPath: "polygon(16% 0, 100% 0, 84% 100%, 0 100%)" }}
+      />
+      <div
+        className="absolute -left-20 bottom-12 h-32 w-64 border border-emerald-400/10 bg-emerald-400/[0.025]"
+        style={{ clipPath: "polygon(0 0, 82% 0, 100% 100%, 18% 100%)" }}
+      />
+      <div
+        className="absolute left-[48%] top-3 h-16 w-36 border border-zinc-700/30 bg-white/[0.018]"
+        style={{ clipPath: "polygon(14% 0, 100% 0, 86% 100%, 0 100%)" }}
+      />
+    </div>
+  );
+}
+
+function CornerCuts() {
+  return (
+    <>
+      <span className="pointer-events-none absolute right-0 top-0 h-5 w-5 border-l border-b border-sky-400/20 bg-sky-400/[0.04]" style={{ clipPath: "polygon(100% 0, 100% 100%, 0 0)" }} />
+      <span className="pointer-events-none absolute bottom-0 left-0 h-4 w-4 border-r border-t border-zinc-600/30 bg-white/[0.025]" style={{ clipPath: "polygon(0 0, 100% 100%, 0 100%)" }} />
+    </>
+  );
+}
+
+function SharpDivider() {
+  return (
+    <span
+      className="pointer-events-none absolute right-2 top-2 h-10 w-16 border border-zinc-700/20 bg-white/[0.018]"
+      style={{ clipPath: "polygon(18% 0, 100% 0, 82% 100%, 0 100%)" }}
+    />
   );
 }
 
@@ -656,13 +709,14 @@ function ComposerPreview({ onCreate }: { onCreate: () => void }) {
     <button
       type="button"
       onClick={onCreate}
-      className="flex w-full items-center gap-3 border border-zinc-800 bg-black/40 p-3 text-left transition-colors hover:border-sky-400/50"
+      className={cn("group relative flex w-full items-center gap-3 overflow-hidden border border-zinc-800/90 bg-black/35 p-3 text-left hover:-translate-y-0.5 hover:border-sky-400/45 hover:bg-zinc-950/85", focusClass, smoothClass)}
     >
+      <CornerCuts />
       <Avatar name="YOU" />
-      <div className="min-w-0 flex-1 border border-zinc-800 bg-zinc-950 px-3 py-2 text-xs text-zinc-600">
+      <div className="min-w-0 flex-1 border border-zinc-800 bg-black/45 px-3 py-2 text-xs text-zinc-600 transition-colors duration-200 group-hover:border-zinc-700 group-hover:text-zinc-400">
         Start a post, log an update, or ask for feedback
       </div>
-      <Send className="h-4 w-4 text-zinc-600" />
+      <Send className="h-4 w-4 text-zinc-600 transition-colors duration-200 group-hover:text-sky-300" />
     </button>
   );
 }
@@ -688,10 +742,11 @@ function CreatePostDialog({
 }) {
   return (
     <div className="fixed inset-0 z-[70] flex items-start justify-center bg-black/75 p-3 backdrop-blur-sm sm:items-center">
-      <div className="w-full max-w-xl border border-zinc-800 bg-zinc-950 p-4 shadow-[0_0_40px_rgba(14,165,233,0.14)]">
+      <div className={cn(panelClass, "relative w-full max-w-xl overflow-hidden p-4 shadow-[0_0_48px_rgba(14,165,233,0.13)]")}>
+        <CornerCuts />
         <div className="flex items-center justify-between">
           <span className="text-sm font-black uppercase tracking-[0.12em] text-zinc-100">Create Post</span>
-          <button type="button" onClick={onClose} className="text-zinc-500 hover:text-white">
+          <button type="button" onClick={onClose} className={cn("text-zinc-500 hover:text-white", focusClass, smoothClass)}>
             <X className="h-4 w-4" />
           </button>
         </div>
@@ -701,14 +756,14 @@ function CreatePostDialog({
             value={title}
             onChange={(event) => onTitle(event.target.value)}
             placeholder="Title"
-            className="h-10 w-full border border-zinc-800 bg-black px-3 text-sm font-semibold text-zinc-200 outline-none placeholder:text-zinc-700 focus:border-sky-400"
+            className={cn("h-10 w-full border border-zinc-800 bg-black/65 px-3 text-sm font-semibold text-zinc-200 placeholder:text-zinc-700", focusClass, smoothClass)}
           />
           <textarea
             value={body}
             onChange={(event) => onBody(event.target.value)}
             placeholder="What happened? Add context, scene, or feedback target."
             rows={6}
-            className="w-full resize-none border border-zinc-800 bg-black px-3 py-2 text-sm leading-relaxed text-zinc-200 outline-none placeholder:text-zinc-700 focus:border-sky-400"
+            className={cn("w-full resize-none border border-zinc-800 bg-black/65 px-3 py-2 text-sm leading-relaxed text-zinc-200 placeholder:text-zinc-700", focusClass, smoothClass)}
           />
           <div className="flex flex-wrap gap-1.5">
             {FLAIRS.filter((item) => item.key !== "all").map((item) => (
@@ -717,8 +772,10 @@ function CreatePostDialog({
                 type="button"
                 onClick={() => onFlair(item.key)}
                 className={cn(
-                  "border px-2.5 py-1.5 text-[9px] font-black uppercase tracking-[0.08em] transition-colors",
-                  flair === item.key ? item.accent : "border-zinc-800 text-zinc-600 hover:text-zinc-300",
+                  "border px-2.5 py-1.5 text-[9px] font-black uppercase tracking-[0.08em]",
+                  focusClass,
+                  smoothClass,
+                  flair === item.key ? item.accent : "border-zinc-800 text-zinc-600 hover:border-zinc-700 hover:bg-black/50 hover:text-zinc-300",
                 )}
               >
                 {item.label}
@@ -729,7 +786,7 @@ function CreatePostDialog({
             type="button"
             onClick={onCreate}
             disabled={!title.trim() || !body.trim()}
-            className="inline-flex h-10 w-full items-center justify-center gap-2 border border-sky-400/50 bg-sky-950/30 text-[10px] font-black uppercase tracking-[0.12em] text-sky-100 transition-colors hover:border-sky-300 hover:text-white disabled:opacity-30"
+            className={cn("inline-flex h-10 w-full items-center justify-center gap-2 border border-sky-400/50 bg-sky-950/30 text-[10px] font-black uppercase tracking-[0.12em] text-sky-100 hover:border-sky-300 hover:bg-sky-900/35 hover:text-white disabled:opacity-30", focusClass, smoothClass)}
           >
             <Send className="h-3.5 w-3.5" />
             Publish
@@ -761,7 +818,8 @@ function PostCard({
   const score = scorePost(post);
 
   return (
-    <article className={cn("border bg-black/55 transition-colors hover:border-zinc-700", post.is_pinned ? "border-amber-400/35" : "border-zinc-800")}>
+    <article className={cn("group relative overflow-hidden border bg-black/45 shadow-[inset_0_1px_0_rgba(255,255,255,0.025)] hover:-translate-y-0.5 hover:bg-zinc-950/80", smoothClass, post.is_pinned ? "border-amber-400/35" : "border-zinc-800 hover:border-zinc-700")}>
+      <CornerCuts />
       {post.is_pinned && (
         <div className="flex items-center gap-1.5 border-b border-amber-400/20 bg-amber-950/20 px-3 py-1.5">
           <Award className="h-3 w-3 text-amber-300" />
@@ -772,8 +830,8 @@ function PostCard({
         <VoteRail vote={post.my_vote} score={score} onVote={onVote} />
         <div className="min-w-0 p-3 sm:p-4">
           <AuthorLine post={post} onOpenProfile={onOpenProfile} flairClass={flair.accent} flairLabel={flair.label} />
-          <button type="button" onClick={onOpen} className="mt-3 block w-full text-left">
-            <h2 className="text-base font-black uppercase tracking-[0.06em] text-zinc-100">{post.title}</h2>
+          <button type="button" onClick={onOpen} className={cn("mt-3 block w-full text-left", focusClass)}>
+            <h2 className="text-base font-black uppercase tracking-[0.06em] text-zinc-100 transition-colors duration-200 group-hover:text-white">{post.title}</h2>
             <p className="mt-2 line-clamp-3 text-sm leading-relaxed text-zinc-400">{post.body}</p>
           </button>
           <div className="mt-4 flex flex-wrap items-center gap-2">
@@ -781,7 +839,7 @@ function PostCard({
             <ActionButton onClick={onShare} icon={Share2} label={`${post.share_count} shares`} />
             <span className="text-[9px] font-semibold uppercase tracking-[0.1em] text-zinc-700">{formatRelative(post.created_at)}</span>
             {canDelete(post.author_user_id) && (
-              <button type="button" onClick={onDelete} className="ml-auto text-zinc-700 transition-colors hover:text-red-400">
+              <button type="button" onClick={onDelete} className={cn("ml-auto text-zinc-700 hover:text-red-400", focusClass, smoothClass)}>
                 <Trash2 className="h-3.5 w-3.5" />
               </button>
             )}
@@ -837,13 +895,14 @@ function PostDetail({
       <button
         type="button"
         onClick={onBack}
-        className="inline-flex h-8 items-center gap-1 border border-zinc-800 bg-black/40 px-2 text-[10px] font-black uppercase tracking-[0.12em] text-zinc-500 transition-colors hover:border-sky-400/50 hover:text-zinc-200"
+        className={cn("inline-flex h-8 items-center gap-1 border border-zinc-800 bg-black/40 px-2 text-[10px] font-black uppercase tracking-[0.12em] text-zinc-500 hover:-translate-x-0.5 hover:border-sky-400/50 hover:text-zinc-200", focusClass, smoothClass)}
       >
         <ChevronLeft className="h-3 w-3" />
         Feed
       </button>
 
-      <article className="border border-zinc-800 bg-black/55">
+      <article className={cn(panelClass, "relative overflow-hidden")}>
+        <CornerCuts />
         <div className="grid grid-cols-[44px_minmax(0,1fr)]">
           <VoteRail vote={post.my_vote} score={scorePost(post)} onVote={(vote) => onVotePost(post.id, post.my_vote, vote)} />
           <div className="min-w-0 p-4">
@@ -851,13 +910,13 @@ function PostDetail({
             <h2 className="mt-4 text-xl font-black uppercase tracking-[0.06em] text-zinc-100">{post.title}</h2>
             <p className="mt-3 whitespace-pre-wrap text-sm leading-7 text-zinc-300">{post.body}</p>
             <div className="mt-5 flex flex-wrap items-center gap-2">
-              <span className="inline-flex h-8 items-center gap-1.5 border border-zinc-800 bg-zinc-950 px-2 text-[9px] font-black uppercase tracking-[0.1em] text-zinc-500">
+              <span className="inline-flex h-8 items-center gap-1.5 border border-zinc-800 bg-black/45 px-2 text-[9px] font-black uppercase tracking-[0.1em] text-zinc-500">
                 <MessageSquare className="h-3 w-3" />
                 {post.comment_count} comments
               </span>
               <ActionButton onClick={() => onShare(post.id)} icon={Share2} label={`${post.share_count} shares`} />
               {canDelete(post.author_user_id) && (
-                <button type="button" onClick={() => onDeletePost(post.id)} className="ml-auto text-zinc-700 transition-colors hover:text-red-400">
+                <button type="button" onClick={() => onDeletePost(post.id)} className={cn("ml-auto text-zinc-700 hover:text-red-400", focusClass, smoothClass)}>
                   <Trash2 className="h-4 w-4" />
                 </button>
               )}
@@ -866,11 +925,12 @@ function PostDetail({
         </div>
       </article>
 
-      <div className="border border-zinc-800 bg-black/40 p-3">
+      <div className={cn(panelClass, "relative overflow-hidden p-3")}>
+        <CornerCuts />
         {replyTo && (
           <div className="mb-2 flex items-center justify-between">
             <span className="text-[9px] font-black uppercase tracking-[0.1em] text-sky-200">Replying to comment</span>
-            <button type="button" onClick={() => onReplyTo(null)} className="text-zinc-600 hover:text-white">
+            <button type="button" onClick={() => onReplyTo(null)} className={cn("text-zinc-600 hover:text-white", focusClass, smoothClass)}>
               <X className="h-3 w-3" />
             </button>
           </div>
@@ -882,13 +942,13 @@ function PostDetail({
             onChange={(event) => onCommentText(event.target.value)}
             onKeyDown={(event) => event.key === "Enter" && onCreateComment()}
             placeholder={replyTo ? "Write a reply" : "Write a comment"}
-            className="min-w-0 flex-1 border border-zinc-800 bg-black px-3 py-2 text-xs text-zinc-200 outline-none placeholder:text-zinc-700 focus:border-sky-400"
+            className={cn("min-w-0 flex-1 border border-zinc-800 bg-black/60 px-3 py-2 text-xs text-zinc-200 placeholder:text-zinc-700", focusClass, smoothClass)}
           />
           <button
             type="button"
             onClick={onCreateComment}
             disabled={!commentText.trim()}
-            className="inline-flex h-9 items-center border border-sky-400/50 bg-sky-950/30 px-3 text-sky-100 transition-colors hover:border-sky-300 hover:text-white disabled:opacity-30"
+            className={cn("inline-flex h-9 items-center border border-sky-400/50 bg-sky-950/30 px-3 text-sky-100 hover:border-sky-300 hover:bg-sky-900/35 hover:text-white disabled:opacity-30", focusClass, smoothClass)}
           >
             <Send className="h-3.5 w-3.5" />
           </button>
@@ -926,7 +986,7 @@ function AuthorLine({
 }) {
   return (
     <div className="flex min-w-0 flex-wrap items-center gap-2">
-      <button type="button" onClick={() => onOpenProfile(post.author_user_id)} className="flex min-w-0 items-center gap-2 hover:opacity-80">
+      <button type="button" onClick={() => onOpenProfile(post.author_user_id)} className={cn("flex min-w-0 items-center gap-2 hover:opacity-80", focusClass, smoothClass)}>
         <Avatar name={post.author_nickname} src={post.author_avatar_url} />
         <span className="truncate text-[10px] font-black uppercase tracking-[0.1em] text-zinc-200">{post.author_nickname}</span>
       </button>
@@ -935,7 +995,7 @@ function AuthorLine({
           {formatRankLabel(post.author_rank)}
         </span>
       )}
-      <span className={cn("ml-auto inline-flex border px-2 py-1 text-[8px] font-black uppercase tracking-[0.08em]", flairClass)}>
+      <span className={cn("ml-auto inline-flex border px-2 py-1 text-[8px] font-black uppercase tracking-[0.08em] shadow-[inset_0_0_14px_rgba(255,255,255,0.03)]", flairClass)}>
         {flairLabel}
       </span>
     </div>
@@ -960,10 +1020,11 @@ function CommentThread({
   canDelete: (authorId: string) => boolean;
 }) {
   return (
-    <div className="border border-zinc-800 bg-black/40">
+    <div className={cn(panelClass, "relative overflow-hidden")}>
+      <CornerCuts />
       <CommentItem comment={comment} onVote={onVote} onReply={onReply} onDelete={onDelete} onOpenProfile={onOpenProfile} canDelete={canDelete} />
       {replies.length > 0 && (
-        <div className="border-t border-zinc-800 bg-zinc-950/40 pl-6">
+        <div className="border-t border-zinc-800 bg-black/30 pl-6">
           {replies.map((reply) => (
             <CommentItem
               key={reply.id}
@@ -1005,7 +1066,7 @@ function CommentItem({
       <VoteRail compact vote={comment.my_vote} score={score} onVote={(vote) => onVote(comment.id, comment.my_vote, vote)} />
       <div className={cn("min-w-0", compact ? "p-2.5" : "p-3")}>
         <div className="flex flex-wrap items-center gap-1.5">
-          <button type="button" onClick={() => onOpenProfile(comment.author_user_id)} className="text-[9px] font-black uppercase tracking-[0.08em] text-zinc-300 hover:text-white">
+          <button type="button" onClick={() => onOpenProfile(comment.author_user_id)} className={cn("text-[9px] font-black uppercase tracking-[0.08em] text-zinc-300 hover:text-white", focusClass, smoothClass)}>
             {comment.author_nickname}
           </button>
           {comment.author_rank && (
@@ -1023,7 +1084,7 @@ function CommentItem({
             </button>
           )}
           {canDelete(comment.author_user_id) && (
-            <button type="button" onClick={() => onDelete(comment.id)} className="text-zinc-700 transition-colors hover:text-red-400">
+            <button type="button" onClick={() => onDelete(comment.id)} className={cn("text-zinc-700 hover:text-red-400", focusClass, smoothClass)}>
               <Trash2 className="h-3 w-3" />
             </button>
           )}
@@ -1045,14 +1106,14 @@ function VoteRail({
   onVote: (vote: 1 | -1) => void;
 }) {
   return (
-    <div className={cn("flex flex-col items-center border-r border-zinc-800", compact ? "py-1" : "py-3")}>
-      <button type="button" onClick={() => onVote(1)} className={cn("transition-colors", vote === 1 ? "text-sky-300" : "text-zinc-700 hover:text-zinc-300")}>
+    <div className={cn("flex flex-col items-center border-r border-zinc-800/90 bg-black/18", compact ? "py-1" : "py-3")}>
+      <button type="button" onClick={() => onVote(1)} className={cn(focusClass, smoothClass, vote === 1 ? "text-sky-300" : "text-zinc-700 hover:-translate-y-0.5 hover:text-zinc-300")}>
         <ArrowBigUp className={compact ? "h-5 w-5" : "h-6 w-6"} />
       </button>
       <span className={cn("font-black tabular-nums", compact ? "text-[10px]" : "text-xs", score > 0 ? "text-sky-300" : score < 0 ? "text-rose-300" : "text-zinc-600")}>
         {score}
       </span>
-      <button type="button" onClick={() => onVote(-1)} className={cn("transition-colors", vote === -1 ? "text-rose-300" : "text-zinc-700 hover:text-zinc-300")}>
+      <button type="button" onClick={() => onVote(-1)} className={cn(focusClass, smoothClass, vote === -1 ? "text-rose-300" : "text-zinc-700 hover:translate-y-0.5 hover:text-zinc-300")}>
         <ArrowBigDown className={compact ? "h-5 w-5" : "h-6 w-6"} />
       </button>
     </div>
@@ -1072,7 +1133,7 @@ function ActionButton({
     <button
       type="button"
       onClick={onClick}
-      className="inline-flex h-8 items-center gap-1.5 border border-zinc-800 bg-zinc-950 px-2 text-[9px] font-black uppercase tracking-[0.1em] text-zinc-500 transition-colors hover:border-sky-400/50 hover:text-zinc-200"
+      className={cn("inline-flex h-8 items-center gap-1.5 border border-zinc-800 bg-black/45 px-2 text-[9px] font-black uppercase tracking-[0.1em] text-zinc-500 hover:border-sky-400/50 hover:bg-zinc-900/70 hover:text-zinc-200", focusClass, smoothClass)}
     >
       <Icon className="h-3 w-3" />
       {label}
@@ -1086,7 +1147,7 @@ function Avatar({ name, src }: { name: string; src?: string }) {
   }
 
   return (
-    <span className="flex h-7 w-7 shrink-0 items-center justify-center border border-zinc-700 bg-zinc-900 text-[10px] font-black uppercase text-zinc-300">
+    <span className="flex h-7 w-7 shrink-0 items-center justify-center border border-zinc-700 bg-[linear-gradient(135deg,rgba(14,165,233,0.16),rgba(24,24,27,0.95)_48%,rgba(16,185,129,0.10))] text-[10px] font-black uppercase text-zinc-200 shadow-[inset_0_0_14px_rgba(255,255,255,0.035)]">
       {name.trim().charAt(0) || <User className="h-3 w-3" />}
     </span>
   );
