@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type React from "react";
 import dynamic from "next/dynamic";
+import { useRouter } from "next/navigation";
 import {
   ChevronLeft,
   ChevronRight,
@@ -237,6 +238,7 @@ const VerificationSuccessModal = dynamic(() =>
   import("@/components/modals/VerificationSuccessModal").then((mod) => mod.VerificationSuccessModal),
 );
 const AdminModal = dynamic(() => import("@/components/modals/AdminModal"));
+const CommunityModal = dynamic(() => import("@/components/modals/CommunityModal").then((mod) => mod.CommunityModal));
 
 
 export default function HomePage() {
@@ -299,6 +301,8 @@ export default function HomePage() {
   const [showEntryChoice, setShowEntryChoice] = useState(false);
   const [showAnonymousProgressPrompt, setShowAnonymousProgressPrompt] = useState(false);
   const [isAdminOpen, setIsAdminOpen] = useState(false);
+  const [isCommunityOpen, setIsCommunityOpen] = useState(false);
+  const router = useRouter();
   const [consentAccepted, setConsentAccepted] = useState(false);
   const [tokens, setTokens] = useState<AuthTokens | null>(null);
   const [me, setMe] = useState<AuthUser | null>(null);
@@ -883,7 +887,7 @@ export default function HomePage() {
 
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [isStatsOpen, isCustomizeOpen, isStartModesOpen, isTestLabOpen, isDuelOpen, isAuthOpen, isAdminOpen]);
+  }, [isStatsOpen, isCustomizeOpen, isStartModesOpen, isTestLabOpen, isDuelOpen, isAuthOpen, isAdminOpen, isCommunityOpen]);
 
   const completeRegisteredAuth = useCallback(async (verificationTokenValue?: string) => {
     const nickname = authNickname.trim();
@@ -1189,17 +1193,22 @@ export default function HomePage() {
           <div className="grid w-full grid-cols-[auto_1fr_auto] items-center gap-2 px-3 py-2 text-xs font-semibold uppercase tracking-[0.18em] text-zinc-400 sm:grid-cols-[1fr_auto_1fr] sm:gap-0 sm:px-4 sm:text-sm">
             <button
               type="button"
+              onClick={() => router.push("/marketing/guide")}
               className="inline-flex h-8 items-center gap-1.5 justify-self-start border border-zinc-700 bg-black/70 px-2 text-[9px] font-semibold tracking-[0.12em] text-zinc-300 transition-colors hover:border-purple-400/55 hover:text-zinc-100 sm:gap-2 sm:px-2.5 sm:text-[10px]"
-              aria-label="Guide for SUB5"
+              aria-label="How to Play"
             >
               <CircleHelp className="h-3 w-3 text-purple-300 sm:h-3.5 sm:w-3.5" aria-hidden="true" />
-              <span className="hidden sm:inline">Guide for SUB5</span>
-              <span className="sm:hidden">Guide</span>
+              <span className="hidden sm:inline">How to Play</span>
+              <span className="sm:hidden">Play</span>
             </button>
             <div className="flex items-center justify-center gap-3 sm:grid sm:grid-cols-[auto_auto_auto] sm:items-center sm:gap-7">
-              <a className="hidden transition-colors hover:text-zinc-100 sm:inline" href="#community">
+              <button
+                type="button"
+                onClick={() => setIsCommunityOpen(true)}
+                className="hidden transition-colors hover:text-zinc-100 sm:inline"
+              >
                 Community
-              </a>
+              </button>
               {showNavShuffle ? (
                 <Shuffle
                   text="CHADCHAT"
@@ -1550,6 +1559,14 @@ export default function HomePage() {
       )}
       {isAdminOpen && (
         <AdminModal onClose={() => setIsAdminOpen(false)} />
+      )}
+      {isCommunityOpen && (
+        <CommunityModal
+          onClose={() => setIsCommunityOpen(false)}
+          onOpenProfile={handleOpenProfile}
+          myUserId={me?.id ? String(me.id) : null}
+          myRole={typeof me?.role === "string" ? me.role : undefined}
+        />
       )}
     </main>
   );
