@@ -439,13 +439,13 @@ export function getRankClass(rank: string) {
 // getTopClass
 export function getTopClass(position: number) {
   if (position === 1) {
-    return "border-zinc-800 bg-black/75";
+    return "border-[#d4af37]/40 bg-[#d4af37]/[0.06] shadow-[0_0_0_1px_rgba(212,175,55,0.08)]";
   }
   if (position === 2) {
-    return "border-zinc-800 bg-black/75";
+    return "border-[#c0c0c0]/30 bg-[#c0c0c0]/[0.04]";
   }
   if (position === 3) {
-    return "border-zinc-800 bg-black/70";
+    return "border-[#cd7f32]/30 bg-[#cd7f32]/[0.04]";
   }
   return "border-zinc-900 bg-black/70";
 }

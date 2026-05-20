@@ -427,7 +427,7 @@ export function LiveChat({
         <div
           ref={chatContainerRef}
           className={cn(
-            "flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto overscroll-contain p-3 transition-[filter,opacity] duration-200",
+            "flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto overscroll-contain p-3 transition-[filter,opacity] duration-200",
             chatBlurred && "pointer-events-none select-none blur-sm opacity-85",
           )}
         >

@@ -1152,7 +1152,7 @@ export default function HomePage() {
         )}
       </div>
       <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_center,transparent_0%,rgba(0,0,0,0.32)_48%,rgba(0,0,0,0.82)_100%)]" />
-      <div className="relative z-10 mx-auto flex min-h-screen w-full max-w-7xl flex-col px-4 py-4 sm:px-6 lg:px-8">
+      <div className="relative z-10 mx-auto flex min-h-screen w-full max-w-7xl flex-col px-4 py-4 pb-20 sm:px-6 lg:px-8 lg:pb-4">
         <nav className="flex min-h-14 items-center justify-center border border-border bg-zinc-950/85 shadow-wire backdrop-blur-sm">
           <div className="grid w-full grid-cols-[auto_1fr_auto] items-center gap-2 px-3 py-2 text-xs font-semibold uppercase tracking-[0.18em] text-zinc-400 sm:grid-cols-[1fr_auto_1fr] sm:gap-0 sm:px-4 sm:text-sm">
             <button
@@ -1165,8 +1165,22 @@ export default function HomePage() {
               <span className="hidden sm:inline">How to Play</span>
               <span className="sm:hidden">Play</span>
             </button>
-            <div className="flex items-center justify-center">
+            <div className="flex items-center justify-center gap-2.5">
               <span className="nav-logo text-sm text-zinc-100 sm:text-base">CHADCHAT</span>
+              <span className={cn(
+                "hidden items-center gap-1.5 border px-2 py-1 text-[8px] font-black uppercase tracking-[0.12em] sm:inline-flex",
+                backendDownMessage
+                  ? "border-red-500/40 bg-red-950/20 text-red-300"
+                  : "border-emerald-500/40 bg-emerald-950/20 text-emerald-300"
+              )}>
+                <span className={cn(
+                  "h-1.5 w-1.5 rounded-full",
+                  backendDownMessage
+                    ? "bg-red-400"
+                    : "animate-pulse bg-emerald-400 shadow-[0_0_4px_rgba(52,211,153,0.8)]"
+                )} />
+                {backendDownMessage ? "Offline" : "Live"}
+              </span>
             </div>
             <div
               className={cn(
@@ -1228,7 +1242,7 @@ export default function HomePage() {
           <ParticleCard
             className={cn(
               magicBlockClass,
-              "order-1 h-[calc(100vh-7.5rem)] min-h-[320px] overflow-hidden shadow-wire backdrop-blur-sm lg:order-2",
+              "order-1 h-[calc(100vh-7.5rem)] min-h-[320px] overflow-hidden shadow-[0_0_0_1px_rgba(255,255,255,0.06),0_0_40px_rgba(132,0,255,0.07)] backdrop-blur-sm lg:order-2",
             )}
             particleCount={12}
             glowColor={magicGlow}
@@ -1236,42 +1250,34 @@ export default function HomePage() {
             enableMagnetism={false}
             clickEffect
           >
-            <section className="flex h-full min-h-0 flex-col justify-center gap-4 border border-border p-4 sm:p-6">
-              <div className="shrink-0 text-center">
-                <h1 className="text-2xl font-black uppercase tracking-[0.12em] text-zinc-100 sm:text-3xl">
-                  CHADCHAT
-                </h1>
-                <div className="mt-1 text-[10px] font-semibold uppercase tracking-[0.16em] text-zinc-500">
-                  Live Face Rating
-                </div>
-              </div>
-              <MagicButton className="h-60 w-full sm:h-64">
+            <section className="flex h-full min-h-0 flex-col justify-center gap-3 border border-border p-4 sm:p-5">
+              <MagicButton className="flex-1 min-h-0 w-full">
                 <StatsPanel
                   onOpenDetails={() => setIsStatsOpen(true)}
                   stats={statsSnapshot}
                   loading={ratingDataLoading}
                 />
               </MagicButton>
-              <MagicButton className="h-20 w-full">
+              <MagicButton className="h-14 w-full shrink-0">
                 <Button
                   size="wireMedium"
                   variant="outline"
-                  className="h-full gap-3"
+                  className="h-full gap-3 border-zinc-700 text-zinc-300 hover:border-purple-400/60 hover:text-zinc-100"
                   onClick={() => setIsCustomizeOpen(true)}
                 >
-                  <UserRoundCog className="h-5 w-5" aria-hidden="true" />
-                  Customize
+                  <UserRoundCog className="h-4 w-4 text-purple-400" aria-hidden="true" />
+                  Customize Profile
                 </Button>
               </MagicButton>
-              <div ref={startButtonRef} className="relative h-14 overflow-hidden">
+              <div ref={startButtonRef} className="relative h-20 shrink-0 overflow-hidden">
                 <div className={cn("h-full border p-[2px]", getGameFrameClass(gameCustomization.frame))}>
                   <MagicButton className="h-full w-full">
                     <Button
                       size="wireSmall"
-                      className="h-full gap-3 bg-zinc-100 text-black hover:bg-white hover:text-black"
+                      className="h-full gap-3 bg-zinc-100 text-black hover:bg-white hover:text-black shadow-[0_0_32px_rgba(255,255,255,0.08)]"
                       onClick={() => setIsStartModesOpen(true)}
                     >
-                      Start Mogging
+                      <span className="text-base font-black uppercase tracking-[0.12em]">Start Mogging</span>
                     </Button>
                   </MagicButton>
                 </div>
@@ -1488,6 +1494,39 @@ export default function HomePage() {
       {isAdminOpen && (
         <AdminModal onClose={() => setIsAdminOpen(false)} />
       )}
+
+      {/* Mobile bottom navigation */}
+      <nav className="fixed bottom-0 left-0 right-0 z-40 grid grid-cols-3 border-t border-zinc-800 bg-zinc-950/95 backdrop-blur-md lg:hidden">
+        <button
+          type="button"
+          onClick={() => setIsStatsOpen(true)}
+          className="flex flex-col items-center gap-1 py-3 text-zinc-500 transition-colors hover:text-zinc-200 active:text-purple-300"
+        >
+          <Signal className="h-5 w-5" aria-hidden="true" />
+          <span className="text-[9px] font-black uppercase tracking-[0.1em]">Stats</span>
+        </button>
+        <button
+          type="button"
+          onClick={() => setIsStartModesOpen(true)}
+          className="flex flex-col items-center gap-1 py-3 text-zinc-100 transition-colors hover:text-white"
+        >
+          <div className="flex h-10 w-10 items-center justify-center border border-zinc-300/30 bg-zinc-100 shadow-[0_0_16px_rgba(255,255,255,0.12)]">
+            <Camera className="h-5 w-5 text-black" aria-hidden="true" />
+          </div>
+        </button>
+        <button
+          type="button"
+          onClick={() => {
+            if (isAnonymousUser) { handleAnonymousNicknameClick(); return; }
+            if (!tokens) { handleGuestNicknameClick(); return; }
+            handleOpenProfile();
+          }}
+          className="flex flex-col items-center gap-1 py-3 text-zinc-500 transition-colors hover:text-zinc-200 active:text-purple-300"
+        >
+          <User className="h-5 w-5" aria-hidden="true" />
+          <span className="text-[9px] font-black uppercase tracking-[0.1em]">Profile</span>
+        </button>
+      </nav>
     </main>
   );
 }
