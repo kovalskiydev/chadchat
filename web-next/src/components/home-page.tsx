@@ -1251,7 +1251,7 @@ export default function HomePage() {
             clickEffect
           >
             <section className="flex h-full min-h-0 flex-col justify-center gap-3 border border-border p-4 sm:p-5">
-              <MagicButton className="flex-1 min-h-0 w-full">
+              <MagicButton className="h-56 w-full shrink-0 sm:h-60">
                 <StatsPanel
                   onOpenDetails={() => setIsStatsOpen(true)}
                   stats={statsSnapshot}
