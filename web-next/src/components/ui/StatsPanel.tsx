@@ -18,7 +18,7 @@ export function StatsPanel({
   return (
     <div
       className={cn(
-        "flex h-full flex-col gap-3 border border-border bg-zinc-950/80 p-3 text-left transition-opacity duration-300 sm:p-4",
+        "flex h-full flex-col justify-between border border-border bg-zinc-950/80 p-3 text-left transition-opacity duration-300 sm:p-4",
         loading && "opacity-90",
       )}
     >

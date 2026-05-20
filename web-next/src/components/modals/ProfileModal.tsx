@@ -399,9 +399,12 @@ export function ProfileModal({
     repliesByParent[key].sort(sortByPopularity);
   });
 
+  const getCommentById = (id: string) => comments.find((c) => c.id === id);
+
   const renderComment = (comment: ProfileComment, depth = 0): React.ReactNode => {
     const replies = repliesByParent[comment.id] ?? [];
     const isReplying = replyingTo === comment.id;
+    const parentComment = comment.parent_comment_id ? getCommentById(comment.parent_comment_id) : null;
     const canDelete =
       !comment.is_deleted &&
       Boolean(
@@ -418,127 +421,121 @@ export function ProfileModal({
     const canVote = !comment.is_deleted && Boolean(accessToken);
 
     return (
-      <div
-        className={cn(
-          "border bg-black/60 p-3",
-          depth === 0 ? "border-zinc-900" : "border-zinc-800/80",
-        )}
-        key={comment.id}
-      >
-        <div className="flex items-center justify-between gap-3 text-[10px] uppercase tracking-[0.12em] text-zinc-500">
-          <span className={cn("font-semibold", comment.is_deleted ? "text-zinc-600" : "text-zinc-300")}>
-            {comment.author_nickname}
-          </span>
-          <div className="flex shrink-0 items-center gap-2">
-            <span>{formatDateShort(comment.created_at)}</span>
-            {canDelete && (
-              <button
-                className="inline-flex h-6 w-6 items-center justify-center border border-red-500/35 bg-red-950/20 text-red-300 transition-colors hover:border-red-400 hover:bg-red-950/40 hover:text-red-100 disabled:cursor-wait disabled:opacity-50"
-                type="button"
-                title="Delete comment"
-                aria-label="Delete comment"
-                disabled={isDeleting}
-                onClick={() => deleteComment(comment.id)}
-              >
-                <Trash2 className="h-3 w-3" aria-hidden="true" />
-              </button>
-            )}
+      <div key={comment.id} className={cn(depth > 0 && "border-l border-purple-500/20 pl-3")}>
+        <div className={cn("border bg-black/50 p-3", depth === 0 ? "border-zinc-800/80" : "border-zinc-800/50")}>
+          {/* Author row */}
+          <div className="flex items-start gap-2.5">
+            <Avatar user={comment.author_nickname} className="h-7 w-7 shrink-0" />
+            <div className="min-w-0 flex-1">
+              <div className="flex items-center justify-between gap-2">
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className={cn("text-[10px] font-black uppercase tracking-[0.1em]", comment.is_deleted ? "text-zinc-600" : "text-zinc-200")}>
+                    {comment.author_nickname}
+                  </span>
+                  {parentComment && (
+                    <span className="text-[9px] font-semibold text-purple-400/70">
+                      ↳ @{parentComment.author_nickname}
+                    </span>
+                  )}
+                </div>
+                <div className="flex shrink-0 items-center gap-2">
+                  <span className="text-[9px] uppercase tracking-[0.1em] text-zinc-600">
+                    {formatDateShort(comment.created_at)}
+                  </span>
+                  {canDelete && (
+                    <button
+                      className="inline-flex h-5 w-5 items-center justify-center border border-red-500/30 bg-red-950/20 text-red-400 transition-colors hover:border-red-400 hover:text-red-200 disabled:cursor-wait disabled:opacity-40"
+                      type="button"
+                      aria-label="Delete comment"
+                      disabled={isDeleting}
+                      onClick={() => deleteComment(comment.id)}
+                    >
+                      <Trash2 className="h-3 w-3" aria-hidden="true" />
+                    </button>
+                  )}
+                </div>
+              </div>
+
+              {comment.is_deleted ? (
+                <p className="mt-1.5 text-xs italic leading-5 text-zinc-600">Deleted comment</p>
+              ) : (
+                <>
+                  <p className="mt-1.5 break-words text-xs leading-5 text-zinc-300">{comment.text}</p>
+                  <div className="mt-2 flex items-center gap-3">
+                    <button
+                      className={cn(
+                        "inline-flex items-center gap-1.5 rounded-sm border px-2 py-1 text-[9px] font-black uppercase tracking-[0.08em] transition-all",
+                        comment.my_vote === 1
+                          ? "border-emerald-500/50 bg-emerald-950/30 text-emerald-300 shadow-[0_0_8px_rgba(52,211,153,0.2)]"
+                          : "border-zinc-800 bg-black/40 text-zinc-500 hover:border-zinc-700 hover:text-zinc-300",
+                      )}
+                      type="button"
+                      disabled={!canVote}
+                      onClick={() => voteComment(comment.id, comment.my_vote === 1 ? 0 : 1)}
+                    >
+                      <ThumbsUp className="h-3 w-3" aria-hidden="true" />
+                      {comment.like_count}
+                    </button>
+                    <button
+                      className={cn(
+                        "inline-flex items-center gap-1.5 rounded-sm border px-2 py-1 text-[9px] font-black uppercase tracking-[0.08em] transition-all",
+                        comment.my_vote === -1
+                          ? "border-rose-500/50 bg-rose-950/30 text-rose-300 shadow-[0_0_8px_rgba(251,113,133,0.2)]"
+                          : "border-zinc-800 bg-black/40 text-zinc-500 hover:border-zinc-700 hover:text-zinc-300",
+                      )}
+                      type="button"
+                      disabled={!canVote}
+                      onClick={() => voteComment(comment.id, comment.my_vote === -1 ? 0 : -1)}
+                    >
+                      <ThumbsDown className="h-3 w-3" aria-hidden="true" />
+                      {comment.dislike_count}
+                    </button>
+                    {depth === 0 && (
+                      <button
+                        className="text-[9px] font-black uppercase tracking-[0.12em] text-zinc-600 transition-colors hover:text-purple-300"
+                        type="button"
+                        onClick={() => setReplyingTo((cur) => cur === comment.id ? null : comment.id)}
+                      >
+                        Reply
+                      </button>
+                    )}
+                  </div>
+                </>
+              )}
+
+              {isReplying && (
+                <div className="mt-3 flex gap-2">
+                  <input
+                    className="h-8 min-w-0 flex-1 border border-zinc-800 bg-black/80 px-3 text-xs text-zinc-100 outline-none focus:border-purple-400"
+                    placeholder={`Reply to ${comment.author_nickname}…`}
+                    maxLength={1000}
+                    value={replyDrafts[comment.id] ?? ""}
+                    onChange={(e) => setReplyDrafts((cur) => ({ ...cur, [comment.id]: e.target.value }))}
+                  />
+                  <button
+                    className="h-8 border border-purple-500/50 bg-purple-950/35 px-3 text-[9px] font-black uppercase tracking-[0.12em] text-purple-100 transition-colors hover:border-purple-300 disabled:opacity-40"
+                    type="button"
+                    disabled={saving || !(replyDrafts[comment.id] ?? "").trim()}
+                    onClick={() => submitReply(comment.id)}
+                  >
+                    Send
+                  </button>
+                </div>
+              )}
+            </div>
           </div>
         </div>
-        {comment.parent_comment_id && (
-          <div className="mt-2 inline-flex border border-purple-500/30 bg-purple-950/20 px-2 py-1 text-[9px] font-semibold uppercase tracking-[0.1em] text-purple-200">
-            Reply in thread
-          </div>
-        )}
-        {comment.is_deleted ? (
-          <p className="mt-2 text-xs italic leading-5 text-zinc-600">Deleted comment</p>
-        ) : (
-          <>
-            <p className="mt-2 break-words text-xs leading-5 text-zinc-300">{comment.text}</p>
-            <div className="mt-2 flex items-center gap-3">
-              <button
-                className={cn(
-                  "inline-flex items-center gap-1 text-[10px] font-semibold uppercase tracking-[0.1em] transition-colors",
-                  comment.my_vote === 1
-                    ? "text-emerald-300"
-                    : "text-zinc-500 hover:text-zinc-300",
-                )}
-                type="button"
-                disabled={!canVote}
-                onClick={() => voteComment(comment.id, comment.my_vote === 1 ? 0 : 1)}
-              >
-                <ThumbsUp className="h-3 w-3" aria-hidden="true" />
-                <span>{comment.like_count}</span>
-              </button>
-              <button
-                className={cn(
-                  "inline-flex items-center gap-1 text-[10px] font-semibold uppercase tracking-[0.1em] transition-colors",
-                  comment.my_vote === -1
-                    ? "text-red-300"
-                    : "text-zinc-500 hover:text-zinc-300",
-                )}
-                type="button"
-                disabled={!canVote}
-                onClick={() => voteComment(comment.id, comment.my_vote === -1 ? 0 : -1)}
-              >
-                <ThumbsDown className="h-3 w-3" aria-hidden="true" />
-                <span>{comment.dislike_count}</span>
-              </button>
-              <button
-                className="text-[10px] font-semibold uppercase tracking-[0.12em] text-purple-300 transition-colors hover:text-purple-100"
-                type="button"
-                onClick={() =>
-                  setReplyingTo((current) =>
-                    current === comment.id ? null : comment.id,
-                  )
-                }
-              >
-                Reply
-              </button>
-            </div>
-          </>
-        )}
-        {isReplying && (
-          <div className="mt-3 grid grid-cols-[1fr_auto] gap-2">
-            <input
-              className="h-9 border border-zinc-800 bg-black/80 px-3 text-xs text-zinc-100 outline-none focus:border-purple-400"
-              placeholder={`Reply to ${comment.author_nickname}`}
-              maxLength={1000}
-              value={replyDrafts[comment.id] ?? ""}
-              onChange={(event) =>
-                setReplyDrafts((current) => ({
-                  ...current,
-                  [comment.id]: event.target.value,
-                }))
-              }
-            />
-            <button
-              className="h-9 border border-purple-500/50 bg-purple-950/35 px-3 text-[10px] font-semibold uppercase tracking-[0.14em] text-purple-100 disabled:opacity-40"
-              type="button"
-              disabled={saving || !(replyDrafts[comment.id] ?? "").trim()}
-              onClick={() => submitReply(comment.id)}
-            >
-              Send
-            </button>
-          </div>
-        )}
+
         {Boolean(visibleReplies.length) && (
-          <div className="mt-3 space-y-2 border-l border-purple-500/25 pl-3">
+          <div className="mt-2 space-y-2">
             {visibleReplies.map((reply) => renderComment(reply, depth + 1))}
             {hasMoreReplies && (
               <button
-                className="text-[10px] font-semibold uppercase tracking-[0.12em] text-purple-300 transition-colors hover:text-purple-100"
+                className="pl-3 text-[9px] font-black uppercase tracking-[0.12em] text-purple-400/70 transition-colors hover:text-purple-300"
                 type="button"
-                onClick={() =>
-                  setExpandedReplies((current) => ({
-                    ...current,
-                    [comment.id]: !isExpanded,
-                  }))
-                }
+                onClick={() => setExpandedReplies((cur) => ({ ...cur, [comment.id]: !isExpanded }))}
               >
-                {isExpanded
-                  ? "Collapse replies"
-                  : `Show ${replies.length - repliesLimit} more replies`}
+                {isExpanded ? "Collapse" : `+${replies.length - repliesLimit} more replies`}
               </button>
             )}
           </div>
@@ -549,245 +546,316 @@ export function ProfileModal({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-start justify-center bg-black/70 p-0 backdrop-blur-sm sm:items-center sm:p-4"
+      className="fixed inset-0 z-50 flex items-start justify-center bg-black/75 p-0 backdrop-blur-sm sm:items-center sm:p-4"
       role="dialog"
       aria-modal="true"
       onMouseDown={onClose}
     >
       <div
-        className="h-screen w-full overflow-y-auto border-x-0 border-purple-500/35 bg-zinc-950 shadow-[0_0_40px_rgba(132,0,255,0.22)] sm:h-auto sm:max-h-[90vh] sm:max-w-3xl sm:rounded-none sm:border"
-        onMouseDown={(event) => event.stopPropagation()}
+        className="h-screen w-full overflow-y-auto border-purple-500/30 bg-zinc-950 shadow-[0_0_60px_rgba(132,0,255,0.20)] sm:h-auto sm:max-h-[90vh] sm:max-w-3xl sm:border"
+        onMouseDown={(e) => e.stopPropagation()}
       >
-        <div className="flex items-center justify-between border-b border-border px-5 py-4">
-          <div>
-            <div className="text-[10px] font-semibold uppercase tracking-[0.18em] text-zinc-600">
-              {isMine ? "My Profile" : "Public Profile"}
+        {/* Hero header */}
+        <div className="relative overflow-hidden border-b border-zinc-800/90 bg-gradient-to-r from-purple-950/20 to-transparent px-5 py-4">
+          <div className="pointer-events-none absolute right-0 top-0 h-full w-48 bg-[linear-gradient(135deg,transparent_0%,rgba(139,92,246,0.07)_42%,transparent_43%)]" />
+          <div className="pointer-events-none absolute bottom-0 left-0 h-px w-full bg-gradient-to-r from-purple-500/40 via-zinc-700/30 to-transparent" />
+          <div className="relative flex items-center justify-between gap-4">
+            <div className="flex min-w-0 items-center gap-4">
+              {loading ? (
+                <div className="h-14 w-14 shrink-0 animate-pulse bg-zinc-800" />
+              ) : (
+                <Avatar
+                  user={profile?.nickname ?? profile?.user_id ?? "?"}
+                  src={profile?.avatar_url}
+                  className="h-14 w-14 shrink-0"
+                />
+              )}
+              <div className="min-w-0">
+                <div className="text-[9px] font-semibold uppercase tracking-[0.18em] text-zinc-600">
+                  {isMine ? "My Profile" : "Public Profile"}
+                </div>
+                <div className="mt-1 flex flex-wrap items-center gap-2">
+                  {loading ? (
+                    <div className="h-6 w-32 animate-pulse bg-zinc-800" />
+                  ) : (
+                    <h2
+                      className={cn("text-xl font-black uppercase tracking-[0.12em] text-zinc-100", profile?.nickname_style?.animated && "animate-pulse")}
+                      style={getInlineColorStyle(profile?.nickname_style)}
+                    >
+                      {profile?.nickname ?? profile?.user_id ?? "—"}
+                    </h2>
+                  )}
+                  {isAdminProfile && <AdminBadge className="px-2 py-0.5 text-[9px]" />}
+                  {profile?.rank && (
+                    <span className={cn("border px-2 py-0.5 text-[9px] font-black uppercase tracking-[0.1em]", getRankClass(formatRankLabel(profile.rank)))}>
+                      {formatRankLabel(profile.rank)}
+                    </span>
+                  )}
+                </div>
+                <div className="mt-1 flex flex-wrap items-center gap-2">
+                  {profile?.selected_title?.label && (
+                    <span
+                      className={cn("border border-purple-500/40 bg-purple-950/30 px-2 py-0.5 text-[9px] font-black uppercase tracking-[0.1em]", profile.selected_title.animated && "animate-pulse")}
+                      style={profileTitleStyle(profile)}
+                    >
+                      {profile.selected_title.label}
+                    </span>
+                  )}
+                  {profile?.selected_badges?.map((badge) => (
+                    <span
+                      className="border border-zinc-800 bg-zinc-900/60 px-1.5 py-0.5 text-[8px] font-black uppercase tracking-[0.1em] text-zinc-300"
+                      key={badge.id ?? badge.label}
+                      style={badge.color ? { color: badge.color, borderColor: badge.color } : undefined}
+                    >
+                      {badge.label ?? badge.id}
+                    </span>
+                  ))}
+                  {profile && (
+                    <span className="text-[9px] uppercase tracking-[0.1em] text-zinc-600">
+                      {[profile.country_code, `${profile.account_age_days ?? 0}d`].filter(Boolean).join(" · ")}
+                    </span>
+                  )}
+                </div>
+              </div>
             </div>
-            <div className="mt-2 flex flex-wrap items-center gap-2">
-              <h2 className="text-lg font-black uppercase tracking-[0.14em] text-zinc-100">
-                {profile?.nickname ?? "Loading..."}
-              </h2>
-              {isAdminProfile && <AdminBadge className="px-2 py-1 text-[9px]" />}
-            </div>
+            <button
+              className="inline-flex h-9 w-9 shrink-0 items-center justify-center border border-zinc-800 bg-black/80 text-zinc-400 transition-colors hover:border-purple-400 hover:text-white"
+              onClick={onClose}
+              type="button"
+              aria-label="Close profile"
+            >
+              <X className="h-4 w-4" aria-hidden="true" />
+            </button>
           </div>
-          <button
-            className="inline-flex h-10 w-10 items-center justify-center border border-zinc-800 bg-black/80 text-zinc-400 transition-colors hover:border-purple-400 hover:text-white"
-            onClick={onClose}
-            type="button"
-            aria-label="Close profile"
-          >
-            <X className="h-4 w-4" aria-hidden="true" />
-          </button>
         </div>
 
-        <div className="space-y-4 p-5">
+        <div className="space-y-3 p-5">
           {loading ? (
-            <div className="h-64 animate-pulse border border-zinc-900 bg-black/60" />
+            <div className="space-y-3">
+              <div className="h-28 animate-pulse border border-zinc-900 bg-black/60" />
+              <div className="grid grid-cols-4 gap-3">
+                {Array.from({ length: 4 }).map((_, i) => (
+                  <div key={i} className="h-16 animate-pulse border border-zinc-900 bg-black/60" />
+                ))}
+              </div>
+            </div>
           ) : profile ? (
             <>
-              <div className="grid gap-4 md:grid-cols-[220px_1fr]">
-                <div className="border border-zinc-900 bg-black/60 p-4">
-                  {profile.avatar_url ? (
-                    <img
-                      alt=""
-                      className="h-28 w-28 border border-zinc-800 object-cover"
-                      src={profile.avatar_url}
-                    />
-                  ) : (
-                    <Avatar user={profile.nickname ?? profile.user_id} className="h-28 w-28" />
-                  )}
-                  <div className="mt-4 flex flex-wrap items-center gap-2">
-                    {profile.selected_title?.label && (
-                      <span
-                        className={cn(
-                          "border border-purple-500/45 bg-purple-950/35 px-2 py-1 text-[10px] font-black uppercase tracking-[0.12em]",
-                          profile.selected_title.animated && "animate-pulse",
-                        )}
-                        style={profileTitleStyle(profile)}
-                      >
-                        {profile.selected_title.label}
-                      </span>
-                    )}
-                    {profile.selected_badges?.map((badge) => (
-                      <span
-                        className="border border-zinc-800 bg-zinc-950 px-2 py-1 text-[9px] font-black uppercase tracking-[0.1em]"
-                        key={badge.id ?? badge.label}
-                        style={badge.color ? { color: badge.color, borderColor: badge.color } : undefined}
-                      >
-                        {badge.label ?? badge.id}
-                      </span>
-                    ))}
-                  </div>
-                  <div className="mt-3 flex flex-wrap items-center gap-2">
-                    <div
-                      className={cn(
-                        "min-w-0 truncate text-xl font-black uppercase tracking-[0.12em]",
-                        profile.nickname_style?.animated && "animate-pulse",
-                      )}
-                      style={getInlineColorStyle(profile.nickname_style)}
-                    >
-                      {profile.nickname ?? profile.user_id}
+              {/* Rating card */}
+              <div className="border border-zinc-800/80 bg-black/50 p-4">
+                <div className="flex items-start justify-between gap-4">
+                  <div>
+                    <div className="text-[9px] uppercase tracking-[0.14em] text-zinc-600">Current Rating</div>
+                    <div className="mt-1 text-5xl font-black tabular-nums leading-none text-zinc-100">
+                      {profile.rating ?? 0}
                     </div>
-                    {isAdminProfile && <AdminBadge className="px-2.5 py-1 text-[10px]" />}
                   </div>
-                  <div className="mt-2 text-[10px] uppercase tracking-[0.12em] text-zinc-500">
-                    {profile.country_code ?? "--"} / {isAdminProfile ? "admin" : (profile.type ?? "user")} / {profile.account_age_days ?? 0}d
+                  <div className="text-right">
+                    <div className="text-[9px] uppercase tracking-[0.12em] text-zinc-600">Peak</div>
+                    <div className="mt-0.5 text-xl font-black tabular-nums text-zinc-400">
+                      {profile.peak_rating ?? 0}
+                    </div>
+                    {profile.last_match_at && (
+                      <div className="mt-2 text-[9px] uppercase tracking-[0.1em] text-zinc-700">
+                        Last match {formatDateShort(profile.last_match_at)}
+                      </div>
+                    )}
                   </div>
                 </div>
-
-                <div className="space-y-3">
-                  <div className="border border-zinc-900 bg-black/60 p-4">
-                    <div className="flex items-center justify-between gap-4">
-                      <div>
-                        <div className="text-[10px] uppercase tracking-[0.14em] text-zinc-600">
-                          Rating
-                        </div>
-                        <div className="mt-1 text-3xl font-black tabular-nums text-zinc-100">
-                          {profile.rating ?? 0}
-                        </div>
-                      </div>
-                      <div className="text-right">
-                        <div className={cn("inline-flex border px-3 py-1 text-xs font-black uppercase tracking-[0.12em]", getRankClass(formatRankLabel(profile.rank)))}>
-                          {formatRankLabel(profile.rank)}
-                        </div>
-                        <div className="mt-2 text-[10px] uppercase tracking-[0.12em] text-zinc-500">
-                          peak {profile.peak_rating ?? 0}
-                        </div>
-                      </div>
-                    </div>
-                    <div className="mt-4 h-2 overflow-hidden border border-zinc-800 bg-black">
-                      <div className="h-full bg-purple-400 transition-[width] duration-300" style={{ width: `${progress}%` }} />
-                    </div>
+                <div className="mt-4">
+                  <div className="mb-1.5 flex items-center justify-between">
+                    <span className="text-[9px] uppercase tracking-[0.12em] text-zinc-600">→ {profile.next_rank ?? "Next rank"}</span>
+                    <span className="text-[9px] font-black tabular-nums text-purple-300">{progress}%</span>
                   </div>
-
-                  <div className="grid gap-3 sm:grid-cols-4">
-                    {[
-                      ["Wins", profile.wins ?? 0],
-                      ["Losses", profile.losses ?? 0],
-                      ["Win rate", `${Math.round(profile.win_rate ?? 0)}%`],
-                      ["Streak", profile.streak ?? 0],
-                    ].map(([label, value]) => (
-                      <div className="border border-zinc-900 bg-black/60 p-3" key={label}>
-                        <div className="text-[10px] uppercase tracking-[0.12em] text-zinc-600">{label}</div>
-                        <div className="mt-2 text-lg font-black tabular-nums text-zinc-100">{value}</div>
-                      </div>
-                    ))}
-                  </div>
-
-                  <div className="grid gap-3 sm:grid-cols-5">
-                    {[
-                      ["Avg", profile.average_score],
-                      ["Best", profile.best_score],
-                      ["Recent", profile.recent_score],
-                      ["Lab Best", profile.test_lab_best],
-                      ["Lab Avg", profile.test_lab_average],
-                    ].map(([label, value]) => (
-                      <div className="border border-zinc-900 bg-black/60 p-3" key={label}>
-                        <div className="text-[10px] uppercase tracking-[0.12em] text-zinc-600">{label}</div>
-                        <div className="mt-2 text-lg font-black tabular-nums text-zinc-100">
-                          {formatProfileScore(typeof value === "number" ? value : null)}
-                        </div>
-                      </div>
-                    ))}
+                  <div className="h-3 overflow-hidden bg-zinc-900/80">
+                    <div
+                      className="h-full bg-gradient-to-r from-purple-600 to-purple-400 shadow-[0_0_10px_rgba(168,85,247,0.6)] transition-[width] duration-500 ease-out"
+                      style={{ width: `${progress}%` }}
+                    />
                   </div>
                 </div>
               </div>
 
-              {isMine ? (
-                <div className="grid gap-3 border border-zinc-900 bg-black/60 p-4">
-                  <div className="text-[10px] font-semibold uppercase tracking-[0.14em] text-zinc-600">
-                    Edit Profile
+              {/* Combat stats */}
+              <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+                {([
+                  ["Wins", profile.wins ?? 0],
+                  ["Losses", profile.losses ?? 0],
+                  ["Win Rate", `${Math.round(profile.win_rate ?? 0)}%`],
+                  ["Streak", profile.streak ?? 0],
+                ] as [string, string | number][]).map(([label, value]) => (
+                  <div className="border border-zinc-800/80 bg-black/50 p-3" key={label}>
+                    <div className="text-[9px] uppercase tracking-[0.12em] text-zinc-600">{label}</div>
+                    <div className="mt-1.5 text-xl font-black tabular-nums text-zinc-100">{value}</div>
                   </div>
-                  <label className="grid gap-2 border border-zinc-800 bg-black/80 p-3 text-xs text-zinc-100 transition-colors hover:border-purple-400">
-                    <span className="text-[10px] font-semibold uppercase tracking-[0.12em] text-zinc-500">
-                      Avatar Image
-                    </span>
-                    <input
-                      className="text-[10px] text-zinc-400 file:mr-3 file:border file:border-zinc-700 file:bg-zinc-900 file:px-3 file:py-1.5 file:text-[10px] file:font-semibold file:uppercase file:tracking-[0.12em] file:text-zinc-200"
-                      type="file"
-                      accept="image/jpeg,image/png,image/webp"
-                      onChange={(event) => {
-                        const file = event.target.files?.[0] ?? null;
-                        if (file && file.size > 5 * 1024 * 1024) {
-                          setError("Avatar must be 5 MB or smaller");
-                          event.target.value = "";
-                          setAvatarFile(null);
-                          return;
-                        }
-                        setError(null);
-                        setAvatarFile(file);
-                      }}
-                    />
-                    <span className="text-[10px] uppercase tracking-[0.12em] text-zinc-600">
-                      {avatarFile ? avatarFile.name : "PNG, JPG, or WEBP up to 5 MB"}
-                    </span>
-                  </label>
+                ))}
+              </div>
+
+              {/* Score stats */}
+              <div className="grid grid-cols-3 gap-2 sm:grid-cols-5">
+                {([
+                  ["Avg", profile.average_score],
+                  ["Best", profile.best_score],
+                  ["Recent", profile.recent_score],
+                  ["Lab Best", profile.test_lab_best],
+                  ["Lab Avg", profile.test_lab_average],
+                ] as [string, number | undefined][]).map(([label, value]) => (
+                  <div className="border border-zinc-900/80 bg-black/40 p-2.5" key={label}>
+                    <div className="text-[8px] uppercase tracking-[0.12em] text-zinc-700">{label}</div>
+                    <div className="mt-1 text-base font-black tabular-nums text-zinc-400">
+                      {formatProfileScore(typeof value === "number" ? value : null)}
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              {/* Bio / Edit */}
+              {isMine ? (
+                <div className="space-y-2 border border-zinc-800/80 bg-black/50 p-4">
+                  <div className="text-[9px] font-black uppercase tracking-[0.14em] text-zinc-500">Edit Profile</div>
+
+                  {/* Avatar upload */}
+                  <div className="border border-zinc-800 bg-black/60">
+                    <label className="flex cursor-pointer items-center gap-3 p-3 transition-colors hover:border-purple-400/50">
+                      <div className="relative">
+                        <Avatar
+                          user={profile.nickname ?? profile.user_id}
+                          src={avatarFile ? URL.createObjectURL(avatarFile) : profile.avatar_url}
+                          className="h-12 w-12 shrink-0"
+                        />
+                        <div className="absolute inset-0 flex items-center justify-center bg-black/50 opacity-0 transition-opacity hover:opacity-100">
+                          <Camera className="h-4 w-4 text-white" />
+                        </div>
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <div className="text-[9px] font-black uppercase tracking-[0.12em] text-zinc-400">Avatar</div>
+                        <div className="mt-0.5 truncate text-[9px] text-zinc-600">
+                          {avatarFile ? avatarFile.name : "Click to upload PNG, JPG or WEBP · max 5 MB"}
+                        </div>
+                      </div>
+                      <input
+                        className="sr-only"
+                        type="file"
+                        accept="image/jpeg,image/png,image/webp"
+                        onChange={(e) => {
+                          const file = e.target.files?.[0] ?? null;
+                          if (file && file.size > 5 * 1024 * 1024) {
+                            setError("Avatar must be 5 MB or smaller");
+                            e.target.value = "";
+                            setAvatarFile(null);
+                            return;
+                          }
+                          setError(null);
+                          setAvatarFile(file);
+                        }}
+                      />
+                    </label>
+                  </div>
+
                   <input
-                    className="h-10 border border-zinc-800 bg-black/80 px-3 text-xs uppercase text-zinc-100 outline-none focus:border-purple-400"
-                    placeholder="Country code"
+                    className="h-10 w-full border border-zinc-800 bg-black/80 px-3 text-xs uppercase text-zinc-100 outline-none placeholder:text-zinc-700 focus:border-purple-400"
+                    placeholder="Country code (e.g. US)"
                     maxLength={2}
                     value={editCountry}
-                    onChange={(event) => setEditCountry(event.target.value.toUpperCase())}
+                    onChange={(e) => setEditCountry(e.target.value.toUpperCase())}
                   />
                   <textarea
-                    className="min-h-24 resize-none border border-zinc-800 bg-black/80 p-3 text-xs text-zinc-100 outline-none focus:border-purple-400"
-                    placeholder="Bio"
+                    className="w-full resize-none border border-zinc-800 bg-black/80 p-3 text-xs leading-relaxed text-zinc-100 outline-none placeholder:text-zinc-700 focus:border-purple-400"
+                    placeholder="Bio — tell the community about yourself"
+                    rows={4}
                     maxLength={280}
                     value={editBio}
-                    onChange={(event) => setEditBio(event.target.value)}
+                    onChange={(e) => setEditBio(e.target.value)}
                   />
-                  <button
-                    className="h-10 border border-purple-500/50 bg-purple-950/35 px-4 text-[10px] font-semibold uppercase tracking-[0.14em] text-purple-100 transition-colors hover:border-purple-300 disabled:opacity-40"
-                    type="button"
-                    disabled={saving}
-                    onClick={saveProfile}
-                  >
-                    Save Profile
-                  </button>
+                  <div className="flex items-center justify-between gap-3">
+                    <span className="text-[9px] tabular-nums text-zinc-700">{editBio.length} / 280</span>
+                    <button
+                      className="h-9 border border-purple-500/50 bg-purple-950/35 px-5 text-[10px] font-black uppercase tracking-[0.14em] text-purple-100 transition-colors hover:border-purple-300 hover:bg-purple-900/40 disabled:opacity-40"
+                      type="button"
+                      disabled={saving}
+                      onClick={saveProfile}
+                    >
+                      {saving ? "Saving…" : "Save Profile"}
+                    </button>
+                  </div>
                 </div>
               ) : (
-                <div className="border border-zinc-900 bg-black/60 p-4">
-                  <div className="text-[10px] uppercase tracking-[0.14em] text-zinc-600">Bio</div>
-                  <p className="mt-2 text-sm leading-6 text-zinc-300">{profile.bio || "No bio yet."}</p>
-                </div>
+                profile.bio ? (
+                  <div className="border border-zinc-800/80 bg-black/50 p-4">
+                    <div className="mb-2 text-[9px] uppercase tracking-[0.14em] text-zinc-600">Bio</div>
+                    <p className="text-sm leading-6 text-zinc-300">{profile.bio}</p>
+                  </div>
+                ) : null
               )}
 
-              <div className="border border-zinc-900 bg-black/60 p-4">
-                <div className="mb-3 flex items-center justify-between">
-                  <div className="text-[10px] font-semibold uppercase tracking-[0.14em] text-zinc-600">
-                    Comments
-                  </div>
-                  <div className="text-[10px] uppercase tracking-[0.12em] text-zinc-600">
-                    last match {formatDateShort(profile.last_match_at)}
+              {/* Comments */}
+              <div className="border border-zinc-800/80 bg-black/50 p-4">
+                <div className="mb-4 flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <MessageSquare className="h-3.5 w-3.5 text-zinc-600" />
+                    <span className="text-[10px] font-black uppercase tracking-[0.14em] text-zinc-400">
+                      Comments
+                    </span>
+                    {comments.length > 0 && (
+                      <span className="border border-zinc-800 bg-black/50 px-1.5 py-0.5 text-[9px] font-black tabular-nums text-zinc-500">
+                        {comments.length}
+                      </span>
+                    )}
                   </div>
                 </div>
-                <form className="mb-3 grid grid-cols-[1fr_auto] gap-2" onSubmit={submitComment}>
+
+                {/* Comment input */}
+                <form className="mb-4 flex items-center gap-2" onSubmit={submitComment}>
+                  <Avatar
+                    user={myUserID ?? "?"}
+                    className="h-8 w-8 shrink-0"
+                  />
                   <input
-                    className="h-10 border border-zinc-800 bg-black/80 px-3 text-xs text-zinc-100 outline-none focus:border-purple-400"
-                    placeholder="Leave a comment"
+                    className="h-9 min-w-0 flex-1 border border-zinc-800 bg-black/80 px-3 text-xs text-zinc-100 outline-none placeholder:text-zinc-600 focus:border-purple-400"
+                    placeholder="Leave a comment…"
                     maxLength={1000}
                     value={commentDraft}
-                    onChange={(event) => setCommentDraft(event.target.value)}
+                    onChange={(e) => setCommentDraft(e.target.value)}
                   />
                   <button
-                    className="h-10 border border-purple-500/50 bg-purple-950/35 px-4 text-[10px] font-semibold uppercase tracking-[0.14em] text-purple-100 disabled:opacity-40"
+                    className="h-9 shrink-0 border border-purple-500/50 bg-purple-950/35 px-3 text-[9px] font-black uppercase tracking-[0.12em] text-purple-100 transition-colors hover:border-purple-300 disabled:opacity-40"
                     type="submit"
                     disabled={saving || !commentDraft.trim()}
                   >
-                    Post
+                    <Send className="h-3.5 w-3.5" />
                   </button>
                 </form>
-                <div className="space-y-2">
+
+                {/* Comment list */}
+                <div className="space-y-3">
                   {rootComments.map((comment) => renderComment(comment))}
-                  {!comments.length && !commentsLoading && (
-                    <div className="text-[10px] uppercase tracking-[0.12em] text-zinc-600">
-                      No comments yet.
+                  {!commentsLoading && comments.length === 0 && (
+                    <div className="flex flex-col items-center gap-2 py-8 text-center">
+                      <MessageSquare className="h-6 w-6 text-zinc-700" />
+                      <span className="text-[10px] font-semibold uppercase tracking-[0.12em] text-zinc-600">
+                        No comments yet
+                      </span>
+                      <span className="text-[9px] text-zinc-700">Be the first to leave one</span>
+                    </div>
+                  )}
+                  {commentsLoading && (
+                    <div className="space-y-2">
+                      {Array.from({ length: 3 }).map((_, i) => (
+                        <div key={i} className="flex gap-2.5 border border-zinc-900 bg-black/50 p-3">
+                          <div className="h-7 w-7 shrink-0 animate-pulse bg-zinc-800" />
+                          <div className="flex-1 space-y-2">
+                            <div className="h-3 w-24 animate-pulse bg-zinc-800" />
+                            <div className="h-3 w-full animate-pulse bg-zinc-800" />
+                          </div>
+                        </div>
+                      ))}
                     </div>
                   )}
                 </div>
+
                 {nextCursor && (
                   <button
-                    className="mt-3 h-10 w-full border border-zinc-800 bg-black/70 text-[10px] font-semibold uppercase tracking-[0.14em] text-zinc-300 transition-colors hover:border-purple-400"
+                    className="mt-3 h-9 w-full border border-zinc-800 bg-black/60 text-[9px] font-black uppercase tracking-[0.14em] text-zinc-500 transition-colors hover:border-purple-400/50 hover:text-zinc-300 disabled:opacity-40"
                     type="button"
                     disabled={commentsLoading}
                     onClick={() => loadComments(nextCursor)}
@@ -798,12 +866,13 @@ export function ProfileModal({
               </div>
             </>
           ) : (
-            <div className="border border-red-500/45 bg-red-950/35 p-4 text-xs text-red-200">
+            <div className="border border-red-500/40 bg-red-950/30 p-4 text-xs text-red-200">
               Profile not found.
             </div>
           )}
+
           {error && (
-            <div className="border border-red-500/45 bg-red-950/35 px-3 py-2 text-[10px] font-semibold uppercase tracking-[0.12em] text-red-200">
+            <div className="border border-red-500/40 bg-red-950/30 px-3 py-2 text-[9px] font-black uppercase tracking-[0.12em] text-red-300">
               {error}
             </div>
           )}
