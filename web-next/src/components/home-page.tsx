@@ -10,7 +10,6 @@ import {
   X,
   MessageSquare,
   Send,
-  ShoppingBag,
   Signal,
   Trophy,
   UserRoundCog,
@@ -171,10 +170,7 @@ import { magicBlockClass, magicGlow, duelQueueTracks } from "@/lib/constants";
 const PixelBlast = dynamic(() => import("@/components/PixelBlast"), {
   ssr: false,
 });
-const Shuffle = dynamic(() => import("@/components/Shuffle"), {
-  loading: () => <span className="nav-logo text-sm text-zinc-100 sm:text-base">CHADCHAT</span>,
-  ssr: false,
-});
+
 const StatsModal = dynamic(() =>
   import("@/components/modals/StatsModal").then((mod) => mod.StatsModal),
 );
@@ -238,7 +234,6 @@ const VerificationSuccessModal = dynamic(() =>
   import("@/components/modals/VerificationSuccessModal").then((mod) => mod.VerificationSuccessModal),
 );
 const AdminModal = dynamic(() => import("@/components/modals/AdminModal"));
-const CommunityModal = dynamic(() => import("@/components/modals/CommunityModal").then((mod) => mod.CommunityModal));
 
 
 export default function HomePage() {
@@ -301,7 +296,6 @@ export default function HomePage() {
   const [showEntryChoice, setShowEntryChoice] = useState(false);
   const [showAnonymousProgressPrompt, setShowAnonymousProgressPrompt] = useState(false);
   const [isAdminOpen, setIsAdminOpen] = useState(false);
-  const [isCommunityOpen, setIsCommunityOpen] = useState(false);
   const router = useRouter();
   const [consentAccepted, setConsentAccepted] = useState(false);
   const [tokens, setTokens] = useState<AuthTokens | null>(null);
@@ -322,7 +316,6 @@ export default function HomePage() {
   const [resultSoundVolume, setResultSoundVolume] = useState(0.8);
   const [chatBlurred, setChatBlurred] = useState(false);
   const [showPixelBlast, setShowPixelBlast] = useState(false);
-  const [showNavShuffle, setShowNavShuffle] = useState(false);
   const isAnonymousUser = Boolean(
     me?.is_anonymous || me?.type === "anonymous",
   );
@@ -364,35 +357,6 @@ export default function HomePage() {
     };
   }, []);
 
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-    const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-    if (reduceMotion) return;
-    let cancelled = false;
-    const revealShuffle = () => {
-      if (!cancelled) setShowNavShuffle(true);
-    };
-    const idleWindow = window as Window & {
-      requestIdleCallback?: (
-        callback: IdleRequestCallback,
-        options?: IdleRequestOptions,
-      ) => number;
-      cancelIdleCallback?: (handle: number) => void;
-    };
-    let handle: number;
-    if (idleWindow.requestIdleCallback) {
-      handle = idleWindow.requestIdleCallback(revealShuffle, { timeout: 5000 });
-      return () => {
-        cancelled = true;
-        idleWindow.cancelIdleCallback?.(handle);
-      };
-    }
-    handle = window.setTimeout(revealShuffle, 4000);
-    return () => {
-      cancelled = true;
-      window.clearTimeout(handle);
-    };
-  }, []);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -887,7 +851,7 @@ export default function HomePage() {
 
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [isStatsOpen, isCustomizeOpen, isStartModesOpen, isTestLabOpen, isDuelOpen, isAuthOpen, isAdminOpen, isCommunityOpen]);
+  }, [isStatsOpen, isCustomizeOpen, isStartModesOpen, isTestLabOpen, isDuelOpen, isAuthOpen, isAdminOpen]);
 
   const completeRegisteredAuth = useCallback(async (verificationTokenValue?: string) => {
     const nickname = authNickname.trim();
@@ -1201,44 +1165,8 @@ export default function HomePage() {
               <span className="hidden sm:inline">How to Play</span>
               <span className="sm:hidden">Play</span>
             </button>
-            <div className="flex items-center justify-center gap-3 sm:grid sm:grid-cols-[auto_auto_auto] sm:items-center sm:gap-7">
-              <button
-                type="button"
-                onClick={() => setIsCommunityOpen(true)}
-                className="hidden transition-colors hover:text-zinc-100 sm:inline"
-              >
-                Community
-              </button>
-              {showNavShuffle ? (
-                <Shuffle
-                  text="CHADCHAT"
-                  shuffleDirection="right"
-                  duration={0.35}
-                  animationMode="evenodd"
-                  shuffleTimes={1}
-                  ease="power3.out"
-                  stagger={0.03}
-                  threshold={0.1}
-                  triggerOnce
-                  triggerOnHover
-                  respectReducedMotion
-                  loop={false}
-                  loopDelay={0}
-                  tag="span"
-                  className="nav-logo text-sm text-zinc-100 sm:text-base"
-                />
-              ) : (
-                <span className="nav-logo text-sm text-zinc-100 sm:text-base">
-                  CHADCHAT
-                </span>
-              )}
-              <a
-                className="hidden items-center gap-2 transition-colors hover:text-zinc-100 sm:grid sm:grid-cols-[auto_16px]"
-                href="#shop"
-              >
-                Shop
-                <ShoppingBag className="h-4 w-4 text-zinc-600" aria-hidden="true" />
-              </a>
+            <div className="flex items-center justify-center">
+              <span className="nav-logo text-sm text-zinc-100 sm:text-base">CHADCHAT</span>
             </div>
             <div
               className={cn(
@@ -1559,14 +1487,6 @@ export default function HomePage() {
       )}
       {isAdminOpen && (
         <AdminModal onClose={() => setIsAdminOpen(false)} />
-      )}
-      {isCommunityOpen && (
-        <CommunityModal
-          onClose={() => setIsCommunityOpen(false)}
-          onOpenProfile={handleOpenProfile}
-          myUserId={me?.id ? String(me.id) : null}
-          myRole={typeof me?.role === "string" ? me.role : undefined}
-        />
       )}
     </main>
   );
