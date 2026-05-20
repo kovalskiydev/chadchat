@@ -311,6 +311,7 @@ export function DuelModal({
   const resultSoundPlayedRef = useRef(false);
   const resultRevealMatchRef = useRef<string | null>(null);
   const lastPhaseRef = useRef<string | null>(null);
+  const appliedSignalsRef = useRef<Set<string>>(new Set());
 
   const pushDebug = useCallback((...args: unknown[]) => {
     void args;
@@ -1162,6 +1163,7 @@ export function DuelModal({
     const controller = new AbortController();
     let mounted = true;
     let poll: number | null = null;
+    appliedSignalsRef.current.clear();
 
     const syncMatch = async () => {
       try {
@@ -1179,7 +1181,7 @@ export function DuelModal({
     void duelStream(
       accessToken,
       matchID,
-      (event, data) => {
+      (event, data, eventId) => {
         const payload = data as Record<string, unknown>;
         pushDebug(`sse event=${event}`);
         pushDebug(`sse keys=${Object.keys(payload).join(",") || "-"}`);
@@ -1253,6 +1255,7 @@ export function DuelModal({
           if (typeof body.seconds_left === "number") setSecondsLeft(body.seconds_left);
         }
         if (msgType === "finished") {
+          if (poll) { window.clearInterval(poll); poll = null; }
           applyMatchSnapshot(payload);
           setPhase("finished");
           setStatus("Match finished");
@@ -1309,6 +1312,14 @@ export function DuelModal({
             return;
           }
           if (toUserId && myUserId && toUserId !== myUserId) return;
+          if (eventId && type && (type === "offer" || type === "answer" || type === "ice-candidate")) {
+            const key = `${type}_${eventId}`;
+            if (appliedSignalsRef.current.has(key)) {
+              pushDebug(`dedup signal type=${type} id=${eventId}`);
+              return;
+            }
+            appliedSignalsRef.current.add(key);
+          }
           const pc = peerRef.current;
           if (!pc || !type) return;
           pushDebug(`signal type=${type}`);

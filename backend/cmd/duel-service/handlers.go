@@ -3,7 +3,9 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"math/rand"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -100,7 +102,7 @@ func (s *Server) handleScoreFrame(w http.ResponseWriter, r *http.Request, user a
 		}
 		b, _ := json.Marshal(map[string]any{"type": "score_update", "match_id": m.ID, "payload": payload})
 		select {
-		case ch <- b:
+		case ch <- sseEvent{Payload: b}: // Seq=0: score_update не нужен в буфере replay
 		default:
 		}
 	}
@@ -222,8 +224,15 @@ func (s *Server) handleStream(w http.ResponseWriter, r *http.Request, user authU
 		return
 	}
 
-	subID := fmt.Sprintf("sub_%d", time.Now().UnixNano())
-	sub := make(chan []byte, 64)
+	// Уникальный ID подписчика — UnixNano + random чтобы избежать коллизий под нагрузкой.
+	subID := fmt.Sprintf("sub_%d_%d", time.Now().UnixNano(), rand.Int63())
+	sub := make(chan sseEvent, 64)
+
+	// Last-Event-ID позволяет клиенту при переподключении получить пропущенные события.
+	var lastSeq int64
+	if raw := r.Header.Get("Last-Event-ID"); raw != "" {
+		lastSeq, _ = strconv.ParseInt(raw, 10, 64)
+	}
 
 	s.store.mu.Lock()
 	m := s.store.matches[mid]
@@ -242,6 +251,13 @@ func (s *Server) handleStream(w http.ResponseWriter, r *http.Request, user authU
 	m.Connections[user.ID]++
 	s.syncPhaseLocked(m)
 	initial := s.snapshotMatch(m)
+	// Собираем пропущенные события из буфера для replay.
+	var missed []MatchEvent
+	for _, e := range m.eventBuf {
+		if e.Seq > lastSeq {
+			missed = append(missed, e)
+		}
+	}
 	s.store.mu.Unlock()
 
 	defer func() {
@@ -264,6 +280,11 @@ func (s *Server) handleStream(w http.ResponseWriter, r *http.Request, user authU
 
 	joined, _ := json.Marshal(map[string]any{"type": "joined", "match": initial})
 	_, _ = fmt.Fprintf(w, "data: %s\n\n", joined)
+
+	// Досылаем пропущенные события (WebRTC сигналы, смены фаз и т.д.).
+	for _, e := range missed {
+		_, _ = fmt.Fprintf(w, "id: %d\ndata: %s\n\n", e.Seq, e.Payload)
+	}
 	flusher.Flush()
 
 	tick := time.NewTicker(1 * time.Second)
@@ -283,10 +304,15 @@ func (s *Server) handleStream(w http.ResponseWriter, r *http.Request, user authU
 			s.syncPhaseLocked(mm)
 			payload, _ := json.Marshal(map[string]any{"type": "timer", "phase": mm.Phase, "seconds_left": secondsLeft(mm.PhaseEndsAt)})
 			s.store.mu.Unlock()
+			// Таймер — эфемерное событие, id не нужен.
 			_, _ = fmt.Fprintf(w, "data: %s\n\n", payload)
 			flusher.Flush()
-		case payload := <-sub:
-			_, _ = fmt.Fprintf(w, "data: %s\n\n", payload)
+		case evt := <-sub:
+			if evt.Seq > 0 {
+				_, _ = fmt.Fprintf(w, "id: %d\ndata: %s\n\n", evt.Seq, evt.Payload)
+			} else {
+				_, _ = fmt.Fprintf(w, "data: %s\n\n", evt.Payload)
+			}
 			flusher.Flush()
 		}
 	}

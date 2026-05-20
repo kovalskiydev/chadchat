@@ -31,7 +31,24 @@ const (
 	botInjectDelay          = 10 * time.Second
 
 	botPrefix = "bot_"
+
+	// matchEventBufCap — сколько последних событий хранить для replay при переподключении.
+	matchEventBufCap = 50
+	// matchCleanupDelay — через сколько секунд удалять завершённый матч из памяти.
+	matchCleanupDelay = 90 * time.Second
 )
+
+// sseEvent — элемент SSE-канала. Seq > 0 означает что клиент получит «id: N» для Last-Event-ID.
+type sseEvent struct {
+	Seq     int64
+	Payload []byte
+}
+
+// MatchEvent хранится в кольцевом буфере матча для replay при переподключении.
+type MatchEvent struct {
+	Seq     int64
+	Payload []byte
+}
 
 type Server struct {
 	authServiceURL          string
@@ -75,13 +92,15 @@ type Match struct {
 	Players          map[string]*PlayerProgress `json:"players"`
 	ResultSounds     map[string]ResultSound     `json:"-"`
 	MediaReady       map[string]bool            `json:"-"`
-	Subscribers      map[string]chan []byte     `json:"-"`
+	Subscribers      map[string]chan sseEvent   `json:"-"`
 	subscriberUserID map[string]string          `json:"-"` // subID -> userID
 	Connections      map[string]int             `json:"-"`
 	Recorded         bool                       `json:"-"`
 	Cancelled        bool                       `json:"-"`
-	BotVideoURL      string                     `json:"-"` // fixed video for this match
+	BotVideoURL      string                     `json:"-"`
 	BotScore         *BotScoreState             `json:"-"`
+	eventBuf         []MatchEvent               `json:"-"` // кольцевой буфер для SSE replay
+	nextSeq          int64                      `json:"-"` // монотонный счётчик событий
 }
 
 type PlayerProgress struct {

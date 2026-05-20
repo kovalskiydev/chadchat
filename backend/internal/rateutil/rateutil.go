@@ -19,7 +19,24 @@ type entry struct {
 }
 
 func NewLimiter() *Limiter {
-	return &Limiter{entries: make(map[string]*entry)}
+	l := &Limiter{entries: make(map[string]*entry)}
+	go l.runCleanup()
+	return l
+}
+
+func (l *Limiter) runCleanup() {
+	ticker := time.NewTicker(5 * time.Minute)
+	defer ticker.Stop()
+	for range ticker.C {
+		now := time.Now().UTC()
+		l.mu.Lock()
+		for k, e := range l.entries {
+			if now.After(e.windowEnds) {
+				delete(l.entries, k)
+			}
+		}
+		l.mu.Unlock()
+	}
 }
 
 func (l *Limiter) Allow(key string, limit int, window time.Duration) bool {

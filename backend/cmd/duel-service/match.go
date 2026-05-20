@@ -10,6 +10,11 @@ import (
 func (s *Server) runMatchLifecycle(matchID string) {
 	t := time.NewTicker(300 * time.Millisecond)
 	defer t.Stop()
+	defer time.AfterFunc(matchCleanupDelay, func() {
+		s.store.mu.Lock()
+		delete(s.store.matches, matchID)
+		s.store.mu.Unlock()
+	})
 	for range t.C {
 		s.store.mu.Lock()
 		m := s.store.matches[matchID]
@@ -175,7 +180,7 @@ func (s *Server) newMatchLocked(a, b authUser) *Match {
 			a.ID: false,
 			b.ID: false,
 		},
-		Subscribers:      map[string]chan []byte{},
+		Subscribers:      map[string]chan sseEvent{},
 		subscriberUserID: map[string]string{},
 		Connections: map[string]int{
 			a.ID: 0,
@@ -191,9 +196,16 @@ func (s *Server) newMatchLocked(a, b authUser) *Match {
 
 func (s *Server) broadcastLocked(m *Match, msg map[string]any) {
 	b, _ := json.Marshal(msg)
+	m.nextSeq++
+	seq := m.nextSeq
+	m.eventBuf = append(m.eventBuf, MatchEvent{Seq: seq, Payload: b})
+	if len(m.eventBuf) > matchEventBufCap {
+		m.eventBuf = m.eventBuf[len(m.eventBuf)-matchEventBufCap:]
+	}
+	evt := sseEvent{Seq: seq, Payload: b}
 	for _, ch := range m.Subscribers {
 		select {
-		case ch <- b:
+		case ch <- evt:
 		default:
 		}
 	}

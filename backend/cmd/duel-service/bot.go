@@ -135,7 +135,7 @@ func (s *Server) runBotScoring(matchID string) {
 			}
 			b, _ := json.Marshal(map[string]any{"type": "score_update", "match_id": m.ID, "payload": payload})
 			select {
-			case ch <- b:
+			case ch <- sseEvent{Payload: b}: // Seq=0: score_update не нужен в буфере replay
 			default:
 			}
 		}

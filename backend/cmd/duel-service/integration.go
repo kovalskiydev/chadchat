@@ -17,9 +17,17 @@ import (
 	"backend/internal/httputil"
 )
 
+// integrationClient используется для всех inter-service вызовов из duel-service.
+var integrationClient = &http.Client{Timeout: 5 * time.Second}
+
 func (s *Server) predictScore(imageBase64 string) (float64, error) {
 	payload, _ := json.Marshal(map[string]string{"image_base64": imageBase64})
-	resp, err := http.Post(s.mlServiceURL+"/predict", "application/json", bytes.NewReader(payload))
+	req, err := http.NewRequest(http.MethodPost, s.mlServiceURL+"/predict", bytes.NewReader(payload))
+	if err != nil {
+		return 0, err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := integrationClient.Do(req)
 	if err != nil {
 		return 0, err
 	}
@@ -51,7 +59,7 @@ func (s *Server) recordFinishedMatch(req duelRecordRequest) {
 	}
 	httpReq.Header.Set("Content-Type", "application/json")
 	httpReq.Header.Set("X-Rating-Internal-Secret", s.ratingInternalSecret)
-	resp, err := http.DefaultClient.Do(httpReq)
+	resp, err := integrationClient.Do(httpReq)
 	if err != nil {
 		return
 	}
@@ -101,7 +109,7 @@ func (s *Server) fetchResultSound(userID string) (ResultSound, error) {
 		return ResultSound{}, err
 	}
 	req.Header.Set("X-Customization-Internal-Secret", s.customizationSecret)
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := integrationClient.Do(req)
 	if err != nil {
 		return ResultSound{}, err
 	}

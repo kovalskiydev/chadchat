@@ -70,7 +70,7 @@ export async function duelMediaReady(accessToken: string, matchID: string) {
 export async function duelStream(
   accessToken: string,
   matchID: string,
-  onEvent: (event: string, data: unknown) => void,
+  onEvent: (event: string, data: unknown, eventId: string | null) => void,
   signal: AbortSignal,
 ) {
   const response = await authorizedFetch(`/duel/match/${matchID}/stream`, {
@@ -99,9 +99,11 @@ export async function duelStream(
       const lines = chunk.split("\n");
       let eventName = "message";
       let dataText = "";
+      let eventId: string | null = null;
       for (const line of lines) {
         if (line.startsWith("event:")) eventName = line.slice(6).trim();
         if (line.startsWith("data:")) dataText += `${line.slice(5).trim()}\n`;
+        if (line.startsWith("id:")) eventId = line.slice(3).trim() || null;
       }
       const raw = dataText.trim();
       if (!raw) continue;
@@ -111,7 +113,7 @@ export async function duelStream(
       } catch {
         payload = { text: raw };
       }
-      onEvent(eventName, payload);
+      onEvent(eventName, payload, eventId);
     }
   }
 }
